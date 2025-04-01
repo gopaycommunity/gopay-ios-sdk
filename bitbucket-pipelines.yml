@@ -1,0 +1,30 @@
+image: node:22
+
+definitions:
+    caches:
+        cache: ~/.cache
+    steps:
+        - step: &release
+              name: release
+              caches:
+                  - cache
+              script:
+                  - npx -p semantic-release -p @semantic-release/changelog -p @semantic-release/git semantic-release
+        - step: &sonarcloud-analysis
+              name: sonar
+              caches:
+                  - node
+              clone:
+                  depth: full # SonarCloud scanner needs the full history to assign issues properly
+              script:
+                  -   pipe: sonarsource/sonarcloud-scan:4.1.0
+                  -   pipe: sonarsource/sonarcloud-quality-gate:0.1.6
+
+pipelines:
+    branches:
+        master:
+            - step: *release
+    pull-requests:
+        '**':
+            - parallel:
+                  - step: *sonarcloud-analysis
