@@ -8,3 +8,4 @@ This project uses **[semantic-release](https://semantic-release.gitbook.io/seman
 
 ```bash
 yarn install
+```

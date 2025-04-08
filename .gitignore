@@ -48,3 +48,10 @@ Thumbs.db
 *.mov
 *.wmv
 
+
+.build/
+.idea
+.vscode
+.DS_Store
+.env
+.env.local
