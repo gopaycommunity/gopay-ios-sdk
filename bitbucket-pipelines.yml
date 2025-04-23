@@ -23,8 +23,10 @@ definitions:
 pipelines:
     branches:
         master:
-            - step: *release
+            - parallel:
+                - step: *release
+                - step: *sonarcloud-analysis
     pull-requests:
         '**':
             - parallel:
-                  - step: *sonarcloud-analysis
+                - step: *sonarcloud-analysis
