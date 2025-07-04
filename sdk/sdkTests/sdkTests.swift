@@ -10,8 +10,9 @@ import Testing
 
 struct sdkTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    @Test func gopaySDKSharedIsNotNil() async throws {
+        let instance = GopaySDK.shared
+        #expect(instance != nil)
     }
 
 }
