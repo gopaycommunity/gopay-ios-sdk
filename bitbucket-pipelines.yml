@@ -18,6 +18,11 @@ definitions:
                   depth: full # SonarCloud scanner needs the full history to assign issues properly
               script:
                   -   pipe: sonarsource/sonarcloud-scan:4.1.0
+                      variables:
+                          EXTRA_ARGS: >
+                            -Dsonar.c.file.suffixes=-
+                            -Dsonar.cpp.file.suffixes=-
+                            -Dsonar.objc.file.suffixes=-
                   -   pipe: sonarsource/sonarcloud-quality-gate:0.1.6
 
 pipelines:
