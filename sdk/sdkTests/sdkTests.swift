@@ -15,4 +15,23 @@ struct sdkTests {
         #expect(instance != nil)
     }
 
+    @Test func gopaySDKConfigurationIsSetCorrectly() async throws {
+        var errorCallbackCalled = false
+        let config = GopaySDKConfig(
+            environment: .sandbox,
+            enableDebugLogging: true,
+            errorCallback: { _ in errorCallbackCalled = true },
+            requestTimeoutMs: 12345
+        )
+        GopaySDK.shared.initialize(with: config)
+        let sdkConfig = GopaySDK.shared.config
+        #expect(sdkConfig != nil)
+        #expect(sdkConfig?.environment == .sandbox)
+        #expect(sdkConfig?.enableDebugLogging == true)
+        #expect(sdkConfig?.requestTimeoutMs == 12345)
+        // Simulate error callback
+        sdkConfig?.errorCallback?(NSError(domain: "test", code: 1))
+        #expect(errorCallbackCalled == true)
+    }
+
 }
