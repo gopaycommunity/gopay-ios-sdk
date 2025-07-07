@@ -1,6 +1,6 @@
 {
     "name": "gp-gw-ios-sdk",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "private": true,
     "repository": {
         "url": "git@bitbucket.org:gp-gopay/gp-gw-ios-sdk.git"
