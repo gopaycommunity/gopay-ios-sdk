@@ -15,7 +15,7 @@ public enum GopayEnvironment {
     /// The base URL for the selected environment.
     var baseURL: String {
         switch self {
-        case .development: return ""
+        case .development: return "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
         case .sandbox: return ""
         case .production: return ""
         }
@@ -32,25 +32,20 @@ public struct GopaySDKConfig {
     public let enableDebugLogging: Bool
     /// The callback to use for errors.
     public let errorCallback: ((Error) -> Void)?
-    /// The timeout for requests in milliseconds.
-    public let requestTimeoutMs: Int?
     
     /// Creates a new configuration for the Gopay SDK.
     /// - Parameters:
     ///   - environment: The environment to use.
     ///   - enableDebugLogging: Enable debug logging (default: `false`).
     ///   - errorCallback: Callback for error handling (default: `nil`).
-    ///   - requestTimeoutMs: Request timeout in milliseconds (default: `30000`).
     public init(
         environment: GopayEnvironment,
         enableDebugLogging: Bool = false,
-        errorCallback: ((Error) -> Void)? = nil,
-        requestTimeoutMs: Int? = 30000
+        errorCallback: ((Error) -> Void)? = nil
     ) {
         self.environment = environment
         self.enableDebugLogging = enableDebugLogging
         self.errorCallback = errorCallback
-        self.requestTimeoutMs = requestTimeoutMs
     }
 }
 
@@ -61,13 +56,20 @@ public class GopaySDK {
     /// The shared instance of the SDK.
     public static let shared = GopaySDK()
     
+    /// The keychain storage to use for the SDK.
+    private var keychainStorage: KeychainStorageProtocol = KeychainStorage.shared
+
     /// The current configuration for the SDK.
     public private(set) var config: GopaySDKConfig?
+    /// The authentication service.
+    public private(set) var authService: GopayAuthService?
     
     /// Initializes the SDK with the given configuration.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
         self.config = config
+        let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
+        self.authService = GopayAuthService(networkClient: client)
     }
     
     /// Handles an error using the configured error callback and debug logging.
@@ -79,6 +81,42 @@ public class GopaySDK {
         }
     }
     
-    /// Private initializer to enforce singleton usage.
-    private init() {}
+    /// Authenticates using the configured auth service.
+    /// - Parameters:
+    ///   - clientId: The client ID.
+    ///   - clientSecret: The client secret.
+    ///   - scope: The requested scopes (space-separated).
+    ///   - completion: Completion handler with result.
+    public func authenticate(clientId: String, clientSecret: String, scope: String, completion: @escaping (Result<GopayAuthResponse, Error>) -> Void) {
+        guard let authService = self.authService else {
+            completion(.failure(NSError(domain: "GopaySDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "SDK not initialized or authService unavailable."])))
+            return
+        }
+        authService.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
+            switch result {
+            case .success(let response):
+                self.keychainStorage.storeAccessToken(response.access_token)
+                if let refresh = response.refresh_token {
+                    self.keychainStorage.storeRefreshToken(refresh)
+                }
+                completion(.success(response))
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+    
+    /// Internal/test initializer for dependency injection
+    internal init(
+        config: GopaySDKConfig? = nil,
+        networkClient: NetworkClientProtocol? = nil,
+        keychainStorage: KeychainStorageProtocol = KeychainStorage.shared
+    ) {
+        self.config = config
+        let environment = config?.environment ?? GopayEnvironment.development
+        let networkClient = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
+        self.authService = GopayAuthService(networkClient: networkClient)
+        self.keychainStorage = keychainStorage
+    }
 }
