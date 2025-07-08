@@ -195,4 +195,38 @@ struct sdkTests {
         }
     }
 
+    @Test func jwtUtilsIsExpiredWorks() async throws {
+        // Helper to create a JWT with a given exp value
+        func makeJWT(exp: TimeInterval?) -> String {
+            let header = ["alg": "none", "typ": "JWT"]
+            let payload: [String: Any]
+            if let exp = exp {
+                payload = ["exp": exp]
+            } else {
+                payload = [:]
+            }
+            let headerData = try! JSONSerialization.data(withJSONObject: header)
+            let payloadData = try! JSONSerialization.data(withJSONObject: payload)
+            func base64url(_ data: Data) -> String {
+                return data.base64EncodedString()
+                    .replacingOccurrences(of: "+", with: "-")
+                    .replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: "=", with: "")
+            }
+            let headerPart = base64url(headerData)
+            let payloadPart = base64url(payloadData)
+            return "\(headerPart).\(payloadPart).signature"
+        }
+        let now = Date().timeIntervalSince1970
+        let validJWT = makeJWT(exp: now + 3600) // expires in 1 hour
+        let expiredJWT = makeJWT(exp: now - 3600) // expired 1 hour ago
+        let noExpJWT = makeJWT(exp: nil)
+        let invalidJWT = "not.a.jwt"
+
+        #expect(JwtUtils.isExpired(jwt: validJWT) == false)
+        #expect(JwtUtils.isExpired(jwt: expiredJWT) == true)
+        #expect(JwtUtils.isExpired(jwt: noExpJWT) == nil)
+        #expect(JwtUtils.isExpired(jwt: invalidJWT) == nil)
+    }
+
 }
