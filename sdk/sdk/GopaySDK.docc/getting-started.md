@@ -24,10 +24,9 @@ Create a configuration object. You can also enable debug logging and provide an 
 let config = GopaySDKConfig(
     environment: environment,
     enableDebugLogging: true, // Optional
-    errorCallback: { error in
+    errorCallback: { error in // Optional
         print("GopaySDK Error: \(error)")
     },
-    requestTimeoutMs: 30000 // Optional
 )
 ```
 

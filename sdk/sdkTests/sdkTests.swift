@@ -8,6 +8,28 @@
 import Testing
 @testable import sdk
 
+// Helper to create a JWT with a given exp value
+private func makeJWT(exp: TimeInterval?) -> String {
+    let header = ["alg": "none", "typ": "JWT"]
+    let payload: [String: Any]
+    if let exp = exp {
+        payload = ["exp": exp]
+    } else {
+        payload = [:]
+    }
+    let headerData = try! JSONSerialization.data(withJSONObject: header)
+    let payloadData = try! JSONSerialization.data(withJSONObject: payload)
+    func base64url(_ data: Data) -> String {
+        return data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+    let headerPart = base64url(headerData)
+    let payloadPart = base64url(payloadData)
+    return "\(headerPart).\(payloadPart).signature"
+}
+
 struct sdkTests {
 
     @Test func gopaySDKSharedIsNotNil() async throws {
@@ -196,27 +218,6 @@ struct sdkTests {
     }
 
     @Test func jwtUtilsIsExpiredWorks() async throws {
-        // Helper to create a JWT with a given exp value
-        func makeJWT(exp: TimeInterval?) -> String {
-            let header = ["alg": "none", "typ": "JWT"]
-            let payload: [String: Any]
-            if let exp = exp {
-                payload = ["exp": exp]
-            } else {
-                payload = [:]
-            }
-            let headerData = try! JSONSerialization.data(withJSONObject: header)
-            let payloadData = try! JSONSerialization.data(withJSONObject: payload)
-            func base64url(_ data: Data) -> String {
-                return data.base64EncodedString()
-                    .replacingOccurrences(of: "+", with: "-")
-                    .replacingOccurrences(of: "/", with: "_")
-                    .replacingOccurrences(of: "=", with: "")
-            }
-            let headerPart = base64url(headerData)
-            let payloadPart = base64url(payloadData)
-            return "\(headerPart).\(payloadPart).signature"
-        }
         let now = Date().timeIntervalSince1970
         let validJWT = makeJWT(exp: now + 3600) // expires in 1 hour
         let expiredJWT = makeJWT(exp: now - 3600) // expired 1 hour ago
@@ -227,6 +228,29 @@ struct sdkTests {
         #expect(JwtUtils.isExpired(jwt: expiredJWT) == true)
         #expect(JwtUtils.isExpired(jwt: noExpJWT) == nil)
         #expect(JwtUtils.isExpired(jwt: invalidJWT) == nil)
+    }
+
+    @Test func gopaySDKSetAuthenticationResponseWorks() async throws {
+        let now = Date().timeIntervalSince1970
+        let validJWT = makeJWT(exp: now + 3600)
+        let expiredJWT = makeJWT(exp: now - 3600)
+        let refreshToken = "refresh_token_123"
+        let keychain = MockKeychainStorage()
+        let sdk = GopaySDK(keychainStorage: keychain)
+        // Test valid token
+        let responseValid = GopayAuthResponse(access_token: validJWT, token_type: "bearer", refresh_token: refreshToken, scope: nil)
+        try sdk.setAuthenticationResponse(with: responseValid)
+        #expect(keychain.getAccessToken() == validJWT)
+        #expect(keychain.getRefreshToken() == refreshToken)
+        // Test expired token
+        let responseExpired = GopayAuthResponse(access_token: expiredJWT, token_type: "bearer", refresh_token: refreshToken, scope: nil)
+        var didThrow = false
+        do {
+            try sdk.setAuthenticationResponse(with: responseExpired)
+        } catch {
+            didThrow = true
+        }
+        #expect(didThrow == true)
     }
 
 }

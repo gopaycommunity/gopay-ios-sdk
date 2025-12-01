@@ -16,7 +16,7 @@ public enum GopayEnvironment {
     var baseURL: String {
         switch self {
         case .development: return "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
-        case .sandbox: return ""
+        case .sandbox: return "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
         case .production: return ""
         }
     }
@@ -104,6 +104,19 @@ public class GopaySDK {
                 self.handleError(error)
                 completion(.failure(error))
             }
+        }
+    }
+    
+    /// Sets the authentication response to the storage.
+    /// - Parameter response: The authentication response containing tokens.
+    public func setAuthenticationResponse(with response: GopayAuthResponse) throws {
+        if JwtUtils.isExpired(jwt: response.access_token) == true {
+            throw NSError(domain: "GopaySDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "Access token is expired."])
+        }
+
+        self.keychainStorage.storeAccessToken(response.access_token)
+        if let refresh = response.refresh_token {
+            self.keychainStorage.storeRefreshToken(refresh)
         }
     }
     
