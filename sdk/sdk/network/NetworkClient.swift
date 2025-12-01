@@ -27,7 +27,7 @@ public class DefaultNetworkClient: NSObject, NetworkClientProtocol, URLSessionDe
             } else if let data = data {
                 completion(.success(data))
             } else {
-                completion(.failure(NSError(domain: "Unknown", code: -1)))
+                completion(.failure(GopaySDKErrors.unknownError()))
             }
         }
         task.resume()

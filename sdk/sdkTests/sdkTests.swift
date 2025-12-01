@@ -271,4 +271,242 @@ struct sdkTests {
         #expect(anotherEnvironment.baseURL == anotherCustomURL)
     }
 
+    @Test func gopayEncryptionServiceGetPublicKeySuccess() async throws {
+        let mockClient = MockNetworkClient()
+        let jwk = GopayJWK(
+            kty: "RSA",
+            kid: "key_20250406",
+            use: "enc",
+            alg: "RSA-OAEP-256",
+            n: "y7WkT3qvY...",
+            e: "AQAB"
+        )
+        let responseData = try! JSONEncoder().encode(jwk)
+        mockClient.responseData = responseData
+        
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        let validJWT = makeJWT(exp: now + 3600)
+        keychain.storeAccessToken(validJWT)
+        
+        let encryptionService = GopayEncryptionService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            encryptionService.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success(let retrievedJWK):
+            #expect(retrievedJWK.kty == "RSA")
+            #expect(retrievedJWK.kid == "key_20250406")
+            #expect(retrievedJWK.use == "enc")
+            #expect(retrievedJWK.alg == "RSA-OAEP-256")
+            #expect(retrievedJWK.n == "y7WkT3qvY...")
+            #expect(retrievedJWK.e == "AQAB")
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func gopayEncryptionServiceGetPublicKeyNoToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        keychain.clearTokens()
+        
+        let encryptionService = GopayEncryptionService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            encryptionService.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.encryptionServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
+    @Test func gopayEncryptionServiceGetPublicKeyExpiredToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        let expiredJWT = makeJWT(exp: now - 3600)
+        keychain.storeAccessToken(expiredJWT)
+        
+        let encryptionService = GopayEncryptionService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            encryptionService.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.encryptionServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.accessTokenExpired)
+        }
+    }
+
+    @Test func gopayEncryptionServiceGetPublicKeyNetworkError() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.error = NSError(domain: "NetworkError", code: 500)
+        
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        let validJWT = makeJWT(exp: now + 3600)
+        keychain.storeAccessToken(validJWT)
+        
+        let encryptionService = GopayEncryptionService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            encryptionService.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure(let error):
+            #expect((error as NSError).domain == "NetworkError")
+            #expect((error as NSError).code == 500)
+        }
+    }
+
+    @Test func gopayEncryptionServiceGetPublicKeyInvalidResponse() async throws {
+        let mockClient = MockNetworkClient()
+        // Invalid JSON response
+        mockClient.responseData = "invalid json".data(using: .utf8)
+        
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        let validJWT = makeJWT(exp: now + 3600)
+        keychain.storeAccessToken(validJWT)
+        
+        let encryptionService = GopayEncryptionService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            encryptionService.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure:
+            // Decoding error is expected
+            #expect(Bool(true))
+        }
+    }
+
+    @Test func gopaySDKGetPublicKeySuccess() async throws {
+        let mockClient = MockNetworkClient()
+        let jwk = GopayJWK(
+            kty: "RSA",
+            kid: "key_20250406",
+            use: "enc",
+            alg: "RSA-OAEP-256",
+            n: "y7WkT3qvY...",
+            e: "AQAB"
+        )
+        let responseData = try! JSONEncoder().encode(jwk)
+        mockClient.responseData = responseData
+        
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        let validJWT = makeJWT(exp: now + 3600)
+        keychain.storeAccessToken(validJWT)
+        
+        let config = GopaySDKConfig(environment: .sandbox)
+        let mockGopaySDK = GopaySDK(
+            config: config,
+            networkClient: mockClient,
+            keychainStorage: keychain
+        )
+        
+        let result = await withCheckedContinuation { continuation in
+            mockGopaySDK.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success(let retrievedJWK):
+            #expect(retrievedJWK.kty == "RSA")
+            #expect(retrievedJWK.kid == "key_20250406")
+            #expect(retrievedJWK.use == "enc")
+            #expect(retrievedJWK.alg == "RSA-OAEP-256")
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func gopaySDKGetPublicKeyNoToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        keychain.clearTokens()
+        
+        let config = GopaySDKConfig(environment: .sandbox)
+        let mockGopaySDK = GopaySDK(
+            config: config,
+            networkClient: mockClient,
+            keychainStorage: keychain
+        )
+        
+        let result = await withCheckedContinuation { continuation in
+            mockGopaySDK.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.encryptionServiceDomain)
+        }
+    }
+
+    @Test func gopaySDKGetPublicKeyExpiredToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        let expiredJWT = makeJWT(exp: now - 3600)
+        keychain.storeAccessToken(expiredJWT)
+        
+        let config = GopaySDKConfig(environment: .sandbox)
+        let mockGopaySDK = GopaySDK(
+            config: config,
+            networkClient: mockClient,
+            keychainStorage: keychain
+        )
+        
+        let result = await withCheckedContinuation { continuation in
+            mockGopaySDK.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.encryptionServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.accessTokenExpired)
+        }
+    }
+
+    @Test func gopaySDKGetPublicKeyNotInitialized() async throws {
+        let sdk = GopaySDK()
+        let result = await withCheckedContinuation { continuation in
+            sdk.getPublicKey { result in
+                continuation.resume(returning: result)
+            }
+        }
+        switch result {
+        case .success:
+            #expect(Bool(false)) // Should not succeed
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.encryptionServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
 }

@@ -23,7 +23,7 @@ public class GopayAuthService {
     ///   - completion: Completion handler with result.
     public func authenticate(clientId: String, clientSecret: String, scope: String, completion: @escaping (Result<GopayAuthResponse, Error>) -> Void) {
         guard let url = networkClient.makeURL(path: endpoint) else {
-            completion(.failure(NSError(domain: "InvalidURL", code: -1)))
+            completion(.failure(GopaySDKErrors.invalidURLError()))
             return
         }
         var request = URLRequest(url: url)
@@ -34,7 +34,7 @@ public class GopayAuthService {
         // Basic Auth header
         let credentials = "\(clientId):\(clientSecret)"
         guard let credentialsData = credentials.data(using: .utf8) else {
-            completion(.failure(NSError(domain: "Encoding", code: -1)))
+            completion(.failure(GopaySDKErrors.encodingError()))
             return
         }
         let base64Credentials = credentialsData.base64EncodedString()

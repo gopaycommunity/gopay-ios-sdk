@@ -9,11 +9,12 @@ import SwiftUI
 import GopaySDK
 
 struct ContentView: View {
-    @State private var clientId: String = "SDK"
-    @State private var clientSecret: String = "hE8e8KNP"
+    @State private var clientId: String = "1836340462"
+    @State private var clientSecret: String = "NUBTBzPH"
     @State private var scope: String = "payment:create payment:read card:read"
     @State private var responseText: String = ""
     @State private var isLoading: Bool = false
+    @State private var isGettingPublicKey: Bool = false
     
     var body: some View {
         ScrollView {
@@ -29,14 +30,31 @@ struct ContentView: View {
                     TextField("Scope", text: $scope)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
-                Button(action: authenticate) {
-                    if isLoading {
-                        ProgressView()
-                    } else {
-                        Text("Authenticate")
+                HStack(spacing: 12) {
+                    Button(action: authenticate) {
+                        if isLoading {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Authenticate")
+                                .frame(maxWidth: .infinity)
+                        }
                     }
+                    .disabled(isLoading || isGettingPublicKey || clientId.isEmpty || clientSecret.isEmpty)
+                    .buttonStyle(.borderedProminent)
+                    
+                    Button(action: getPublicKey) {
+                        if isGettingPublicKey {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Get Public Key")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .disabled(isLoading || isGettingPublicKey)
+                    .buttonStyle(.bordered)
                 }
-                .disabled(isLoading || clientId.isEmpty || clientSecret.isEmpty)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Response:")
                         .font(.headline)
@@ -62,11 +80,39 @@ struct ContentView: View {
         let config = GopaySDKConfig(environment: .sandbox)
         GopaySDK.shared.initialize(with: config)
         GopaySDK.shared.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 isLoading = false
                 switch result {
                 case .success(let authResponse):
                     responseText = "Access Token: \(authResponse.access_token)\nToken Type: \(authResponse.token_type)\nRefresh Token: \(authResponse.refresh_token ?? "-")\nScope: \(authResponse.scope ?? "-")"
+                case .failure(let error):
+                    responseText = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func getPublicKey() {
+        isGettingPublicKey = true
+        responseText = ""
+        // Ensure SDK is initialized
+        let config = GopaySDKConfig(environment: .sandbox)
+        GopaySDK.shared.initialize(with: config)
+        
+        GopaySDK.shared.getPublicKey { result in
+            Task { @MainActor in
+                isGettingPublicKey = false
+                switch result {
+                case .success(let jwk):
+                    responseText = """
+                    Public Key (JWK):
+                    Key Type (kty): \(jwk.kty)
+                    Key ID (kid): \(jwk.kid)
+                    Usage (use): \(jwk.use)
+                    Algorithm (alg): \(jwk.alg)
+                    Modulus (n): \(jwk.n)
+                    Exponent (e): \(jwk.e)
+                    """
                 case .failure(let error):
                     responseText = "Error: \(error.localizedDescription)"
                 }

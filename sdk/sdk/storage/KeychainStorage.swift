@@ -1,7 +1,11 @@
 import Foundation
 import Security
 
-protocol KeychainStorageProtocol {
+/// Protocol for keychain storage operations.
+///
+/// Allows for dependency injection and testing by providing a mockable interface
+/// for token storage and retrieval.
+public protocol KeychainStorageProtocol {
     func storeAccessToken(_ token: String) -> Bool
     func storeRefreshToken(_ token: String) -> Bool
     func getAccessToken() -> String?

@@ -63,13 +63,19 @@ public class GopaySDK {
     public private(set) var config: GopaySDKConfig?
     /// The authentication service.
     public private(set) var authService: GopayAuthService?
+    /// The encryption service.
+    public private(set) var encryptionService: GopayEncryptionService?
+    /// The network client for making API requests.
+    private var networkClient: NetworkClientProtocol?
     
     /// Initializes the SDK with the given configuration.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
         self.config = config
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
+        self.networkClient = client
         self.authService = GopayAuthService(networkClient: client)
+        self.encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
     }
     
     /// Handles an error using the configured error callback and debug logging.
@@ -89,7 +95,7 @@ public class GopaySDK {
     ///   - completion: Completion handler with result.
     public func authenticate(clientId: String, clientSecret: String, scope: String, completion: @escaping (Result<GopayAuthResponse, Error>) -> Void) {
         guard let authService = self.authService else {
-            completion(.failure(NSError(domain: "GopaySDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "SDK not initialized or authService unavailable."])))
+            completion(.failure(GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedAuthService)))
             return
         }
         authService.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
@@ -111,12 +117,37 @@ public class GopaySDK {
     /// - Parameter response: The authentication response containing tokens.
     public func setAuthenticationResponse(with response: GopayAuthResponse) throws {
         if JwtUtils.isExpired(jwt: response.access_token) == true {
-            throw NSError(domain: "GopaySDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "Access token is expired."])
+            throw GopaySDKErrors.sdkError(GopaySDKErrors.accessTokenExpiredShort)
         }
 
         self.keychainStorage.storeAccessToken(response.access_token)
         if let refresh = response.refresh_token {
             self.keychainStorage.storeRefreshToken(refresh)
+        }
+    }
+    
+    /// Retrieves the public encryption key to be used for encrypting card data.
+    ///
+    /// The key is structured as a JWK (JSON Web Key) described by RFC 7517.
+    /// Before making the request, validates that the access token is not expired.
+    ///
+    /// - Parameter completion: Completion handler with result containing the JWK or an error.
+    public func getPublicKey(completion: @escaping (Result<GopayJWK, Error>) -> Void) {
+        guard let encryptionService = self.encryptionService else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedEncryptionService)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+        
+        encryptionService.getPublicKey { result in
+            switch result {
+            case .success(let jwk):
+                completion(.success(jwk))
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
         }
     }
     
@@ -129,7 +160,9 @@ public class GopaySDK {
         self.config = config
         let environment = config?.environment ?? GopayEnvironment.sandbox
         let networkClient = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
+        self.networkClient = networkClient
         self.authService = GopayAuthService(networkClient: networkClient)
+        self.encryptionService = GopayEncryptionService(networkClient: networkClient, keychainStorage: keychainStorage)
         self.keychainStorage = keychainStorage
     }
 }
