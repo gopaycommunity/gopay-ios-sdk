@@ -59,7 +59,7 @@ struct ContentView: View {
         isLoading = true
         responseText = ""
         // Example: Use sandbox environment for testing
-        let config = GopaySDKConfig(environment: .development)
+        let config = GopaySDKConfig(environment: .sandbox)
         GopaySDK.shared.initialize(with: config)
         GopaySDK.shared.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
             DispatchQueue.main.async {

@@ -161,7 +161,7 @@ struct sdkTests {
         // Clear any existing tokens
         keychain.clearTokens()
 
-        let config = GopaySDKConfig(environment: .development);
+        let config = GopaySDKConfig(environment: .sandbox);
         
         let mockGopaySDK = GopaySDK(
             config: config,
@@ -194,7 +194,7 @@ struct sdkTests {
         let keychain: KeychainStorageProtocol = MockKeychainStorage()
         keychain.clearTokens()
         var errorCallbackCalled = false
-        let config = GopaySDKConfig(environment: .development, errorCallback: { _ in errorCallbackCalled = true })
+        let config = GopaySDKConfig(environment: .sandbox, errorCallback: { _ in errorCallbackCalled = true })
         let mockGopaySDK = GopaySDK(
             config: config,
             networkClient: mockClient,
@@ -251,6 +251,24 @@ struct sdkTests {
             didThrow = true
         }
         #expect(didThrow == true)
+    }
+
+    @Test func gopayEnvironmentDevelopmentWithCustomBaseURL() async throws {
+        let customBaseURL = "https://custom-dev.example.com/api/"
+        let environment = GopayEnvironment.development(baseURL: customBaseURL)
+        
+        // Verify the baseURL is correctly set on the environment
+        #expect(environment.baseURL == customBaseURL)
+        
+        // Verify it works with SDK initialization
+        let config = GopaySDKConfig(environment: environment)
+        let sdk = GopaySDK(config: config)
+        #expect(sdk.config?.environment.baseURL == customBaseURL)
+        
+        // Verify different custom URLs work
+        let anotherCustomURL = "https://another-dev.example.com/api/v2/"
+        let anotherEnvironment = GopayEnvironment.development(baseURL: anotherCustomURL)
+        #expect(anotherEnvironment.baseURL == anotherCustomURL)
     }
 
 }

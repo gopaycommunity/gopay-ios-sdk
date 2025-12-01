@@ -13,7 +13,7 @@ import GopaySDK
 Select the appropriate environment for your use case:
 
 ```swift
-let environment: GopayEnvironment = .sandbox // or .development, .production
+let environment: GopayEnvironment = .sandbox // or .development(baseURL: "https://your-dev-url.com"), .production
 ```
 
 ## Step 3: Configure the SDK
@@ -44,7 +44,7 @@ GopaySDK.shared.initialize(with: config)
 import GopaySDK
 
 let config = GopaySDKConfig(
-    environment: .sandbox,
+    environment: .sandbox, // or .development(baseURL: "https://your-dev-url.com"), .production
     enableDebugLogging: true,
     errorCallback: { error in
         print("GopaySDK Error: \(error)")

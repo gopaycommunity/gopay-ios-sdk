@@ -4,9 +4,9 @@ import SwiftUI
 /// The environment to use for the SDK.
 ///
 /// - Note: Each case represents a different backend environment.
-public enum GopayEnvironment {
-    /// The development environment.
-    case development
+public enum GopayEnvironment: Equatable {
+    /// The development environment with a custom base URL.
+    case development(baseURL: String)
     /// The sandbox environment.
     case sandbox
     /// The production environment.
@@ -15,7 +15,7 @@ public enum GopayEnvironment {
     /// The base URL for the selected environment.
     var baseURL: String {
         switch self {
-        case .development: return "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
+        case .development(let url): return url
         case .sandbox: return "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
         case .production: return ""
         }
@@ -127,7 +127,7 @@ public class GopaySDK {
         keychainStorage: KeychainStorageProtocol = KeychainStorage.shared
     ) {
         self.config = config
-        let environment = config?.environment ?? GopayEnvironment.development
+        let environment = config?.environment ?? GopayEnvironment.sandbox
         let networkClient = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
         self.authService = GopayAuthService(networkClient: networkClient)
         self.keychainStorage = keychainStorage
