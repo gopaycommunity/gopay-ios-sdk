@@ -15,6 +15,13 @@ struct ContentView: View {
     @State private var responseText: String = ""
     @State private var isLoading: Bool = false
     @State private var isGettingPublicKey: Bool = false
+    @State private var isCreatingCardToken: Bool = false
+    
+    // Hardcoded card data
+    private let cardNumber = "4444444444444448"
+    private let expirationMonth = "12"
+    private let expirationYear = "26"
+    private let cvv = "123"
     
     var body: some View {
         ScrollView {
@@ -55,6 +62,34 @@ struct ContentView: View {
                     .disabled(isLoading || isGettingPublicKey)
                     .buttonStyle(.bordered)
                 }
+                
+                Button(action: createCardToken) {
+                    if isCreatingCardToken {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Create Card Token")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(isLoading || isGettingPublicKey || isCreatingCardToken)
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Card Details:")
+                        .font(.headline)
+                    Text("Card Number: \(cardNumber)")
+                        .font(.system(.body, design: .monospaced))
+                    Text("Expiration: \(expirationMonth)/\(expirationYear)")
+                        .font(.system(.body, design: .monospaced))
+                    Text("CVV: \(cvv)")
+                        .font(.system(.body, design: .monospaced))
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Response:")
                         .font(.headline)
@@ -112,6 +147,38 @@ struct ContentView: View {
                     Algorithm (alg): \(jwk.alg)
                     Modulus (n): \(jwk.n)
                     Exponent (e): \(jwk.e)
+                    """
+                case .failure(let error):
+                    responseText = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func createCardToken() {
+        isCreatingCardToken = true
+        responseText = ""
+        // Ensure SDK is initialized
+        let config = GopaySDKConfig(environment: .sandbox)
+        GopaySDK.shared.initialize(with: config)
+        
+        GopaySDK.shared.createCardToken(
+            cardPan: cardNumber,
+            expMonth: expirationMonth,
+            expYear: expirationYear,
+            cvv: cvv,
+            permanent: false
+        ) { result in
+            Task { @MainActor in
+                isCreatingCardToken = false
+                switch result {
+                case .success(let cardTokenResponse):
+                    responseText = """
+                    Card Token Created Successfully:
+                    Masked PAN: \(cardTokenResponse.masked_pan)
+                    Expiration Month: \(cardTokenResponse.expiration_month)
+                    Expiration Year: \(cardTokenResponse.expiration_year)
+                    Scheme: \(cardTokenResponse.scheme.rawValue)
                     """
                 case .failure(let error):
                     responseText = "Error: \(error.localizedDescription)"
