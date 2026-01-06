@@ -53,6 +53,14 @@ public struct GopaySDKConfig {
 ///
 /// Use the shared instance to interact with the SDK.
 public class GopaySDK {
+    /// The current version of the SDK.
+    /// This version is automatically read from the bundle's Info.plist,
+    /// which is populated from the Xcode project's MARKETING_VERSION setting.
+    public static var version: String {
+        let bundle = Bundle(for: GopaySDK.self)
+        return bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+    
     /// The shared instance of the SDK.
     public static let shared = GopaySDK()
     

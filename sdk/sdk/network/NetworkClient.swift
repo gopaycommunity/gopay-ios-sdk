@@ -21,7 +21,11 @@ public class DefaultNetworkClient: NSObject, NetworkClientProtocol, URLSessionDe
     }
     
     public func sendRequest(_ request: URLRequest, completion: @escaping (Result<Data, Error>) -> Void) {
-        let task = session.dataTask(with: request) { data, response, error in
+        var mutableRequest = request
+        let userAgent = "GoPay iOS SDK \(GopaySDK.version)"
+        mutableRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        
+        let task = session.dataTask(with: mutableRequest) { data, response, error in
             if let error = error {
                 completion(.failure(error))
             } else if let data = data {
