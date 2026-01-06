@@ -24,6 +24,12 @@ public enum GopaySDKErrors {
     /// Error domain for encoding errors.
     public static let encodingDomain = "GopayEncoding"
     
+    /// Error domain for card token service errors.
+    public static let cardTokenServiceDomain = "GopayCardTokenService"
+    
+    /// Error domain for JWE encryption errors.
+    public static let jweDomain = "GopayJWE"
+    
     // MARK: - Error Codes
     
     /// Generic error code.
@@ -66,6 +72,54 @@ public enum GopaySDKErrors {
     
     /// Unknown error message.
     public static let unknownErrorMessage = "Unknown error."
+    
+    /// SDK not initialized or cardTokenService unavailable.
+    public static let sdkNotInitializedCardTokenService = "SDK not initialized or cardTokenService unavailable."
+    
+    /// Card token creation failed.
+    public static let cardTokenCreationFailed = "Card token creation failed."
+    
+    /// Invalid URL for card token endpoint.
+    public static let invalidCardTokenURL = "Invalid URL for card token endpoint."
+    
+    /// JWE encryption failed.
+    public static let jweEncryptionFailed = "JWE encryption failed."
+    
+    /// JWE key generation failed.
+    public static let jweKeyGenerationFailed = "Failed to generate encryption key."
+    
+    /// JWE IV generation failed.
+    public static let jweIVGenerationFailed = "Failed to generate initialization vector."
+    
+    /// JWE card data encoding failed.
+    public static let jweCardDataEncodingFailed = "Failed to encode card data."
+    
+    /// JWE header encoding failed.
+    public static let jweHeaderEncodingFailed = "Failed to encode JWE header."
+    
+    /// JWE public key creation failed.
+    public static let jwePublicKeyCreationFailed = "Failed to create public key from JWK."
+    
+    /// JWE CEK encryption failed.
+    public static let jweCEKEncryptionFailed = "Failed to encrypt content encryption key."
+    
+    /// JWE AES encryption failed.
+    public static let jweAESEncryptionFailed = "AES encryption failed."
+    
+    /// JWE AES-GCM not available.
+    public static let jweAESGCMNotAvailable = "AES-GCM encryption requires iOS 13.0 or later."
+    
+    /// JWE key creation failed.
+    public static let jweKeyCreationFailed = "Failed to create symmetric key."
+    
+    /// JWE nonce creation failed.
+    public static let jweNonceCreationFailed = "Failed to create nonce."
+    
+    /// JWE invalid key size.
+    public static let jweInvalidKeySize = "Invalid key size for AES-256-GCM (must be 32 bytes)."
+    
+    /// JWE invalid IV size.
+    public static let jweInvalidIVSize = "Invalid IV size for AES-GCM (must be 12 bytes)."
     
     // MARK: - Error Creation Helpers
     
@@ -140,6 +194,28 @@ public enum GopaySDKErrors {
             domain: encodingDomain,
             code: encodingErrorCode,
             userInfo: [NSLocalizedDescriptionKey: encodingErrorMessage]
+        )
+    }
+    
+    /// Creates a card token service error with the given message.
+    /// - Parameter message: The error message.
+    /// - Returns: An NSError with the card token service domain and generic error code.
+    public static func cardTokenServiceError(_ message: String) -> NSError {
+        return NSError(
+            domain: cardTokenServiceDomain,
+            code: genericErrorCode,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+    
+    /// Creates a JWE error with the given message.
+    /// - Parameter message: The error message.
+    /// - Returns: An NSError with the JWE domain and generic error code.
+    public static func jweError(_ message: String) -> NSError {
+        return NSError(
+            domain: jweDomain,
+            code: genericErrorCode,
+            userInfo: [NSLocalizedDescriptionKey: message]
         )
     }
 }
