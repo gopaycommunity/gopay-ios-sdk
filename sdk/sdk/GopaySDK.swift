@@ -73,6 +73,8 @@ public class GopaySDK {
     public private(set) var authService: GopayAuthService?
     /// The encryption service.
     public private(set) var encryptionService: GopayEncryptionService?
+    /// The card token service.
+    public private(set) var cardTokenService: GopayCardTokenService?
     /// The network client for making API requests.
     private var networkClient: NetworkClientProtocol?
     
@@ -83,7 +85,9 @@ public class GopaySDK {
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
         self.networkClient = client
         self.authService = GopayAuthService(networkClient: client)
-        self.encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
+        let encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
+        self.encryptionService = encryptionService
+        self.cardTokenService = GopayCardTokenService(networkClient: client, keychainStorage: keychainStorage, encryptionService: encryptionService)
     }
     
     /// Handles an error using the configured error callback and debug logging.
@@ -159,6 +163,39 @@ public class GopaySDK {
         }
     }
     
+    /// Creates a card token by encrypting card data and sending it to the API.
+    ///
+    /// This method encrypts the card data using JWE (JSON Web Encryption) with RSA-OAEP-256
+    /// for key encryption and AES-256-GCM for content encryption, then sends it to the
+    /// GoPay API to create a card token.
+    ///
+    /// - Parameters:
+    ///   - cardPan: The card PAN (Primary Account Number).
+    ///   - expMonth: The expiration month in MM format.
+    ///   - expYear: The expiration year in YY format.
+    ///   - cvv: The card CVV.
+    ///   - permanent: Whether to save the card for permanent usage.
+    ///   - completion: Completion handler with result containing the card token response or an error.
+    public func createCardToken(cardPan: String, expMonth: String, expYear: String, cvv: String, permanent: Bool, completion: @escaping (Result<GopayCreateCardTokenResponse, Error>) -> Void) {
+        guard let cardTokenService = self.cardTokenService else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedCardTokenService)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+        
+        let cardData = GopayCardData(card_pan: cardPan, exp_month: expMonth, exp_year: expYear, cvv: cvv)
+        cardTokenService.createCardToken(cardData: cardData, permanent: permanent) { result in
+            switch result {
+            case .success(let response):
+                completion(.success(response))
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+    
     /// Internal/test initializer for dependency injection
     internal init(
         config: GopaySDKConfig? = nil,
@@ -170,7 +207,9 @@ public class GopaySDK {
         let networkClient = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
         self.networkClient = networkClient
         self.authService = GopayAuthService(networkClient: networkClient)
-        self.encryptionService = GopayEncryptionService(networkClient: networkClient, keychainStorage: keychainStorage)
+        let encryptionService = GopayEncryptionService(networkClient: networkClient, keychainStorage: keychainStorage)
+        self.encryptionService = encryptionService
+        self.cardTokenService = GopayCardTokenService(networkClient: networkClient, keychainStorage: keychainStorage, encryptionService: encryptionService)
         self.keychainStorage = keychainStorage
     }
 }
