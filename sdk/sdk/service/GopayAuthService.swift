@@ -1,10 +1,17 @@
 import Foundation
 
 public struct GopayAuthResponse: Decodable, Encodable {
-    public let access_token: String
-    public let token_type: String
-    public let refresh_token: String?
+    public let accessToken: String
+    public let tokenType: String
+    public let refreshToken: String?
     public let scope: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+        case refreshToken = "refresh_token"
+        case scope
+    }
 }
 
 public class GopayAuthService {

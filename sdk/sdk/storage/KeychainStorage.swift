@@ -15,6 +15,7 @@ public protocol KeychainStorageProtocol {
 
 class KeychainStorage: KeychainStorageProtocol {
     static let shared: KeychainStorageProtocol = KeychainStorage()
+    /// Private initializer to enforce singleton access via `shared`.
     private init() {}
     
     private let accessTokenKey = "com.gopay.sdk.accessToken"

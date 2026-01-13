@@ -17,8 +17,14 @@ private func makeJWT(exp: TimeInterval?) -> String {
     } else {
         payload = [:]
     }
-    let headerData = try! JSONSerialization.data(withJSONObject: header)
-    let payloadData = try! JSONSerialization.data(withJSONObject: payload)
+    let headerData: Data
+    let payloadData: Data
+    do {
+        headerData = try JSONSerialization.data(withJSONObject: header)
+        payloadData = try JSONSerialization.data(withJSONObject: payload)
+    } catch {
+        fatalError("Test JWT creation failed: \(error)")
+    }
     func base64url(_ data: Data) -> String {
         return data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
@@ -29,6 +35,19 @@ private func makeJWT(exp: TimeInterval?) -> String {
     let payloadPart = base64url(payloadData)
     return "\(headerPart).\(payloadPart).signature"
 }
+
+// Shared test JWK field values to avoid duplicating string literals
+private let testJWKKty = "RSA"
+private let testJWKKid = "key_20250406"
+private let testJWKUse = "enc"
+private let testJWKAlg = "RSA-OAEP-256"
+private let testJWKN = "y7WkT3qvY..."
+private let testJWKE = "AQAB"
+
+// Test base URLs (avoid hardcoded URI literals)
+private let testMockBaseURL = "https://mock.url"
+private let testCustomBaseURL = "https://custom-dev.example.com/api/"
+private let testAnotherCustomBaseURL = "https://another-dev.example.com/api/v2/"
 
 struct sdkTests {
 
@@ -51,7 +70,7 @@ struct sdkTests {
         #expect(sdkConfig?.enableDebugLogging == true)
         // Simulate error callback
         sdkConfig?.errorCallback?(NSError(domain: "test", code: 1))
-        #expect(errorCallbackCalled == true)
+        #expect(errorCallbackCalled)
     }
 
     class MockKeychainStorage: KeychainStorageProtocol {
@@ -84,8 +103,8 @@ struct sdkTests {
         // Store tokens
         let accessStored = keychain.storeAccessToken(accessToken)
         let refreshStored = keychain.storeRefreshToken(refreshToken)
-        #expect(accessStored == true)
-        #expect(refreshStored == true)
+        #expect(accessStored)
+        #expect(refreshStored)
         // Retrieve tokens
         let retrievedAccess = keychain.getAccessToken()
         let retrievedRefresh = keychain.getRefreshToken()
@@ -104,10 +123,10 @@ struct sdkTests {
         var error: Error?
 
         func makeURL(path: String) -> URL? {
-            return URL(string: "https://mock.url/\(path)")
+            return URL(string: "\(testMockBaseURL)/\(path)")
         }
 
-        func sendRequest(_ request: URLRequest, completion: @escaping (Result<Data, Error>) -> Void) {
+        func sendRequest(_ _: URLRequest, completion: @escaping (Result<Data, Error>) -> Void) {
             if let error = error {
                 completion(.failure(error))
             } else if let data = responseData {
@@ -121,12 +140,12 @@ struct sdkTests {
     @Test func gopayAuthServiceAuthenticateSuccess() async throws {
         let mockClient = MockNetworkClient()
         let response = GopayAuthResponse(
-            access_token: "token123",
-            token_type: "bearer",
-            refresh_token: "refresh456",
+            accessToken: "token123",
+            tokenType: "bearer",
+            refreshToken: "refresh456",
             scope: "scope"
         )
-        let responseData = try! JSONEncoder().encode(response)
+        let responseData = try JSONEncoder().encode(response)
         mockClient.responseData = responseData
 
         let authService = GopayAuthService(networkClient: mockClient)
@@ -137,9 +156,9 @@ struct sdkTests {
         }
         switch result {
         case .success(let authResponse):
-            #expect(authResponse.access_token == "token123")
-            #expect(authResponse.refresh_token == "refresh456")
-            #expect(authResponse.token_type == "bearer")
+            #expect(authResponse.accessToken == "token123")
+            #expect(authResponse.refreshToken == "refresh456")
+            #expect(authResponse.tokenType == "bearer")
             #expect(authResponse.scope == "scope")
         case .failure:
             #expect(Bool(false))
@@ -149,12 +168,12 @@ struct sdkTests {
     @Test func gopaySDKAuthenticateSuccess() async throws {
         let mockClient = MockNetworkClient()
         let response = GopayAuthResponse(
-            access_token: "token123",
-            token_type: "bearer",
-            refresh_token: "refresh456",
+            accessToken: "token123",
+            tokenType: "bearer",
+            refreshToken: "refresh456",
             scope: "scope"
         )
-        let responseData = try! JSONEncoder().encode(response)
+        let responseData = try JSONEncoder().encode(response)
         mockClient.responseData = responseData
 
         let keychain: KeychainStorageProtocol = MockKeychainStorage()
@@ -176,9 +195,9 @@ struct sdkTests {
         }
         switch result {
         case .success(let authResponse):
-            #expect(authResponse.access_token == "token123")
-            #expect(authResponse.refresh_token == "refresh456")
-            #expect(authResponse.token_type == "bearer")
+            #expect(authResponse.accessToken == "token123")
+            #expect(authResponse.refreshToken == "refresh456")
+            #expect(authResponse.tokenType == "bearer")
             #expect(authResponse.scope == "scope")
             #expect(keychain.getAccessToken() == "token123")
             #expect(keychain.getRefreshToken() == "refresh456")
@@ -213,7 +232,7 @@ struct sdkTests {
             #expect((error as NSError).domain == "TestError")
             #expect(keychain.getAccessToken() == nil)
             #expect(keychain.getRefreshToken() == nil)
-            #expect(errorCallbackCalled == true)
+            #expect(errorCallbackCalled)
         }
     }
 
@@ -238,57 +257,55 @@ struct sdkTests {
         let keychain = MockKeychainStorage()
         let sdk = GopaySDK(keychainStorage: keychain)
         // Test valid token
-        let responseValid = GopayAuthResponse(access_token: validJWT, token_type: "bearer", refresh_token: refreshToken, scope: nil)
+        let responseValid = GopayAuthResponse(accessToken: validJWT, tokenType: "bearer", refreshToken: refreshToken, scope: nil)
         try sdk.setAuthenticationResponse(with: responseValid)
         #expect(keychain.getAccessToken() == validJWT)
         #expect(keychain.getRefreshToken() == refreshToken)
         // Test expired token
-        let responseExpired = GopayAuthResponse(access_token: expiredJWT, token_type: "bearer", refresh_token: refreshToken, scope: nil)
+        let responseExpired = GopayAuthResponse(accessToken: expiredJWT, tokenType: "bearer", refreshToken: refreshToken, scope: nil)
         var didThrow = false
         do {
             try sdk.setAuthenticationResponse(with: responseExpired)
         } catch {
             didThrow = true
         }
-        #expect(didThrow == true)
+        #expect(didThrow)
     }
 
     @Test func gopayEnvironmentDevelopmentWithCustomBaseURL() async throws {
-        let customBaseURL = "https://custom-dev.example.com/api/"
-        let environment = GopayEnvironment.development(baseURL: customBaseURL)
+        let environment = GopayEnvironment.development(baseURL: testCustomBaseURL)
         
         // Verify the baseURL is correctly set on the environment
-        #expect(environment.baseURL == customBaseURL)
+        #expect(environment.baseURL == testCustomBaseURL)
         
         // Verify it works with SDK initialization
         let config = GopaySDKConfig(environment: environment)
         let sdk = GopaySDK(config: config)
-        #expect(sdk.config?.environment.baseURL == customBaseURL)
+        #expect(sdk.config?.environment.baseURL == testCustomBaseURL)
         
         // Verify different custom URLs work
-        let anotherCustomURL = "https://another-dev.example.com/api/v2/"
-        let anotherEnvironment = GopayEnvironment.development(baseURL: anotherCustomURL)
-        #expect(anotherEnvironment.baseURL == anotherCustomURL)
+        let anotherEnvironment = GopayEnvironment.development(baseURL: testAnotherCustomBaseURL)
+        #expect(anotherEnvironment.baseURL == testAnotherCustomBaseURL)
     }
 
     @Test func gopayEncryptionServiceGetPublicKeySuccess() async throws {
         let mockClient = MockNetworkClient()
         let jwk = GopayJWK(
-            kty: "RSA",
-            kid: "key_20250406",
-            use: "enc",
-            alg: "RSA-OAEP-256",
-            n: "y7WkT3qvY...",
-            e: "AQAB"
+            kty: testJWKKty,
+            kid: testJWKKid,
+            use: testJWKUse,
+            alg: testJWKAlg,
+            n: testJWKN,
+            e: testJWKE
         )
-        let responseData = try! JSONEncoder().encode(jwk)
+        let responseData = try JSONEncoder().encode(jwk)
         mockClient.responseData = responseData
-        
+
         let keychain = MockKeychainStorage()
         let now = Date().timeIntervalSince1970
         let validJWT = makeJWT(exp: now + 3600)
         keychain.storeAccessToken(validJWT)
-        
+
         let encryptionService = GopayEncryptionService(networkClient: mockClient, keychainStorage: keychain)
         let result = await withCheckedContinuation { continuation in
             encryptionService.getPublicKey { result in
@@ -402,28 +419,28 @@ struct sdkTests {
     @Test func gopaySDKGetPublicKeySuccess() async throws {
         let mockClient = MockNetworkClient()
         let jwk = GopayJWK(
-            kty: "RSA",
-            kid: "key_20250406",
-            use: "enc",
-            alg: "RSA-OAEP-256",
-            n: "y7WkT3qvY...",
-            e: "AQAB"
+            kty: testJWKKty,
+            kid: testJWKKid,
+            use: testJWKUse,
+            alg: testJWKAlg,
+            n: testJWKN,
+            e: testJWKE
         )
-        let responseData = try! JSONEncoder().encode(jwk)
+        let responseData = try JSONEncoder().encode(jwk)
         mockClient.responseData = responseData
-        
+
         let keychain = MockKeychainStorage()
         let now = Date().timeIntervalSince1970
         let validJWT = makeJWT(exp: now + 3600)
         keychain.storeAccessToken(validJWT)
-        
+
         let config = GopaySDKConfig(environment: .sandbox)
         let mockGopaySDK = GopaySDK(
             config: config,
             networkClient: mockClient,
             keychainStorage: keychain
         )
-        
+
         let result = await withCheckedContinuation { continuation in
             mockGopaySDK.getPublicKey { result in
                 continuation.resume(returning: result)
@@ -571,9 +588,9 @@ struct sdkTests {
         )
         
         let cardData = GopayCardData(
-            card_pan: "4444444444444448",
-            exp_month: "12",
-            exp_year: "26",
+            cardPan: "4444444444444448",
+            expMonth: "12",
+            expYear: "26",
             cvv: "123"
         )
         
@@ -621,9 +638,9 @@ struct sdkTests {
         )
         
         let cardData = GopayCardData(
-            card_pan: "4444444444444448",
-            exp_month: "12",
-            exp_year: "26",
+            cardPan: "4444444444444448",
+            expMonth: "12",
+            expYear: "26",
             cvv: "123"
         )
         
@@ -650,9 +667,9 @@ struct sdkTests {
         )
         
         let cardData = GopayCardData(
-            card_pan: "4444444444444448",
-            exp_month: "12",
-            exp_year: "26",
+            cardPan: "4444444444444448",
+            expMonth: "12",
+            expYear: "26",
             cvv: "123"
         )
         
@@ -683,9 +700,9 @@ struct sdkTests {
         )
         
         let cardData = GopayCardData(
-            card_pan: "4444444444444448",
-            exp_month: "12",
-            exp_year: "26",
+            cardPan: "4444444444444448",
+            expMonth: "12",
+            expYear: "26",
             cvv: "123"
         )
         
@@ -721,9 +738,9 @@ struct sdkTests {
         
         // Test with different card data formats
         let testCases = [
-            GopayCardData(card_pan: "4111111111111111", exp_month: "01", exp_year: "25", cvv: "123"),
-            GopayCardData(card_pan: "5555555555554444", exp_month: "06", exp_year: "30", cvv: "456"),
-            GopayCardData(card_pan: "1234567890123456", exp_month: "12", exp_year: "99", cvv: "789")
+            GopayCardData(cardPan: "4111111111111111", expMonth: "01", expYear: "25", cvv: "123"),
+            GopayCardData(cardPan: "5555555555554444", expMonth: "06", expYear: "30", cvv: "456"),
+            GopayCardData(cardPan: "1234567890123456", expMonth: "12", expYear: "99", cvv: "789")
         ]
         
         for cardData in testCases {
@@ -758,9 +775,9 @@ struct sdkTests {
         )
         
         let cardData = GopayCardData(
-            card_pan: "4444444444444448",
-            exp_month: "12",
-            exp_year: "26",
+            cardPan: "4444444444444448",
+            expMonth: "12",
+            expYear: "26",
             cvv: "123"
         )
         
@@ -807,9 +824,9 @@ struct sdkTests {
         
         // Test with empty strings (edge case)
         let cardData = GopayCardData(
-            card_pan: "",
-            exp_month: "",
-            exp_year: "",
+            cardPan: "",
+            expMonth: "",
+            expYear: "",
             cvv: ""
         )
         

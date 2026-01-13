@@ -6,7 +6,8 @@
 # Node artifact files
 node_modules/
 dist/
-
+.cursor/
+.cursor/rules/
 # Compiled Java class files
 *.class
 

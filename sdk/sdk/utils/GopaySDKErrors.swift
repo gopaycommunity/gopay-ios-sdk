@@ -79,6 +79,12 @@ public enum GopaySDKErrors {
     /// Card token creation failed.
     public static let cardTokenCreationFailed = "Card token creation failed."
     
+    /// Card form data is invalid.
+    public static let invalidCardFormData = "Card form data is invalid. Please check all fields."
+    
+    /// No card form data available. Please use GopayCardForm to enter card data.
+    public static let noCardFormData = "No card form data available. Please use GopayCardForm to enter card data."
+    
     /// Invalid URL for card token endpoint.
     public static let invalidCardTokenURL = "Invalid URL for card token endpoint."
     

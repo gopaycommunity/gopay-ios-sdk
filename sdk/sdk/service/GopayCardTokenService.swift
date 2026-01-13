@@ -9,18 +9,25 @@ public enum CardScheme: String, Decodable {
 /// Card data structure for encryption.
 public struct GopayCardData: Encodable {
     /// Card PAN (Primary Account Number).
-    public let card_pan: String
+    public let cardPan: String
     /// Expiration month (MM format).
-    public let exp_month: String
+    public let expMonth: String
     /// Expiration year (YY format).
-    public let exp_year: String
+    public let expYear: String
     /// Card CVV.
     public let cvv: String
-    
-    public init(card_pan: String, exp_month: String, exp_year: String, cvv: String) {
-        self.card_pan = card_pan
-        self.exp_month = exp_month
-        self.exp_year = exp_year
+
+    enum CodingKeys: String, CodingKey {
+        case cardPan = "card_pan"
+        case expMonth = "exp_month"
+        case expYear = "exp_year"
+        case cvv
+    }
+
+    public init(cardPan: String, expMonth: String, expYear: String, cvv: String) {
+        self.cardPan = cardPan
+        self.expMonth = expMonth
+        self.expYear = expYear
         self.cvv = cvv
     }
 }
@@ -36,13 +43,20 @@ struct GopayCreateCardTokenRequest: Encodable {
 /// Response from creating a card token.
 public struct GopayCreateCardTokenResponse: Decodable {
     /// Masked funding PAN of the card.
-    public let masked_pan: String
+    public let maskedPan: String
     /// Expiration month (MM format).
-    public let expiration_month: String
+    public let expirationMonth: String
     /// Expiration year (YY format).
-    public let expiration_year: String
+    public let expirationYear: String
     /// Card scheme.
     public let scheme: CardScheme
+
+    enum CodingKeys: String, CodingKey {
+        case maskedPan = "masked_pan"
+        case expirationMonth = "expiration_month"
+        case expirationYear = "expiration_year"
+        case scheme
+    }
 }
 
 public class GopayCardTokenService {

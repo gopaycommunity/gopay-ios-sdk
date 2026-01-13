@@ -43,7 +43,7 @@ public class GopayEncryptionService {
         }
         
         // Validate token is not expired
-        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired == true {
+        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
             completion(.failure(GopaySDKErrors.encryptionServiceError(GopaySDKErrors.accessTokenExpired)))
             return
         }

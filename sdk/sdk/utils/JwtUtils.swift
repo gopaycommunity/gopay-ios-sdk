@@ -12,7 +12,9 @@ public struct JwtUtils {
         var base64 = String(segments[1])
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
-        while base64.count % 4 != 0 { base64 += "=" }
+        while base64.count % 4 != 0 {
+            base64 += "="
+        }
         
         guard let payloadData = Data(base64Encoded: base64),
               let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],

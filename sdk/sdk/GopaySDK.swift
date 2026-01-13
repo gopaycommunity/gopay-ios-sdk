@@ -11,12 +11,14 @@ public enum GopayEnvironment: Equatable {
     case sandbox
     /// The production environment.
     case production
-    
+
+    private static let sandboxBaseURL = "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
+
     /// The base URL for the selected environment.
     var baseURL: String {
         switch self {
         case .development(let url): return url
-        case .sandbox: return "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
+        case .sandbox: return Self.sandboxBaseURL
         case .production: return ""
         }
     }
@@ -78,6 +80,12 @@ public class GopaySDK {
     /// The network client for making API requests.
     private var networkClient: NetworkClientProtocol?
     
+    /// Internal storage for card form data keyed by form ID (never exposed to the user).
+    private var internalCardFormData: [String: GopayCardFormData] = [:]
+    
+    /// Tracks the most recently active form ID.
+    private var mostRecentFormId: String?
+    
     /// Initializes the SDK with the given configuration.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
@@ -99,6 +107,15 @@ public class GopaySDK {
         }
     }
     
+    /// Internal method to update card form data (called automatically by GopayCardForm).
+    /// - Parameters:
+    ///   - data: The card form data to store internally.
+    ///   - formId: The unique identifier for the form instance.
+    internal func updateCardFormData(_ data: GopayCardFormData, formId: String) {
+        self.internalCardFormData[formId] = data
+        self.mostRecentFormId = formId
+    }
+    
     /// Authenticates using the configured auth service.
     /// - Parameters:
     ///   - clientId: The client ID.
@@ -113,8 +130,8 @@ public class GopaySDK {
         authService.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
             switch result {
             case .success(let response):
-                self.keychainStorage.storeAccessToken(response.access_token)
-                if let refresh = response.refresh_token {
+                self.keychainStorage.storeAccessToken(response.accessToken)
+                if let refresh = response.refreshToken {
                     self.keychainStorage.storeRefreshToken(refresh)
                 }
                 completion(.success(response))
@@ -128,12 +145,12 @@ public class GopaySDK {
     /// Sets the authentication response to the storage.
     /// - Parameter response: The authentication response containing tokens.
     public func setAuthenticationResponse(with response: GopayAuthResponse) throws {
-        if JwtUtils.isExpired(jwt: response.access_token) == true {
+        if let isExpired = JwtUtils.isExpired(jwt: response.accessToken), isExpired {
             throw GopaySDKErrors.sdkError(GopaySDKErrors.accessTokenExpiredShort)
         }
 
-        self.keychainStorage.storeAccessToken(response.access_token)
-        if let refresh = response.refresh_token {
+        self.keychainStorage.storeAccessToken(response.accessToken)
+        if let refresh = response.refreshToken {
             self.keychainStorage.storeRefreshToken(refresh)
         }
     }
@@ -184,7 +201,7 @@ public class GopaySDK {
             return
         }
         
-        let cardData = GopayCardData(card_pan: cardPan, exp_month: expMonth, exp_year: expYear, cvv: cvv)
+        let cardData = GopayCardData(cardPan: cardPan, expMonth: expMonth, expYear: expYear, cvv: cvv)
         cardTokenService.createCardToken(cardData: cardData, permanent: permanent) { result in
             switch result {
             case .success(let response):
@@ -196,6 +213,90 @@ public class GopaySDK {
         }
     }
     
+    /// Submits card form data to create a card token.
+    ///
+    /// This method uses the card form data that was automatically stored internally by `GopayCardForm`.
+    /// It validates the card form data and then creates a card token by encrypting the card data
+    /// using JWE (JSON Web Encryption) with RSA-OAEP-256 for key encryption and AES-256-GCM for
+    /// content encryption, then sends it to the GoPay API.
+    ///
+    /// The sensitive card data (PAN, CVV) remains internal to the SDK and is never exposed
+    /// to the caller. Only the masked response is returned.
+    ///
+    /// - Note: The card form data must be provided via `GopayCardForm`, which automatically
+    ///   syncs the data to the SDK. This method retrieves the data internally. If multiple forms
+    ///   are present, it uses the most recently active form. To submit a specific form, use
+    ///   `submitCardForm(formId:permanent:completion:)`.
+    ///
+    /// - Parameters:
+    ///   - permanent: Whether to save the card for permanent usage.
+    ///   - completion: Completion handler with result containing the card token response or an error.
+    public func submitCardForm(permanent: Bool, completion: @escaping (Result<GopayCreateCardTokenResponse, Error>) -> Void) {
+        // Use the most recently active form, or the first available form if none is tracked
+        let formId = mostRecentFormId ?? internalCardFormData.keys.first
+        
+        guard let formId = formId,
+              let data = internalCardFormData[formId] else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.noCardFormData)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+        
+        // Validate form data
+        guard data.isValid else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.invalidCardFormData)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+        
+        // Extract card data internally (sensitive data stays within SDK)
+        let cardPan = data.cardNumber
+        let expMonth = data.expirationMonth
+        let expYear = data.expirationYear
+        let cvv = data.cvv
+        
+        // Call existing createCardToken method with extracted data
+        createCardToken(cardPan: cardPan, expMonth: expMonth, expYear: expYear, cvv: cvv, permanent: permanent, completion: completion)
+    }
+    
+    /// Submits card form data from a specific form to create a card token.
+    ///
+    /// This method allows you to submit data from a specific form when multiple forms are present.
+    /// Use this when you need to submit a particular form's data rather than the most recently active one.
+    ///
+    /// - Parameters:
+    ///   - formId: The unique identifier of the form to submit (obtained from `GopayCardForm.formId`).
+    ///   - permanent: Whether to save the card for permanent usage.
+    ///   - completion: Completion handler with result containing the card token response or an error.
+    public func submitCardForm(formId: String, permanent: Bool, completion: @escaping (Result<GopayCreateCardTokenResponse, Error>) -> Void) {
+        // Retrieve form data for the specified form ID
+        guard let data = internalCardFormData[formId] else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.noCardFormData)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+        
+        // Validate form data
+        guard data.isValid else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.invalidCardFormData)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+        
+        // Extract card data internally (sensitive data stays within SDK)
+        let cardPan = data.cardNumber
+        let expMonth = data.expirationMonth
+        let expYear = data.expirationYear
+        let cvv = data.cvv
+        
+        // Call existing createCardToken method with extracted data
+        createCardToken(cardPan: cardPan, expMonth: expMonth, expYear: expYear, cvv: cvv, permanent: permanent, completion: completion)
+    }
+    
     /// Internal/test initializer for dependency injection
     internal init(
         config: GopaySDKConfig? = nil,
@@ -204,12 +305,12 @@ public class GopaySDK {
     ) {
         self.config = config
         let environment = config?.environment ?? GopayEnvironment.sandbox
-        let networkClient = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
-        self.networkClient = networkClient
-        self.authService = GopayAuthService(networkClient: networkClient)
-        let encryptionService = GopayEncryptionService(networkClient: networkClient, keychainStorage: keychainStorage)
+        let client = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
+        self.networkClient = client
+        self.authService = GopayAuthService(networkClient: client)
+        let encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
         self.encryptionService = encryptionService
-        self.cardTokenService = GopayCardTokenService(networkClient: networkClient, keychainStorage: keychainStorage, encryptionService: encryptionService)
+        self.cardTokenService = GopayCardTokenService(networkClient: client, keychainStorage: keychainStorage, encryptionService: encryptionService)
         self.keychainStorage = keychainStorage
     }
 }

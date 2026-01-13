@@ -47,9 +47,9 @@ public struct JweUtils {
         
         // Step 4: Encrypt card data JSON with AES-256-GCM using CEK, IV, and header as AAD
         let cardDataJSON: [String: String] = [
-            "card_pan": cardData.card_pan,
-            "exp_month": cardData.exp_month,
-            "exp_year": cardData.exp_year,
+            "card_pan": cardData.cardPan,
+            "exp_month": cardData.expMonth,
+            "exp_year": cardData.expYear,
             "cvv": cardData.cvv
         ]
         
