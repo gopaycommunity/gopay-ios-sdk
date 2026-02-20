@@ -101,7 +101,7 @@
 			mainGroup = 8B8AF6CC2D91547D00E91722;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				8B8AF6E62D9154A400E91722 /* XCLocalSwiftPackageReference "../../gpy-sdk-ios" */,
+				8B8AF6E62D9154A400E91722 /* XCLocalSwiftPackageReference "gpy-sdk-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8AF6D62D91547D00E91722 /* Products */;
@@ -333,9 +333,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		8B8AF6E62D9154A400E91722 /* XCLocalSwiftPackageReference "../../gpy-sdk-ios" */ = {
+		8B8AF6E62D9154A400E91722 /* XCLocalSwiftPackageReference "gpy-sdk-ios" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../../gpy-sdk-ios";
+			relativePath = "..";
 		};
 /* End XCLocalSwiftPackageReference section */
 
