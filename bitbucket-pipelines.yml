@@ -10,6 +10,16 @@ definitions:
                   - cache
               script:
                   - npx -p semantic-release -p @semantic-release/changelog -p @semantic-release/git semantic-release
+        - step: &github-sync
+              name: Sync to GitHub
+              clone:
+                  depth: full
+              script:
+                  - git fetch origin master
+                  - git checkout master
+                  - git remote add github https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/gopaycommunity/gopay-ios-sdk.git || true
+                  - git fetch github
+                  - git push github master --force-with-lease
         - step: &sonarcloud-analysis
               name: sonar
               caches:
@@ -31,7 +41,11 @@ pipelines:
             - parallel:
                 - step: *release
                 - step: *sonarcloud-analysis
+            - step: *github-sync
     pull-requests:
         '**':
             - parallel:
                 - step: *sonarcloud-analysis
+    custom:
+        github-sync:
+            - step: *github-sync
