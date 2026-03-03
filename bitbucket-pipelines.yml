@@ -15,11 +15,12 @@ definitions:
               clone:
                   depth: full
               script:
-                  - git fetch origin master
+                  - git fetch origin master --tags
                   - git checkout master
                   - git remote add github https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/gopaycommunity/gopay-ios-sdk.git || true
                   - git fetch github
                   - git push github master --force-with-lease
+                  - git push github --tags
         - step: &sonarcloud-analysis
               name: sonar
               caches:
