@@ -1,3 +1,14 @@
+# [1.2.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.1.0...1.2.0) (2026-03-03)
+
+
+### Features
+
+* add card tokenization network request GPMOB-65 ([213b6e6](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/213b6e6bc1c2c52f175d3b464d829bed815a9df6))
+* add cardTokenization example app demo GPMOB-65 ([727b408](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/727b4085c7ca61c856e19fa23a566448b10e8eb1))
+* add JWE utils for card tokenization GPMOB-66 ([361b272](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/361b272d5f21fc2458fcbbb875335d0480e5910f))
+* add user-agent version on network request GPMOB-110 ([9b3fa90](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/9b3fa90f776b512b704d971fce5b2b101eaa2bf2))
+* cardFormUI and internal data submitting GPMOB-68 ([bcc7877](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/bcc7877bb140edb4452ea32c5490eb5f541c1919))
+
 # [1.1.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.0.0...1.1.0) (2025-12-09)
 
 
