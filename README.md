@@ -28,7 +28,7 @@ The public library product is named **`GopaySDK`** and targets **iOS 13+**.
 
 - **Step 1**: In Xcode, open your app project.
 - **Step 2**: Go to **File → Add Packages…**.
-- **Step 3**: Enter the repository URL of this SDK (for example `https://github.com/<your-org>/gpy-sdk-ios.git`).
+- **Step 3**: Enter the repository URL of this SDK: `https://github.com/gopaycommunity/gpy-sdk-ios.git`.
 - **Step 4**: Choose a version rule (e.g. **Up to Next Major**).
 - **Step 5**: Select the **`GopaySDK`** library product and add it to your app target.
 
@@ -55,6 +55,27 @@ Then import the module in your code:
 
 ```swift
 import GopaySDK
+```
+
+### CocoaPods
+
+The SDK is also available as a CocoaPod named `GopaySDK`.
+
+Add it to your `Podfile`:
+
+```ruby
+target 'YourApp' do
+  use_frameworks!
+
+  pod 'GopaySDK', '~> 1.2'
+end
+```
+
+Then install:
+
+```bash
+pod repo update
+pod install
 ```
 
 ---
@@ -342,3 +363,49 @@ open example.xcodeproj
 
 - **Issues / bugs**: Please open a GitHub issue in this repository with reproduction steps, logs, and SDK version.
 - **Feature requests**: Describe your use case and desired API; we’ll use this to iterate on the SDK.
+
+---
+
+## Maintainer Notes – Releasing New Versions
+
+This section is for developers maintaining the SDK.
+
+### Releasing a new Swift Package version
+
+- Bump the version in your Git tag (for example `0.0.1`, `1.0.0`, `1.1.0`).
+- Ensure `Package.swift` is correct and committed at the repo root.
+- Create and push a tag that matches the version you want to publish:
+
+```bash
+git tag 1.2.0
+git push origin 1.2.0
+```
+
+Xcode / Swift Package Manager will pick up the new version from the Git tag.
+
+### Releasing a new CocoaPods version
+
+1. Update `GopaySDK.podspec`:
+   - Set `spec.version` to the new version, for example `1.2.0`.
+   - Make sure `spec.source` points to this repository and uses the same tag:
+     ```ruby
+     spec.source = { :git => "https://github.com/gopaycommunity/gpy-sdk-ios.git", :tag => "#{spec.version}" }
+     ```
+2. Commit and tag the release:
+
+```bash
+git add GopaySDK.podspec
+git commit -m "Release 1.2.0"
+git tag 1.2.0
+git push origin main
+git push origin 1.2.0
+```
+
+3. Lint and publish via CocoaPods Trunk (from the repo root):
+
+```bash
+pod lib lint GopaySDK.podspec --allow-warnings
+pod trunk push GopaySDK.podspec --allow-warnings
+```
+
+After `pod trunk push` succeeds, the new `GopaySDK` version is available to integrating apps via CocoaPods.
