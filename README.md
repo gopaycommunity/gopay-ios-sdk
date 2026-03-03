@@ -5,6 +5,7 @@
 This repository contains the official **Gopay iOS SDK** and a simple example app.
 
 The SDK provides:
+
 - **Token-based authentication** against Gopay.
 - **Card data encryption** and **card tokenization** via Gopay APIs.
 - A secure **SwiftUI card form UI** (`GopayCardForm`) that keeps sensitive card data inside the SDK.
@@ -15,9 +16,9 @@ The public library product is named **`GopaySDK`** and targets **iOS 13+**.
 
 ## Requirements
 
-- **iOS**: 13.0 or later  
-- **Swift**: 5.0 or later  
-- **Xcode**: 13 or later  
+- **iOS**: 13.0 or later
+- **Swift**: 5.0 or later
+- **Xcode**: 13 or later
 
 ---
 
@@ -38,7 +39,7 @@ If you manage dependencies in `Package.swift`, add the SDK as a dependency:
 ```swift
 // In your Package.swift
 dependencies: [
-    .package(url: "https://github.com/<your-org>/gpy-sdk-ios.git", from: "1.0.0")
+    .package(url: "https://github.com/gopaycommunity/gpy-sdk-ios.git", from: "1.0.0")
 ],
 targets: [
     .target(
@@ -184,53 +185,6 @@ The SDK validates that the access token is not already expired before accepting 
 
 ---
 
-#### Fetch encryption key – `getPublicKey(completion:)`
-
-**Purpose**: Retrieve the public JWK used to encrypt card data.
-
-```swift
-GopaySDK.shared.getPublicKey { result in
-    switch result {
-    case .success(let jwk):
-        // jwk: GopayJWK – JWK structure for encryption
-        print("Received JWK:", jwk)
-    case .failure(let error):
-        print("Failed to fetch public key:", error)
-    }
-}
-```
-
-The SDK validates token expiry before requesting the key.
-
----
-
-#### Direct card tokenization – `createCardToken(...)`
-
-**Purpose**: Encrypt raw card data and create a card token using the Gopay API.
-
-```swift
-GopaySDK.shared.createCardToken(
-    cardPan: "4111111111111111",
-    expMonth: "12",
-    expYear: "30",
-    cvv: "123",
-    permanent: true
-) { result in
-    switch result {
-    case .success(let tokenResponse):
-        // tokenResponse: GopayCreateCardTokenResponse
-        print("Card token: \(tokenResponse.cardToken)")
-    case .failure(let error):
-        print("Failed to create card token:", error)
-    }
-}
-```
-
-Use this API only if you are allowed to handle raw card details in your app.  
-For a more secure flow where card data stays inside the SDK, use `GopayCardForm` + `submitCardForm`.
-
----
-
 #### Submit card form (single / latest form) – `submitCardForm(permanent:completion:)`
 
 **Purpose**: Create a card token using card data entered into `GopayCardForm`, without exposing PAN/CVV to your code.
@@ -327,6 +281,7 @@ struct PaymentView: View {
 ```
 
 The form:
+
 - Manages card data internally.
 - Syncs data securely to `GopaySDK`.
 - Allows you to react to validation state via the optional `isValid` binding.
@@ -385,5 +340,5 @@ open example.xcodeproj
 
 ## Support & Contributions
 
-- **Issues / bugs**: Please open a GitHub issue in this repository with reproduction steps, logs, and SDK version.  
+- **Issues / bugs**: Please open a GitHub issue in this repository with reproduction steps, logs, and SDK version.
 - **Feature requests**: Describe your use case and desired API; we’ll use this to iterate on the SDK.

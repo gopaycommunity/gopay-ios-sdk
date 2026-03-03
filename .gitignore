@@ -8,6 +8,7 @@ node_modules/
 dist/
 .cursor/
 .cursor/rules/
+.swiftpm/
 # Compiled Java class files
 *.class
 
