@@ -1,3 +1,10 @@
+# [1.3.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.2.0...1.3.0) (2026-03-03)
+
+
+### Features
+
+* add cocopods config and readme docs GPMOB-116 ([3fca483](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/3fca483a85115b61af9c0b83744d855d8ae00024))
+
 # [1.2.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.1.0...1.2.0) (2026-03-03)
 
 
