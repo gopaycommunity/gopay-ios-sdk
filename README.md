@@ -28,7 +28,7 @@ The public library product is named **`GopaySDK`** and targets **iOS 13+**.
 
 - **Step 1**: In Xcode, open your app project.
 - **Step 2**: Go to **File → Add Packages…**.
-- **Step 3**: Enter the repository URL of this SDK: `https://github.com/gopaycommunity/gpy-sdk-ios.git`.
+- **Step 3**: Enter the repository URL of this SDK: `https://github.com/gopaycommunity/gopay-ios-sdk.git`.
 - **Step 4**: Choose a version rule (e.g. **Up to Next Major**).
 - **Step 5**: Select the **`GopaySDK`** library product and add it to your app target.
 
@@ -39,7 +39,7 @@ If you manage dependencies in `Package.swift`, add the SDK as a dependency:
 ```swift
 // In your Package.swift
 dependencies: [
-    .package(url: "https://github.com/gopaycommunity/gpy-sdk-ios.git", from: "1.0.0")
+    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "1.0.0")
 ],
 targets: [
     .target(
@@ -389,7 +389,7 @@ Xcode / Swift Package Manager will pick up the new version from the Git tag.
    - Set `spec.version` to the new version, for example `1.2.0`.
    - Make sure `spec.source` points to this repository and uses the same tag:
      ```ruby
-     spec.source = { :git => "https://github.com/gopaycommunity/gpy-sdk-ios.git", :tag => "#{spec.version}" }
+     spec.source = { :git => "https://github.com/gopaycommunity/gopay-ios-sdk.git", :tag => "#{spec.version}" }
      ```
 2. Commit and tag the release:
 
