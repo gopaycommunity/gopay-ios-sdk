@@ -206,6 +206,56 @@ The SDK validates that the access token is not already expired before accepting 
 
 ---
 
+#### Create payment – `createPayment(goid:request:completion:)`
+
+**Purpose**: Create a new payment session via `POST /eshops/{goid}/payments`.
+
+```swift
+let request = GopayCreatePaymentRequest(
+    amount: 10000, // cents
+    currency: .czk,
+    orderNumber: "2025010199",
+    orderDescription: "Order #2025010199",
+    additionalParams: [
+        GopayAdditionalParam(name: "source", value: "ios-app")
+    ],
+    customer: GopayPaymentCustomer(
+        email: "john.doe@example.com",
+        firstName: "John",
+        lastName: "Doe",
+        phoneNumber: "+420123456789",
+        city: "Prague",
+        street: "Example street 10",
+        postalCode: "10000",
+        countryCode: "CZE",
+        customerId: "customer420"
+    ),
+    callback: GopayPaymentCallback(
+        notificationURL: "https://example.com/notify",
+        returnURL: "https://example.com/return"
+    )
+)
+
+GopaySDK.shared.createPayment(goid: "<your-goid>", request: request) { result in
+    switch result {
+    case .success(let response):
+        print("Payment ID:", response.id)
+        print("State:", response.state.rawValue)
+        print("Gateway URL:", response.gatewayURL)
+    case .failure(let error):
+        print("Create payment failed:", error)
+    }
+}
+```
+
+Notes:
+
+- You must authenticate first and have an unexpired access token.
+- Token scope must include `payment:create`.
+- `goid` is your e-shop identifier used in the API path.
+
+---
+
 #### Submit card form (single / latest form) – `submitCardForm(permanent:completion:)`
 
 **Purpose**: Create a card token using card data entered into `GopayCardForm`, without exposing PAN/CVV to your code.

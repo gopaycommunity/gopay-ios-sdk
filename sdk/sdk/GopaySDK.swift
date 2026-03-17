@@ -77,6 +77,8 @@ public class GopaySDK {
     public private(set) var encryptionService: GopayEncryptionService?
     /// The card token service.
     public private(set) var cardTokenService: GopayCardTokenService?
+    /// The payment service.
+    public private(set) var paymentService: GopayPaymentService?
     /// The network client for making API requests.
     private var networkClient: NetworkClientProtocol?
     
@@ -96,6 +98,7 @@ public class GopaySDK {
         let encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
         self.encryptionService = encryptionService
         self.cardTokenService = GopayCardTokenService(networkClient: client, keychainStorage: keychainStorage, encryptionService: encryptionService)
+        self.paymentService = GopayPaymentService(networkClient: client, keychainStorage: keychainStorage)
     }
     
     /// Handles an error using the configured error callback and debug logging.
@@ -212,6 +215,34 @@ public class GopaySDK {
             }
         }
     }
+
+    /// Creates a payment for a specific e-shop (`goid`).
+    /// - Parameters:
+    ///   - goid: E-shop identifier.
+    ///   - request: Full payment creation request payload.
+    ///   - completion: Completion handler with created payment response or an error.
+    public func createPayment(
+        goid: String,
+        request: GopayCreatePaymentRequest,
+        completion: @escaping (Result<GopayCreatePaymentResponse, Error>) -> Void
+    ) {
+        guard let paymentService = self.paymentService else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+
+        paymentService.createPayment(goid: goid, requestBody: request) { result in
+            switch result {
+            case .success(let response):
+                completion(.success(response))
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
+        }
+    }
     
     /// Submits card form data to create a card token.
     ///
@@ -311,6 +342,7 @@ public class GopaySDK {
         let encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
         self.encryptionService = encryptionService
         self.cardTokenService = GopayCardTokenService(networkClient: client, keychainStorage: keychainStorage, encryptionService: encryptionService)
+        self.paymentService = GopayPaymentService(networkClient: client, keychainStorage: keychainStorage)
         self.keychainStorage = keychainStorage
     }
 }

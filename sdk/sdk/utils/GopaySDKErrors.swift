@@ -26,6 +26,9 @@ public enum GopaySDKErrors {
     
     /// Error domain for card token service errors.
     public static let cardTokenServiceDomain = "GopayCardTokenService"
+
+    /// Error domain for payment service errors.
+    public static let paymentServiceDomain = "GopayPaymentService"
     
     /// Error domain for JWE encryption errors.
     public static let jweDomain = "GopayJWE"
@@ -75,6 +78,9 @@ public enum GopaySDKErrors {
     
     /// SDK not initialized or cardTokenService unavailable.
     public static let sdkNotInitializedCardTokenService = "SDK not initialized or cardTokenService unavailable."
+
+    /// SDK not initialized or paymentService unavailable.
+    public static let sdkNotInitializedPaymentService = "SDK not initialized or paymentService unavailable."
     
     /// Card token creation failed.
     public static let cardTokenCreationFailed = "Card token creation failed."
@@ -87,6 +93,9 @@ public enum GopaySDKErrors {
     
     /// Invalid URL for card token endpoint.
     public static let invalidCardTokenURL = "Invalid URL for card token endpoint."
+
+    /// Invalid URL for payment endpoint.
+    public static let invalidPaymentURL = "Invalid URL for payment endpoint."
     
     /// JWE encryption failed.
     public static let jweEncryptionFailed = "JWE encryption failed."
@@ -209,6 +218,17 @@ public enum GopaySDKErrors {
     public static func cardTokenServiceError(_ message: String) -> NSError {
         return NSError(
             domain: cardTokenServiceDomain,
+            code: genericErrorCode,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+
+    /// Creates a payment service error with the given message.
+    /// - Parameter message: The error message.
+    /// - Returns: An NSError with the payment service domain and generic error code.
+    public static func paymentServiceError(_ message: String) -> NSError {
+        return NSError(
+            domain: paymentServiceDomain,
             code: genericErrorCode,
             userInfo: [NSLocalizedDescriptionKey: message]
         )

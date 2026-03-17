@@ -137,6 +137,54 @@ struct sdkTests {
         }
     }
 
+    private func makeCreatePaymentRequest() -> GopayCreatePaymentRequest {
+        return GopayCreatePaymentRequest(
+            amount: 10000,
+            currency: .czk,
+            orderNumber: "2025010199",
+            orderDescription: "Test order",
+            additionalParams: [GopayAdditionalParam(name: "source", value: "sdk-tests")],
+            customer: GopayPaymentCustomer(
+                email: "john.doe@example.com",
+                firstName: "John",
+                lastName: "Doe",
+                phoneNumber: "+420123456789",
+                city: "Prague",
+                street: "Example street 10",
+                postalCode: "10000",
+                countryCode: "CZE",
+                customerId: "customer420"
+            ),
+            callback: GopayPaymentCallback(
+                notificationURL: "https://example.com/notify",
+                returnURL: "https://example.com/return"
+            )
+        )
+    }
+
+    private func makeCreatePaymentResponseData() throws -> Data {
+        let json: [String: Any] = [
+            "id": "300000001",
+            "order_number": "2025010199",
+            "state": "CREATED",
+            "amount": 10000,
+            "currency": "CZK",
+            "customer": [
+                "email": "john.doe@example.com",
+                "first_name": "John",
+                "last_name": "Doe",
+                "phone_number": "+420123456789",
+                "city": "Prague",
+                "street": "Example street 10",
+                "postal_code": "10000",
+                "country_code": "CZE",
+                "customer_id": "customer420"
+            ],
+            "gw_url": "https://gw.sandbox.gopay.com/gw/v3/abc"
+        ]
+        return try JSONSerialization.data(withJSONObject: json)
+    }
+
     @Test func gopayAuthServiceAuthenticateSuccess() async throws {
         let mockClient = MockNetworkClient()
         let response = GopayAuthResponse(
@@ -522,6 +570,122 @@ struct sdkTests {
             #expect(Bool(false)) // Should not succeed
         case .failure(let error):
             #expect((error as NSError).domain == GopaySDKErrors.encryptionServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
+    @Test func gopayPaymentServiceCreatePaymentSuccess() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = try makeCreatePaymentResponseData()
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.createPayment(goid: "1234567890", requestBody: makeCreatePaymentRequest()) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let response):
+            #expect(response.id == "300000001")
+            #expect(response.orderNumber == "2025010199")
+            #expect(response.state == .created)
+            #expect(response.amount == 10000)
+            #expect(response.currency == .czk)
+            #expect(response.customer.email == "john.doe@example.com")
+            #expect(response.gatewayURL == "https://gw.sandbox.gopay.com/gw/v3/abc")
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func gopayPaymentServiceCreatePaymentNoToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        keychain.clearTokens()
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.createPayment(goid: "1234567890", requestBody: makeCreatePaymentRequest()) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
+    @Test func gopayPaymentServiceCreatePaymentExpiredToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now - 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.createPayment(goid: "1234567890", requestBody: makeCreatePaymentRequest()) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.accessTokenExpired)
+        }
+    }
+
+    @Test func gopaySDKCreatePaymentSuccess() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = try makeCreatePaymentResponseData()
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let config = GopaySDKConfig(environment: .sandbox)
+        let sdk = GopaySDK(config: config, networkClient: mockClient, keychainStorage: keychain)
+
+        let result = await withCheckedContinuation { continuation in
+            sdk.createPayment(goid: "1234567890", request: makeCreatePaymentRequest()) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let response):
+            #expect(response.id == "300000001")
+            #expect(response.state == .created)
+            #expect(response.gatewayURL == "https://gw.sandbox.gopay.com/gw/v3/abc")
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func gopaySDKCreatePaymentNotInitialized() async throws {
+        let sdk = GopaySDK()
+        let result = await withCheckedContinuation { continuation in
+            sdk.createPayment(goid: "1234567890", request: makeCreatePaymentRequest()) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
             #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
         }
     }
