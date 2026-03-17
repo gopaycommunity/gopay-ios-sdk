@@ -181,10 +181,10 @@ public class GopayPaymentService {
             return
         }
 
-        // if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
-        //     completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.accessTokenExpired)))
-        //     return
-        // }
+        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.accessTokenExpired)))
+            return
+        }
 
         let endpoint = "eshops/\(goid)/payments"
         guard let url = networkClient.makeURL(path: endpoint) else {

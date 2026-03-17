@@ -9,14 +9,19 @@ import SwiftUI
 import GopaySDK
 
 struct ContentView: View {
-    @State private var clientId: String = "1836340462"
-    @State private var clientSecret: String = "NUBTBzPH"
+    private let sdk = GopaySDK.shared
+    private let sdkConfig = GopaySDKConfig(environment: .development(baseURL: "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"))
+
+    @State private var clientId: String = "sdk"
+    @State private var clientSecret: String = "JcsUVzQw"
     @State private var scope: String = "payment:create payment:read card:read"
     @State private var responseText: String = ""
     @State private var isLoading: Bool = false
     @State private var isGettingPublicKey: Bool = false
     @State private var isCreatingCardToken: Bool = false
+    @State private var isCreatingPayment: Bool = false
     @State private var isSubmittingCardForm: Bool = false
+    @State private var isSDKInitialized: Bool = false
     
     // Form validation states (optional - for UI feedback)
     @State private var isDefaultFormValid: Bool? = nil
@@ -27,6 +32,7 @@ struct ContentView: View {
     private let expirationMonth = "12"
     private let expirationYear = "26"
     private let cvv = "123"
+    private let goid = "8761908826"
     
     // Custom theme - Distinct purple/indigo theme
     private let customTheme = GopayCardFormTheme(
@@ -239,6 +245,19 @@ struct ContentView: View {
                 .disabled(isLoading || isGettingPublicKey || isCreatingCardToken)
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+
+                Button(action: createPayment) {
+                    if isCreatingPayment {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Create Payment")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(isLoading || isGettingPublicKey || isCreatingCardToken || isCreatingPayment)
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Card Details:")
@@ -270,15 +289,22 @@ struct ContentView: View {
             }
             .padding()
         }
+        .onAppear {
+            initializeSDKIfNeeded()
+        }
+    }
+
+    private func initializeSDKIfNeeded() {
+        guard !isSDKInitialized else { return }
+        sdk.initialize(with: sdkConfig)
+        isSDKInitialized = true
     }
     
     private func authenticate() {
+        initializeSDKIfNeeded()
         isLoading = true
         responseText = ""
-        // Example: Use sandbox environment for testing
-        let config = GopaySDKConfig(environment: .sandbox)
-        GopaySDK.shared.initialize(with: config)
-        GopaySDK.shared.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
+        sdk.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
             Task { @MainActor in
                 isLoading = false
                 switch result {
@@ -292,13 +318,11 @@ struct ContentView: View {
     }
     
     private func getPublicKey() {
+        initializeSDKIfNeeded()
         isGettingPublicKey = true
         responseText = ""
-        // Ensure SDK is initialized
-        let config = GopaySDKConfig(environment: .sandbox)
-        GopaySDK.shared.initialize(with: config)
-        
-        GopaySDK.shared.getPublicKey { result in
+
+        sdk.getPublicKey { result in
             Task { @MainActor in
                 isGettingPublicKey = false
                 switch result {
@@ -320,13 +344,11 @@ struct ContentView: View {
     }
     
     private func createCardToken() {
+        initializeSDKIfNeeded()
         isCreatingCardToken = true
         responseText = ""
-        // Ensure SDK is initialized
-        let config = GopaySDKConfig(environment: .sandbox)
-        GopaySDK.shared.initialize(with: config)
-        
-        GopaySDK.shared.createCardToken(
+
+        sdk.createCardToken(
             cardPan: cardNumber,
             expMonth: expirationMonth,
             expYear: expirationYear,
@@ -350,17 +372,64 @@ struct ContentView: View {
             }
         }
     }
+
+    private func createPayment() {
+        initializeSDKIfNeeded()
+        isCreatingPayment = true
+        responseText = ""
+
+        let request = GopayCreatePaymentRequest(
+            amount: 10000,
+            currency: .czk,
+            orderNumber: "2025010199",
+            orderDescription: "SDK example payment",
+            additionalParams: [GopayAdditionalParam(name: "source", value: "ios-example-app")],
+            customer: GopayPaymentCustomer(
+                email: "john.doe@example.com",
+                firstName: "John",
+                lastName: "Doe",
+                phoneNumber: "+420123456789",
+                city: "Prague",
+                street: "Example street 10",
+                postalCode: "10000",
+                countryCode: "CZE",
+                customerId: "customer420"
+            ),
+            callback: GopayPaymentCallback(
+                notificationURL: "https://example.com/notify",
+                returnURL: "https://example.com/return"
+            )
+        )
+
+        sdk.createPayment(goid: goid, request: request) { result in
+            Task { @MainActor in
+                isCreatingPayment = false
+                switch result {
+                case .success(let paymentResponse):
+                    responseText = """
+                    Payment Created Successfully:
+                    ID: \(paymentResponse.id)
+                    State: \(paymentResponse.state.rawValue)
+                    Gateway URL: \(paymentResponse.gatewayURL)
+                    Order Number: \(paymentResponse.orderNumber)
+                    Amount: \(paymentResponse.amount) \(paymentResponse.currency.rawValue)
+                    Customer Email: \(paymentResponse.customer.email)
+                    """
+                case .failure(let error):
+                    responseText = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
     
     private func submitDefaultCardForm() {
+        initializeSDKIfNeeded()
         isSubmittingCardForm = true
         responseText = ""
-        // Ensure SDK is initialized
-        let config = GopaySDKConfig(environment: .sandbox)
-        GopaySDK.shared.initialize(with: config)
-        
+
         // Submit card form - data is automatically retrieved from the form
         // No need to pass card data explicitly, it's stored internally by the SDK
-        GopaySDK.shared.submitCardForm(permanent: false) { result in
+        sdk.submitCardForm(permanent: false) { result in
             Task { @MainActor in
                 isSubmittingCardForm = false
                 switch result {
@@ -383,15 +452,13 @@ struct ContentView: View {
     }
     
     private func submitCustomCardForm() {
+        initializeSDKIfNeeded()
         isSubmittingCardForm = true
         responseText = ""
-        // Ensure SDK is initialized
-        let config = GopaySDKConfig(environment: .sandbox)
-        GopaySDK.shared.initialize(with: config)
-        
+
         // Submit card form - demonstrates that button can be styled separately
         // The form data is automatically synced to the SDK, no need to pass it
-        GopaySDK.shared.submitCardForm(permanent: false) { result in
+        sdk.submitCardForm(permanent: false) { result in
             Task { @MainActor in
                 isSubmittingCardForm = false
                 switch result {
