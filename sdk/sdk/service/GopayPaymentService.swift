@@ -157,6 +157,127 @@ public struct GopayCreatePaymentResponse: Decodable {
     }
 }
 
+// MARK: - Charge Payment Models
+
+/// State of a charge operation.
+public enum GopayChargeState: String, Codable {
+    case requested = "REQUESTED"
+    case processing = "PROCESSING"
+    case actionRequired = "ACTION_REQUIRED"
+    case succeeded = "SUCCEEDED"
+    case failed = "FAILED"
+}
+
+/// 3DS challenge preference sent with a card token charge request.
+public enum GopayChallengPreference: String, Codable {
+    case challengePreferred = "CHALLENGE_PREFERRED"
+    case noChallengePreferred = "NO_CHALLENGE_PREFERRED"
+    case auto = "AUTO"
+}
+
+/// Type of verification action required after a charge.
+public enum GopayChargeActionType: String, Codable {
+    case emv3ds = "EMV3DS"
+    case psd2 = "PSD2"
+    case bankAccount = "BANK_ACCOUNT"
+}
+
+/// Verification action returned in the charge response.
+public struct GopayChargeAction: Decodable {
+    public let actionType: GopayChargeActionType
+    public let state: String
+    public let redirectURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case actionType = "action_type"
+        case state
+        case redirectURL = "redirect_url"
+    }
+}
+
+/// Details about the payment instrument in a charge response.
+public struct GopayChargePaymentInstrumentDetails: Decodable {
+    public let inputType: String?
+    public let maskedPan: String?
+    public let expirationMonth: String?
+    public let expirationYear: String?
+    public let scheme: String?
+    public let fingerprint: String?
+
+    enum CodingKeys: String, CodingKey {
+        case inputType = "input_type"
+        case maskedPan = "masked_pan"
+        case expirationMonth = "expiration_month"
+        case expirationYear = "expiration_year"
+        case scheme
+        case fingerprint
+    }
+}
+
+/// Payment instrument data returned in the charge response.
+public struct GopayChargePaymentInstrument: Decodable {
+    public let paymentInstrument: String
+    public let details: GopayChargePaymentInstrumentDetails?
+
+    enum CodingKeys: String, CodingKey {
+        case paymentInstrument = "payment_instrument"
+        case details
+    }
+}
+
+/// Response from the charge payment endpoint.
+public struct GopayChargePaymentResponse: Decodable {
+    public let id: String
+    public let state: GopayChargeState
+    public let paymentInstrument: GopayChargePaymentInstrument?
+    public let returnURL: String
+    public let action: GopayChargeAction?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case state
+        case paymentInstrument = "payment_instrument"
+        case returnURL = "return_url"
+        case action
+    }
+}
+
+// MARK: - Charge Payment Request (Internal)
+
+struct GopayChargeCardTokenInput: Encodable {
+    let inputType: String = "CARD_TOKEN"
+    let cardToken: String
+    let challengePreferrence: GopayChallengPreference?
+
+    enum CodingKeys: String, CodingKey {
+        case inputType = "input_type"
+        case cardToken = "card_token"
+        case challengePreferrence = "challenge_preferrence"
+    }
+}
+
+struct GopayChargePaymentCardData: Encodable {
+    let paymentInstrument: String = "PAYMENT_CARD"
+    let input: GopayChargeCardTokenInput
+
+    enum CodingKeys: String, CodingKey {
+        case paymentInstrument = "payment_instrument"
+        case input
+    }
+}
+
+struct GopayChargePaymentRequest: Encodable {
+    let paymentInstrument: GopayChargePaymentCardData
+    let returnURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case paymentInstrument = "payment_instrument"
+        case returnURL = "return_url"
+    }
+}
+
+// MARK: - Payment Service
+
 public class GopayPaymentService {
     private let networkClient: NetworkClientProtocol
     private let keychainStorage: KeychainStorageProtocol
@@ -210,6 +331,74 @@ public class GopayPaymentService {
             case .success(let data):
                 do {
                     let response = try JSONDecoder().decode(GopayCreatePaymentResponse.self, from: data)
+                    completion(.success(response))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Charges a payment using a card token.
+    /// - Parameters:
+    ///   - paymentId: The payment identifier to charge.
+    ///   - cardToken: The card token obtained from card tokenization.
+    ///   - challengePreference: Optional 3DS challenge preference.
+    ///   - returnURL: URL that the verification provider will redirect to upon completion.
+    ///   - completion: Completion handler with the charge response or an error.
+    public func chargePayment(
+        paymentId: String,
+        cardToken: String,
+        challengePreference: GopayChallengPreference?,
+        returnURL: String,
+        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
+    ) {
+        guard let accessToken = keychainStorage.getAccessToken() else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.noAccessToken)))
+            return
+        }
+
+        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.accessTokenExpired)))
+            return
+        }
+
+        let endpoint = "payments/\(paymentId)/charge"
+        guard let url = networkClient.makeURL(path: endpoint) else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.invalidChargeURL)))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let input = GopayChargeCardTokenInput(
+            cardToken: cardToken,
+            challengePreferrence: challengePreference
+        )
+        let instrumentData = GopayChargePaymentCardData(input: input)
+        let requestBody = GopayChargePaymentRequest(
+            paymentInstrument: instrumentData,
+            returnURL: returnURL
+        )
+
+        do {
+            request.httpBody = try JSONEncoder().encode(requestBody)
+        } catch {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.encodingErrorMessage)))
+            return
+        }
+
+        networkClient.sendRequest(request) { result in
+            switch result {
+            case .success(let data):
+                do {
+                    let response = try JSONDecoder().decode(GopayChargePaymentResponse.self, from: data)
                     completion(.success(response))
                 } catch {
                     completion(.failure(error))

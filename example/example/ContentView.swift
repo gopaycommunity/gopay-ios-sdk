@@ -14,14 +14,18 @@ struct ContentView: View {
 
     @State private var clientId: String = "sdk"
     @State private var clientSecret: String = "JcsUVzQw"
-    @State private var scope: String = "payment:create payment:read card:read"
+    @State private var scope: String = "payment:create payment:read card:read card:save"
     @State private var responseText: String = ""
     @State private var isLoading: Bool = false
     @State private var isGettingPublicKey: Bool = false
     @State private var isCreatingCardToken: Bool = false
     @State private var isCreatingPayment: Bool = false
+    @State private var isChargingPayment: Bool = false
     @State private var isSubmittingCardForm: Bool = false
     @State private var isSDKInitialized: Bool = false
+
+    @State private var lastPaymentId: String = ""
+    @State private var chargeCardToken: String = ""
     
     // Form validation states (optional - for UI feedback)
     @State private var isDefaultFormValid: Bool? = nil
@@ -258,7 +262,34 @@ struct ContentView: View {
                 .disabled(isLoading || isGettingPublicKey || isCreatingCardToken || isCreatingPayment)
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
-                
+
+                // Charge Payment Section
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Charge Payment")
+                        .font(.headline)
+                    TextField("Payment ID", text: $lastPaymentId)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(.body, design: .monospaced))
+                    TextField("Card Token (from tokenization)", text: $chargeCardToken)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(.caption, design: .monospaced))
+                    Button(action: chargePayment) {
+                        if isChargingPayment {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Charge Payment")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .disabled(isChargingPayment || lastPaymentId.isEmpty || chargeCardToken.isEmpty)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Card Details:")
                         .font(.headline)
@@ -406,6 +437,7 @@ struct ContentView: View {
                 isCreatingPayment = false
                 switch result {
                 case .success(let paymentResponse):
+                    lastPaymentId = paymentResponse.id
                     responseText = """
                     Payment Created Successfully:
                     ID: \(paymentResponse.id)
@@ -451,6 +483,47 @@ struct ContentView: View {
         }
     }
     
+    private func chargePayment() {
+        initializeSDKIfNeeded()
+        isChargingPayment = true
+        responseText = ""
+
+        sdk.chargePayment(
+            paymentId: lastPaymentId,
+            cardToken: chargeCardToken,
+            challengePreference: .auto
+        ) { result in
+            Task { @MainActor in
+                isChargingPayment = false
+                switch result {
+                case .success(let chargeResponse):
+                    var text = """
+                    Charge Response:
+                    ID: \(chargeResponse.id)
+                    State: \(chargeResponse.state.rawValue)
+                    Return URL: \(chargeResponse.returnURL)
+                    """
+                    if let instrument = chargeResponse.paymentInstrument {
+                        text += "\nInstrument: \(instrument.paymentInstrument)"
+                        if let details = instrument.details {
+                            text += "\nMasked PAN: \(details.maskedPan ?? "-")"
+                            text += "\nScheme: \(details.scheme ?? "-")"
+                        }
+                    }
+                    if let action = chargeResponse.action {
+                        text += "\nAction Type: \(action.actionType.rawValue)"
+                        text += "\nAction State: \(action.state)"
+                        text += "\nRedirect URL: \(action.redirectURL ?? "-")"
+                        text += "\n\n(3DS verification WebView was handled by SDK)"
+                    }
+                    responseText = text
+                case .failure(let error):
+                    responseText = "Charge Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     private func submitCustomCardForm() {
         initializeSDKIfNeeded()
         isSubmittingCardForm = true

@@ -96,6 +96,18 @@ public enum GopaySDKErrors {
 
     /// Invalid URL for payment endpoint.
     public static let invalidPaymentURL = "Invalid URL for payment endpoint."
+
+    /// Invalid URL for charge endpoint.
+    public static let invalidChargeURL = "Invalid URL for charge endpoint."
+
+    /// Payment verification was cancelled by the user.
+    public static let chargeVerificationCancelled = "Payment verification was cancelled by the user."
+
+    /// Payment verification failed.
+    public static let chargeVerificationFailed = "Payment verification failed."
+
+    /// Could not find a view controller to present verification.
+    public static let noPresentingViewController = "Could not find a view controller to present verification."
     
     /// JWE encryption failed.
     public static let jweEncryptionFailed = "JWE encryption failed."

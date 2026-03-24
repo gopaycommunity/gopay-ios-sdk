@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 /// The environment to use for the SDK.
 ///
@@ -65,6 +66,10 @@ public class GopaySDK {
     
     /// The shared instance of the SDK.
     public static let shared = GopaySDK()
+
+    /// Internal return URL used by the SDK for charge verification flows.
+    /// This URL is intercepted by the WebView and never actually loaded.
+    static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
     
     /// The keychain storage to use for the SDK.
     private var keychainStorage: KeychainStorageProtocol = KeychainStorage.shared
@@ -243,7 +248,138 @@ public class GopaySDK {
             }
         }
     }
-    
+
+    /// Charges a payment using a card token and handles 3DS / PSD2 verification
+    /// automatically when the server requires it.
+    ///
+    /// The SDK sends its own internal `return_url` to the API. If the charge
+    /// response contains an action with a `redirect_url`, the SDK presents a
+    /// WKWebView for the user to complete verification. Once the verification
+    /// provider redirects back to the SDK's return URL the WebView is dismissed
+    /// and the completion handler is called.
+    ///
+    /// - Note: After a successful 3DS verification the returned response will
+    ///   still reflect the initial charge state (typically `ACTION_REQUIRED`).
+    ///   Use a separate payment status query to confirm the final outcome.
+    ///
+    /// - Parameters:
+    ///   - paymentId: The payment identifier to charge.
+    ///   - cardToken: The card token obtained from card tokenization.
+    ///   - challengePreference: Optional 3DS challenge preference (default `nil`).
+    ///   - presentingViewController: The view controller used to present the
+    ///     verification WebView. If `nil`, the SDK will attempt to find the
+    ///     topmost view controller automatically.
+    ///   - completion: Completion handler with the charge response or an error.
+    public func chargePayment(
+        paymentId: String,
+        cardToken: String,
+        challengePreference: GopayChallengPreference? = nil,
+        presentingViewController: UIViewController? = nil,
+        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
+    ) {
+        guard let paymentService = self.paymentService else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+
+        paymentService.chargePayment(
+            paymentId: paymentId,
+            cardToken: cardToken,
+            challengePreference: challengePreference,
+            returnURL: GopaySDK.chargeReturnURL
+        ) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let response):
+                if let redirectURLString = response.action?.redirectURL,
+                   let redirectURL = URL(string: redirectURLString) {
+                    self.presentChargeVerification(
+                        redirectURL: redirectURL,
+                        presentingViewController: presentingViewController,
+                        chargeResponse: response,
+                        completion: completion
+                    )
+                } else {
+                    completion(.success(response))
+                }
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
+    // MARK: - Charge Verification (Private)
+
+    private func presentChargeVerification(
+        redirectURL: URL,
+        presentingViewController: UIViewController?,
+        chargeResponse: GopayChargePaymentResponse,
+        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            guard let presenter = presentingViewController ?? Self.topViewController() else {
+                let error = GopaySDKErrors.sdkError(GopaySDKErrors.noPresentingViewController)
+                self.handleError(error)
+                completion(.failure(error))
+                return
+            }
+
+            let verificationVC = GopayChargeVerificationViewController(
+                redirectURL: redirectURL,
+                returnURLString: GopaySDK.chargeReturnURL
+            ) { [weak self] result in
+                DispatchQueue.main.async {
+                    presenter.dismiss(animated: true) {
+                        switch result {
+                        case .completed:
+                            completion(.success(chargeResponse))
+                        case .cancelled:
+                            let error = GopaySDKErrors.sdkError(GopaySDKErrors.chargeVerificationCancelled)
+                            self?.handleError(error)
+                            completion(.failure(error))
+                        }
+                    }
+                }
+            }
+
+            presenter.present(verificationVC, animated: true)
+        }
+    }
+
+    private static func topViewController(
+        base: UIViewController? = nil
+    ) -> UIViewController? {
+        let root: UIViewController?
+        if let base = base {
+            root = base
+        } else if #available(iOS 13.0, *) {
+            root = UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first { $0.isKeyWindow }?
+                .rootViewController
+        } else {
+            root = UIApplication.shared.keyWindow?.rootViewController
+        }
+
+        if let nav = root as? UINavigationController {
+            return topViewController(base: nav.visibleViewController)
+        }
+        if let tab = root as? UITabBarController,
+           let selected = tab.selectedViewController {
+            return topViewController(base: selected)
+        }
+        if let presented = root?.presentedViewController {
+            return topViewController(base: presented)
+        }
+        return root
+    }
+
     /// Submits card form data to create a card token.
     ///
     /// This method uses the card form data that was automatically stored internally by `GopayCardForm`.
