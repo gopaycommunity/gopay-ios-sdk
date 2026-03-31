@@ -12,8 +12,8 @@ struct ContentView: View {
     private let sdk = GopaySDK.shared
     private let sdkConfig = GopaySDKConfig(environment: .development(baseURL: "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"))
 
-    @State private var clientId: String = "sdk"
-    @State private var clientSecret: String = "JcsUVzQw"
+    @State private var clientId: String = "SDK"
+    @State private var clientSecret: String = "mHkYWtKR"
     @State private var scope: String = "payment:create payment:read card:read card:save"
     @State private var responseText: String = ""
     @State private var isLoading: Bool = false
@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var isCreatingCardToken: Bool = false
     @State private var isCreatingPayment: Bool = false
     @State private var isGettingPayment: Bool = false
+    @State private var isGettingPaymentChargeState: Bool = false
     @State private var isChargingPayment: Bool = false
     @State private var isSubmittingCardForm: Bool = false
     @State private var isSDKInitialized: Bool = false
@@ -284,6 +285,27 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.mint)
 
+                Button(action: getPaymentChargeState) {
+                    if isGettingPaymentChargeState {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Get Payment Charge State")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(
+                    isLoading ||
+                    isGettingPublicKey ||
+                    isCreatingCardToken ||
+                    isCreatingPayment ||
+                    isGettingPayment ||
+                    isGettingPaymentChargeState ||
+                    lastPaymentId.isEmpty
+                )
+                .buttonStyle(.borderedProminent)
+                .tint(.cyan)
+
                 // Charge Payment Section
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Charge Payment")
@@ -531,6 +553,42 @@ struct ContentView: View {
                     responseText = text
                 case .failure(let error):
                     responseText = "Get Payment Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func getPaymentChargeState() {
+        initializeSDKIfNeeded()
+        isGettingPaymentChargeState = true
+        responseText = ""
+
+        sdk.getPaymentChargeState(paymentId: lastPaymentId) { result in
+            Task { @MainActor in
+                isGettingPaymentChargeState = false
+                switch result {
+                case .success(let chargeResponse):
+                    var text = """
+                    Payment Charge State:
+                    ID: \(chargeResponse.id)
+                    State: \(chargeResponse.state.rawValue)
+                    Return URL: \(chargeResponse.returnURL)
+                    """
+                    if let instrument = chargeResponse.paymentInstrument {
+                        text += "\nInstrument: \(instrument.paymentInstrument)"
+                        if let details = instrument.details {
+                            text += "\nMasked PAN: \(details.maskedPan ?? "-")"
+                            text += "\nScheme: \(details.scheme ?? "-")"
+                        }
+                    }
+                    if let action = chargeResponse.action {
+                        text += "\nAction Type: \(action.actionType.rawValue)"
+                        text += "\nAction State: \(action.state)"
+                        text += "\nRedirect URL: \(action.redirectURL ?? "-")"
+                    }
+                    responseText = text
+                case .failure(let error):
+                    responseText = "Get Payment Charge State Error: \(error.localizedDescription)"
                 }
             }
         }

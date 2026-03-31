@@ -299,6 +299,33 @@ Notes:
 
 ---
 
+#### Get payment charge state – `getPaymentChargeState(paymentId:completion:)`
+
+**Purpose**: Fetch the latest charge status via `GET /payments/{payment_id}/charge`.
+
+```swift
+GopaySDK.shared.getPaymentChargeState(paymentId: "<payment-id>") { result in
+    switch result {
+    case .success(let response):
+        print("Charge ID:", response.id)
+        print("Charge state:", response.state.rawValue)
+        if let action = response.action {
+            print("Action type:", action.actionType.rawValue)
+            print("Redirect URL:", action.redirectURL ?? "-")
+        }
+    case .failure(let error):
+        print("Get payment charge state failed:", error)
+    }
+}
+```
+
+Notes:
+
+- You must authenticate first and have an unexpired access token with `payment:read` scope.
+- Use this method after `chargePayment` when you want to query the charge-specific state directly.
+
+---
+
 #### Charge payment – `chargePayment(paymentId:cardToken:challengePreference:presentingViewController:completion:)`
 
 **Purpose**: Charge a payment using a card token. Calls `POST /payments/{payment_id}/charge`. If the server requires 3DS / PSD2 verification, the SDK automatically presents a WKWebView for the user to complete the challenge, then returns control to your completion handler.

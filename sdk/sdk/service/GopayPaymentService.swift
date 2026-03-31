@@ -415,6 +415,50 @@ public class GopayPaymentService {
         }
     }
 
+    /// Fetches payment charge state by payment ID.
+    /// - Parameters:
+    ///   - paymentId: The payment identifier.
+    ///   - completion: Completion handler with charge state response or an error.
+    public func getPaymentChargeState(
+        paymentId: String,
+        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
+    ) {
+        guard let accessToken = keychainStorage.getAccessToken() else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.noAccessToken)))
+            return
+        }
+
+        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.accessTokenExpired)))
+            return
+        }
+
+        let endpoint = "payments/\(paymentId)/charge"
+        guard let url = networkClient.makeURL(path: endpoint) else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.invalidChargeURL)))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        networkClient.sendRequest(request) { result in
+            switch result {
+            case .success(let data):
+                do {
+                    let response = try JSONDecoder().decode(GopayChargePaymentResponse.self, from: data)
+                    completion(.success(response))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+
     /// Charges a payment using a card token.
     /// - Parameters:
     ///   - paymentId: The payment identifier to charge.

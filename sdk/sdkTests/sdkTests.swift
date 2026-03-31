@@ -881,6 +881,165 @@ struct sdkTests {
         }
     }
 
+    @Test func paymentServiceGetPaymentChargeStateSuccess() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = try makeChargeResponseData(withAction: false)
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let response):
+            #expect(response.id == "chg_12345")
+            #expect(response.state == .succeeded)
+            #expect(response.action == nil)
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func paymentServiceGetPaymentChargeStateNoToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        keychain.clearTokens()
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentChargeStateExpiredToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now - 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.accessTokenExpired)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentChargeStateNetworkError() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.error = NSError(domain: "NetworkError", code: 500)
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == "NetworkError")
+            #expect((error as NSError).code == 500)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentChargeStateInvalidResponse() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = "not json".data(using: .utf8)
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure:
+            #expect(Bool(true))
+        }
+    }
+
+    @Test func gopaySDKGetPaymentChargeStateSuccess() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = try makeChargeResponseData(withAction: false)
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let config = GopaySDKConfig(environment: .sandbox)
+        let sdk = GopaySDK(config: config, networkClient: mockClient, keychainStorage: keychain)
+
+        let result = await withCheckedContinuation { continuation in
+            sdk.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let response):
+            #expect(response.id == "chg_12345")
+            #expect(response.state == .succeeded)
+            #expect(response.action == nil)
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func gopaySDKGetPaymentChargeStateNotInitialized() async throws {
+        let sdk = GopaySDK()
+        let result = await withCheckedContinuation { continuation in
+            sdk.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
     // MARK: - JWE Utils Tests
     
     /// Helper to base64URL encode data

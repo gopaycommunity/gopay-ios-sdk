@@ -275,6 +275,32 @@ public class GopaySDK {
         }
     }
 
+    /// Fetches payment charge state by payment ID.
+    /// - Parameters:
+    ///   - paymentId: The payment identifier to query.
+    ///   - completion: Completion handler with charge state response or an error.
+    public func getPaymentChargeState(
+        paymentId: String,
+        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
+    ) {
+        guard let paymentService = self.paymentService else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+
+        paymentService.getPaymentChargeState(paymentId: paymentId) { result in
+            switch result {
+            case .success(let response):
+                completion(.success(response))
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
     /// Charges a payment using a card token and handles 3DS / PSD2 verification
     /// automatically when the server requires it.
     ///
