@@ -157,6 +157,36 @@ public struct GopayCreatePaymentResponse: Decodable {
     }
 }
 
+/// Charge summary returned as part of payment status.
+public struct GopayPaymentStatusCharge: Decodable {
+    public let id: String
+    public let state: GopayChargeState
+    public let href: String
+}
+
+/// Response payload from payment status endpoint.
+public struct GopayPaymentStatusResponse: Decodable {
+    public let id: String
+    public let orderNumber: String
+    public let state: GopayPaymentState
+    public let amount: Int
+    public let currency: GopayPaymentCurrency
+    public let customer: GopayPaymentCustomer
+    public let gatewayURL: String
+    public let charge: GopayPaymentStatusCharge?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case orderNumber = "order_number"
+        case state
+        case amount
+        case currency
+        case customer
+        case gatewayURL = "gw_url"
+        case charge
+    }
+}
+
 // MARK: - Charge Payment Models
 
 /// State of a charge operation.
@@ -331,6 +361,50 @@ public class GopayPaymentService {
             case .success(let data):
                 do {
                     let response = try JSONDecoder().decode(GopayCreatePaymentResponse.self, from: data)
+                    completion(.success(response))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Fetches payment status by payment ID.
+    /// - Parameters:
+    ///   - paymentId: The payment identifier.
+    ///   - completion: Completion handler with payment status response or an error.
+    public func getPayment(
+        paymentId: String,
+        completion: @escaping (Result<GopayPaymentStatusResponse, Error>) -> Void
+    ) {
+        guard let accessToken = keychainStorage.getAccessToken() else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.noAccessToken)))
+            return
+        }
+
+        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.accessTokenExpired)))
+            return
+        }
+
+        let endpoint = "payments/\(paymentId)"
+        guard let url = networkClient.makeURL(path: endpoint) else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.invalidPaymentURL)))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        networkClient.sendRequest(request) { result in
+            switch result {
+            case .success(let data):
+                do {
+                    let response = try JSONDecoder().decode(GopayPaymentStatusResponse.self, from: data)
                     completion(.success(response))
                 } catch {
                     completion(.failure(error))

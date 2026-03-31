@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var isGettingPublicKey: Bool = false
     @State private var isCreatingCardToken: Bool = false
     @State private var isCreatingPayment: Bool = false
+    @State private var isGettingPayment: Bool = false
     @State private var isChargingPayment: Bool = false
     @State private var isSubmittingCardForm: Bool = false
     @State private var isSDKInitialized: Bool = false
@@ -263,6 +264,26 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
 
+                Button(action: getPaymentStatus) {
+                    if isGettingPayment {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Get Payment Status")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(
+                    isLoading ||
+                    isGettingPublicKey ||
+                    isCreatingCardToken ||
+                    isCreatingPayment ||
+                    isGettingPayment ||
+                    lastPaymentId.isEmpty
+                )
+                .buttonStyle(.borderedProminent)
+                .tint(.mint)
+
                 // Charge Payment Section
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Charge Payment")
@@ -478,6 +499,38 @@ struct ContentView: View {
                     """
                 case .failure(let error):
                     responseText = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func getPaymentStatus() {
+        initializeSDKIfNeeded()
+        isGettingPayment = true
+        responseText = ""
+
+        sdk.getPayment(paymentId: lastPaymentId) { result in
+            Task { @MainActor in
+                isGettingPayment = false
+                switch result {
+                case .success(let paymentResponse):
+                    var text = """
+                    Payment Status:
+                    ID: \(paymentResponse.id)
+                    State: \(paymentResponse.state.rawValue)
+                    Order Number: \(paymentResponse.orderNumber)
+                    Amount: \(paymentResponse.amount) \(paymentResponse.currency.rawValue)
+                    Gateway URL: \(paymentResponse.gatewayURL)
+                    Customer Email: \(paymentResponse.customer.email)
+                    """
+                    if let charge = paymentResponse.charge {
+                        text += "\nCharge ID: \(charge.id)"
+                        text += "\nCharge State: \(charge.state.rawValue)"
+                        text += "\nCharge Href: \(charge.href)"
+                    }
+                    responseText = text
+                case .failure(let error):
+                    responseText = "Get Payment Error: \(error.localizedDescription)"
                 }
             }
         }

@@ -9,6 +9,7 @@ The SDK provides:
 - **Token-based authentication** against Gopay.
 - **Card data encryption** and **card tokenization** via Gopay APIs.
 - A secure **SwiftUI card form UI** (`GopayCardForm`) that keeps sensitive card data inside the SDK.
+- **Payment charging** with automatic 3DS / PSD2 verification via an SDK-managed WebView.
 
 The public library product is named **`GopaySDK`** and targets **iOS 13+**.
 
@@ -253,6 +254,114 @@ Notes:
 - You must authenticate first and have an unexpired access token.
 - Token scope must include `payment:create`.
 - `goid` is your e-shop identifier used in the API path.
+
+---
+
+#### Get payment status – `getPayment(paymentId:completion:)`
+
+**Purpose**: Fetch the current payment status via `GET /payments/{payment_id}`.
+
+```swift
+GopaySDK.shared.getPayment(paymentId: "<payment-id>") { result in
+    switch result {
+    case .success(let response):
+        print("Payment ID:", response.id)
+        print("State:", response.state.rawValue)
+        print("Amount:", response.amount, response.currency.rawValue)
+        print("Gateway URL:", response.gatewayURL)
+        if let charge = response.charge {
+            print("Charge ID:", charge.id)
+            print("Charge state:", charge.state.rawValue)
+        }
+    case .failure(let error):
+        print("Get payment failed:", error)
+    }
+}
+```
+
+**Payment status response fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `String` | Payment identifier |
+| `orderNumber` | `String` | Merchant order number |
+| `state` | `GopayPaymentState` | Current payment state |
+| `amount` | `Int` | Amount in minor units (e.g. cents) |
+| `currency` | `GopayPaymentCurrency` | Payment currency |
+| `customer` | `GopayPaymentCustomer` | Customer details |
+| `gatewayURL` | `String` | GoPay gateway URL |
+| `charge` | `GopayPaymentStatusCharge?` | Latest charge summary, when available |
+
+Notes:
+
+- You must authenticate first and have an unexpired access token with `payment:read` scope.
+- Use this method after charging to confirm the final state (for example after a 3DS flow).
+
+---
+
+#### Charge payment – `chargePayment(paymentId:cardToken:challengePreference:presentingViewController:completion:)`
+
+**Purpose**: Charge a payment using a card token. Calls `POST /payments/{payment_id}/charge`. If the server requires 3DS / PSD2 verification, the SDK automatically presents a WKWebView for the user to complete the challenge, then returns control to your completion handler.
+
+The `return_url` sent to the API is managed entirely by the SDK — you do not need to provide or configure it.
+
+```swift
+GopaySDK.shared.chargePayment(
+    paymentId: "<payment-id>",      // from createPayment response
+    cardToken: "<card-token>",      // from createCardToken / submitCardForm
+    challengePreference: .auto      // optional: .auto, .challengePreferred, .noChallengePreferred
+) { result in
+    switch result {
+    case .success(let response):
+        print("Charge state:", response.state.rawValue)
+        // If 3DS was required, the WebView was shown and dismissed by the SDK.
+        // Poll for the final payment state if response.state == .actionRequired.
+    case .failure(let error):
+        print("Charge failed:", error.localizedDescription)
+    }
+}
+```
+
+You can also control which view controller presents the verification WebView:
+
+```swift
+GopaySDK.shared.chargePayment(
+    paymentId: "<payment-id>",
+    cardToken: "<card-token>",
+    challengePreference: .auto,
+    presentingViewController: self   // pass nil to auto-detect the top-most VC
+) { result in
+    // …
+}
+```
+**Charge response fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `String` | Charge identifier |
+| `state` | `GopayChargeState` | Current charge state |
+| `paymentInstrument` | `GopayChargePaymentInstrument?` | Details of the instrument used |
+| `returnURL` | `String` | The SDK's internal return URL (informational) |
+| `action` | `GopayChargeAction?` | Present if further action was required |
+
+**`GopayChargeState` values:**
+
+| Value | Meaning |
+|---|---|
+| `.requested` | Charge has been requested |
+| `.processing` | Charge is being processed |
+| `.actionRequired` | 3DS or other verification is required |
+| `.succeeded` | Charge was successful |
+| `.failed` | Charge failed |
+
+> **Note**: After a successful 3DS verification the response state will still reflect the state at the time of the initial charge call (typically `.actionRequired`). Poll the payment status using a separate endpoint to confirm the final charge outcome.
+
+Notes:
+
+- You must authenticate first and have an unexpired access token with `payment:create` scope.
+- `paymentId` is the `id` returned by `createPayment`.
+- `cardToken` is the token string returned by `createCardToken` or `submitCardForm`.
+- `WebKit` is loaded by the SDK only when a redirect action is present — no setup required in your app.
 
 ---
 
