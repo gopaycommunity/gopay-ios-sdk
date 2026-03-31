@@ -187,6 +187,100 @@ public struct GopayPaymentStatusResponse: Decodable {
     }
 }
 
+// MARK: - QR Payment Info Models
+
+/// Output format for QR payment info payloads.
+public enum GopayPaymentQRInfoFormat: String, Codable {
+    case png = "png"
+    case svg = "svg"
+}
+
+/// Local bank account details for QR payment recipient.
+public struct GopayPaymentQRRecipientLocalBankAccount: Decodable {
+    public let prefix: String
+    public let accountNumber: String
+    public let bankCode: String
+    public let variableSymbol: String
+
+    enum CodingKeys: String, CodingKey {
+        case prefix
+        case accountNumber = "account_number"
+        case bankCode = "bank_code"
+        case variableSymbol = "variable_symbol"
+    }
+}
+
+/// International bank account details for QR payment recipient.
+public struct GopayPaymentQRRecipientInternationalBankAccount: Decodable {
+    public let bic: String
+    public let iban: String
+    public let reference: String
+}
+
+/// Bank account details for QR payment recipient.
+public struct GopayPaymentQRRecipientBankAccount: Decodable {
+    public let local: GopayPaymentQRRecipientLocalBankAccount?
+    public let international: GopayPaymentQRRecipientInternationalBankAccount
+}
+
+/// Postal address details for QR payment recipient.
+public struct GopayPaymentQRRecipientAddress: Decodable {
+    public let street: String
+    public let city: String
+    public let zipCode: String
+    public let country: String
+
+    enum CodingKeys: String, CodingKey {
+        case street
+        case city
+        case zipCode = "zip_code"
+        case country
+    }
+}
+
+/// Recipient details for QR payment info response.
+public struct GopayPaymentQRRecipient: Decodable {
+    public let name: String
+    public let bankAccount: GopayPaymentQRRecipientBankAccount
+    public let address: GopayPaymentQRRecipientAddress?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case bankAccount = "bank_account"
+        case address
+    }
+}
+
+/// Encoded QR payload variants returned by the API.
+public struct GopayPaymentQRCodeInfo: Decodable {
+    public let spayd: String?
+    public let paybysquare: String?
+    public let sepa: String?
+    public let mnbQR: String?
+
+    enum CodingKeys: String, CodingKey {
+        case spayd
+        case paybysquare
+        case sepa
+        case mnbQR = "mnb_qr"
+    }
+}
+
+/// Response payload from the QR payment info endpoint.
+public struct GopayPaymentQRInfoResponse: Decodable {
+    public let amount: Int
+    public let currency: GopayPaymentCurrency
+    public let recipient: GopayPaymentQRRecipient
+    public let qrCode: GopayPaymentQRCodeInfo
+
+    enum CodingKeys: String, CodingKey {
+        case amount
+        case currency
+        case recipient
+        case qrCode = "qr_code"
+    }
+}
+
 // MARK: - Charge Payment Models
 
 /// State of a charge operation.
@@ -449,6 +543,52 @@ public class GopayPaymentService {
             case .success(let data):
                 do {
                     let response = try JSONDecoder().decode(GopayChargePaymentResponse.self, from: data)
+                    completion(.success(response))
+                } catch {
+                    completion(.failure(error))
+                }
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
+
+    /// Fetches QR payment info by payment ID.
+    /// - Parameters:
+    ///   - paymentId: The payment identifier.
+    ///   - format: Requested QR output format (`png` or `svg`).
+    ///   - completion: Completion handler with QR payment info response or an error.
+    public func getPaymentQRInfo(
+        paymentId: String,
+        format: GopayPaymentQRInfoFormat = .png,
+        completion: @escaping (Result<GopayPaymentQRInfoResponse, Error>) -> Void
+    ) {
+        guard let accessToken = keychainStorage.getAccessToken() else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.noAccessToken)))
+            return
+        }
+
+        if let isExpired = JwtUtils.isExpired(jwt: accessToken), isExpired {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.accessTokenExpired)))
+            return
+        }
+
+        let endpoint = "payments/\(paymentId)/qr-payment/info?format=\(format.rawValue)"
+        guard let url = networkClient.makeURL(path: endpoint) else {
+            completion(.failure(GopaySDKErrors.paymentServiceError(GopaySDKErrors.invalidQRPaymentInfoURL)))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        networkClient.sendRequest(request) { result in
+            switch result {
+            case .success(let data):
+                do {
+                    let response = try JSONDecoder().decode(GopayPaymentQRInfoResponse.self, from: data)
                     completion(.success(response))
                 } catch {
                     completion(.failure(error))

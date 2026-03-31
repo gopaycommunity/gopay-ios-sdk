@@ -326,6 +326,35 @@ Notes:
 
 ---
 
+#### Get payment QR info – `getPaymentQRInfo(paymentId:format:completion:)`
+
+**Purpose**: Fetch QR payment data via `GET /payments/{payment_id}/qr-payment/info`.
+
+```swift
+GopaySDK.shared.getPaymentQRInfo(
+    paymentId: "<payment-id>",
+    format: .png // optional, default is .png (.svg is also supported)
+) { result in
+    switch result {
+    case .success(let response):
+        print("Amount:", response.amount, response.currency.rawValue)
+        print("Recipient:", response.recipient.name)
+        print("IBAN:", response.recipient.bankAccount.international.iban)
+        print("SPAYD payload:", response.qrCode.spayd ?? "-")
+    case .failure(let error):
+        print("Get payment QR info failed:", error)
+    }
+}
+```
+
+Notes:
+
+- You must authenticate first and have an unexpired access token with `payment:read` scope.
+- `format` controls the QR payload variant returned by the API (`.png` or `.svg`).
+- `paymentId` is the payment identifier returned by `createPayment`.
+
+---
+
 #### Charge payment – `chargePayment(paymentId:cardToken:challengePreference:presentingViewController:completion:)`
 
 **Purpose**: Charge a payment using a card token. Calls `POST /payments/{payment_id}/charge`. If the server requires 3DS / PSD2 verification, the SDK automatically presents a WKWebView for the user to complete the challenge, then returns control to your completion handler.

@@ -211,6 +211,43 @@ struct sdkTests {
         return try JSONSerialization.data(withJSONObject: json)
     }
 
+    private func makePaymentQRInfoResponseData() throws -> Data {
+        let json: [String: Any] = [
+            "amount": 10000,
+            "currency": "CZK",
+            "recipient": [
+                "name": "Demo Merchant",
+                "bank_account": [
+                    "local": [
+                        "prefix": "19",
+                        "account_number": "123456789",
+                        "bank_code": "0800",
+                        "variable_symbol": "2025010199"
+                    ],
+                    "international": [
+                        "bic": "GIBACZPX",
+                        "iban": "CZ6508000000191234567899",
+                        "reference": "ORDER-2025010199"
+                    ]
+                ],
+                "address": [
+                    "street": "Example street 10",
+                    "city": "Prague",
+                    "zip_code": "10000",
+                    "country": "CZ"
+                ]
+            ],
+            "qr_code": [
+                "spayd": "U1BBWUQtREFUQQ==",
+                "paybysquare": "UEFZQllTUVVBUkUtREFUQQ==",
+                "sepa": "U0VQQS1EQVRB",
+                "mnb_qr": "TU5CLVFSLURBVEE="
+            ]
+        ]
+
+        return try JSONSerialization.data(withJSONObject: json)
+    }
+
     @Test func gopayAuthServiceAuthenticateSuccess() async throws {
         let mockClient = MockNetworkClient()
         let response = GopayAuthResponse(
@@ -1027,6 +1064,169 @@ struct sdkTests {
         let sdk = GopaySDK()
         let result = await withCheckedContinuation { continuation in
             sdk.getPaymentChargeState(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentQRInfoSuccess() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = try makePaymentQRInfoResponseData()
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentQRInfo(paymentId: "300000001", format: .png) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let response):
+            #expect(response.amount == 10000)
+            #expect(response.currency == .czk)
+            #expect(response.recipient.name == "Demo Merchant")
+            #expect(response.recipient.bankAccount.local?.bankCode == "0800")
+            #expect(response.recipient.bankAccount.international.iban == "CZ6508000000191234567899")
+            #expect(response.qrCode.spayd == "U1BBWUQtREFUQQ==")
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func paymentServiceGetPaymentQRInfoNoToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        keychain.clearTokens()
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentQRInfo(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.noAccessToken)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentQRInfoExpiredToken() async throws {
+        let mockClient = MockNetworkClient()
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now - 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentQRInfo(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == GopaySDKErrors.paymentServiceDomain)
+            #expect((error as NSError).userInfo[NSLocalizedDescriptionKey] as? String == GopaySDKErrors.accessTokenExpired)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentQRInfoNetworkError() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.error = NSError(domain: "NetworkError", code: 500)
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentQRInfo(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure(let error):
+            #expect((error as NSError).domain == "NetworkError")
+            #expect((error as NSError).code == 500)
+        }
+    }
+
+    @Test func paymentServiceGetPaymentQRInfoInvalidResponse() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = "not json".data(using: .utf8)
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let service = GopayPaymentService(networkClient: mockClient, keychainStorage: keychain)
+        let result = await withCheckedContinuation { continuation in
+            service.getPaymentQRInfo(paymentId: "300000001") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            #expect(Bool(false))
+        case .failure:
+            #expect(Bool(true))
+        }
+    }
+
+    @Test func gopaySDKGetPaymentQRInfoSuccess() async throws {
+        let mockClient = MockNetworkClient()
+        mockClient.responseData = try makePaymentQRInfoResponseData()
+
+        let keychain = MockKeychainStorage()
+        let now = Date().timeIntervalSince1970
+        keychain.storeAccessToken(makeJWT(exp: now + 3600))
+
+        let config = GopaySDKConfig(environment: .sandbox)
+        let sdk = GopaySDK(config: config, networkClient: mockClient, keychainStorage: keychain)
+
+        let result = await withCheckedContinuation { continuation in
+            sdk.getPaymentQRInfo(paymentId: "300000001", format: .svg) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success(let response):
+            #expect(response.amount == 10000)
+            #expect(response.currency == .czk)
+            #expect(response.recipient.name == "Demo Merchant")
+            #expect(response.qrCode.sepa == "U0VQQS1EQVRB")
+        case .failure:
+            #expect(Bool(false))
+        }
+    }
+
+    @Test func gopaySDKGetPaymentQRInfoNotInitialized() async throws {
+        let sdk = GopaySDK()
+        let result = await withCheckedContinuation { continuation in
+            sdk.getPaymentQRInfo(paymentId: "300000001") { result in
                 continuation.resume(returning: result)
             }
         }

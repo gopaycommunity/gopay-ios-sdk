@@ -301,6 +301,34 @@ public class GopaySDK {
         }
     }
 
+    /// Fetches QR payment info by payment ID.
+    /// - Parameters:
+    ///   - paymentId: The payment identifier to query.
+    ///   - format: QR info format (`png` or `svg`). Default is `png`.
+    ///   - completion: Completion handler with QR payment info response or an error.
+    public func getPaymentQRInfo(
+        paymentId: String,
+        format: GopayPaymentQRInfoFormat = .png,
+        completion: @escaping (Result<GopayPaymentQRInfoResponse, Error>) -> Void
+    ) {
+        guard let paymentService = self.paymentService else {
+            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
+            handleError(error)
+            completion(.failure(error))
+            return
+        }
+
+        paymentService.getPaymentQRInfo(paymentId: paymentId, format: format) { result in
+            switch result {
+            case .success(let response):
+                completion(.success(response))
+            case .failure(let error):
+                self.handleError(error)
+                completion(.failure(error))
+            }
+        }
+    }
+
     /// Charges a payment using a card token and handles 3DS / PSD2 verification
     /// automatically when the server requires it.
     ///

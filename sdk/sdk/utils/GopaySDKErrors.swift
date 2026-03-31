@@ -100,6 +100,9 @@ public enum GopaySDKErrors {
     /// Invalid URL for charge endpoint.
     public static let invalidChargeURL = "Invalid URL for charge endpoint."
 
+    /// Invalid URL for QR payment info endpoint.
+    public static let invalidQRPaymentInfoURL = "Invalid URL for QR payment info endpoint."
+
     /// Payment verification was cancelled by the user.
     public static let chargeVerificationCancelled = "Payment verification was cancelled by the user."
 

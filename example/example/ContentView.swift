@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var isCreatingPayment: Bool = false
     @State private var isGettingPayment: Bool = false
     @State private var isGettingPaymentChargeState: Bool = false
+    @State private var isGettingPaymentQRInfo: Bool = false
     @State private var isChargingPayment: Bool = false
     @State private var isSubmittingCardForm: Bool = false
     @State private var isSDKInitialized: Bool = false
@@ -306,6 +307,28 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.cyan)
 
+                Button(action: getPaymentQRInfo) {
+                    if isGettingPaymentQRInfo {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Text("Get Payment QR Info")
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .disabled(
+                    isLoading ||
+                    isGettingPublicKey ||
+                    isCreatingCardToken ||
+                    isCreatingPayment ||
+                    isGettingPayment ||
+                    isGettingPaymentChargeState ||
+                    isGettingPaymentQRInfo ||
+                    lastPaymentId.isEmpty
+                )
+                .buttonStyle(.borderedProminent)
+                .tint(.teal)
+
                 // Charge Payment Section
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Charge Payment")
@@ -589,6 +612,47 @@ struct ContentView: View {
                     responseText = text
                 case .failure(let error):
                     responseText = "Get Payment Charge State Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func getPaymentQRInfo() {
+        initializeSDKIfNeeded()
+        isGettingPaymentQRInfo = true
+        responseText = ""
+
+        sdk.getPaymentQRInfo(paymentId: lastPaymentId, format: .png) { result in
+            Task { @MainActor in
+                isGettingPaymentQRInfo = false
+                switch result {
+                case .success(let qrInfoResponse):
+                    var text = """
+                    Payment QR Info:
+                    Amount: \(qrInfoResponse.amount) \(qrInfoResponse.currency.rawValue)
+                    Recipient: \(qrInfoResponse.recipient.name)
+                    """
+
+                    if let localAccount = qrInfoResponse.recipient.bankAccount.local {
+                        text += "\nLocal Account: \(localAccount.prefix)-\(localAccount.accountNumber)/\(localAccount.bankCode)"
+                        text += "\nVariable Symbol: \(localAccount.variableSymbol)"
+                    }
+
+                    text += "\nIBAN: \(qrInfoResponse.recipient.bankAccount.international.iban)"
+                    text += "\nBIC: \(qrInfoResponse.recipient.bankAccount.international.bic)"
+
+                    if let address = qrInfoResponse.recipient.address {
+                        text += "\nAddress: \(address.street), \(address.city), \(address.zipCode), \(address.country)"
+                    }
+
+                    text += "\nSPAYD: \(qrInfoResponse.qrCode.spayd ?? "-")"
+                    text += "\nPAYBYSQUARE: \(qrInfoResponse.qrCode.paybysquare ?? "-")"
+                    text += "\nSEPA: \(qrInfoResponse.qrCode.sepa ?? "-")"
+                    text += "\nMNB QR: \(qrInfoResponse.qrCode.mnbQR ?? "-")"
+
+                    responseText = text
+                case .failure(let error):
+                    responseText = "Get Payment QR Info Error: \(error.localizedDescription)"
                 }
             }
         }
