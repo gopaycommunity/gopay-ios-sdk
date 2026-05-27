@@ -9,8 +9,8 @@ definitions:
               caches:
                   - cache
               script:
-                  - export REPO_URL=https://gopay-release-bot:$BITBUCKET_BOT_PUSH_TOKEN@bitbucket.org/$BITBUCKET_REPO_FULL_NAME.git
-                  - git remote set-url origin $REPO_URL
+                  - REPO_URL=https://gopay-release-bot:$BITBUCKET_BOT_PUSH_TOKEN@bitbucket.org/$BITBUCKET_REPO_FULL_NAME.git
+                  - git remote set-url origin "$REPO_URL"
                   - npx -p semantic-release -p @semantic-release/changelog -p @semantic-release/git semantic-release
         - step: &github-sync
               name: Sync to GitHub
