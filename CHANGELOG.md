@@ -1,3 +1,10 @@
+## [1.3.1](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.3.0...1.3.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* avoid exporting credentials and quote variable in release step GPOMA-2293 ([c6aefff](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/c6aefffd2d48733dfcf9b8af3cbb861b7a05f720))
+
 # [1.3.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.2.0...1.3.0) (2026-03-03)
 
 
