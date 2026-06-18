@@ -234,9 +234,9 @@ public class GopaySDK {
 
     // MARK: - Apple Pay availability
 
-    /// Default card networks used by ``canUseApplePay(networks:)`` when the caller doesn't pass its
-    /// own list. The authoritative list for a given payment always comes from the BE
-    /// (`/apple-pay/app-info`); this constant only exists for a cheap availability check before a
+    /// Default card networks a caller can use to build an Apple Pay request before a payment-scoped
+    /// config is available. The authoritative list for a given payment always comes from the BE
+    /// (`/apple-pay/app-info`); this constant only exists as a convenient default before a
     /// payment has been created.
     public static let defaultApplePayNetworks: [PKPaymentNetwork] = {
         var networks: [PKPaymentNetwork] = [.visa, .masterCard, .amex]
@@ -249,9 +249,7 @@ public class GopaySDK {
     /// Indicates whether this device can present an Apple Pay sheet. Checks device capability only;
     /// does NOT require a card to already be in the Wallet — the sheet will guide the user to add
     /// one if needed. Safe to call synchronously (e.g. from a SwiftUI view body).
-    public static func canUseApplePay(
-        networks: [PKPaymentNetwork] = GopaySDK.defaultApplePayNetworks
-    ) -> Bool {
+    public static func canUseApplePay() -> Bool {
         return PKPaymentAuthorizationController.canMakePayments()
     }
 

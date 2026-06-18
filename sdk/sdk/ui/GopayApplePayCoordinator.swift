@@ -192,7 +192,7 @@ final class GopayApplePayCoordinator: NSObject {
 extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
 
     func paymentAuthorizationController(
-        _ controller: PKPaymentAuthorizationController,
+        _: PKPaymentAuthorizationController,
         didAuthorizePayment payment: PKPayment,
         handler completion: @escaping (PKPaymentAuthorizationResult) -> Void
     ) {

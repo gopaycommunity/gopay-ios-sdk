@@ -194,27 +194,36 @@ public struct PaymentChargeInstrument: Encodable {
 /// Use the factories for the common card-token and Apple Pay flows.
 public struct ChargePaymentRequest: Encodable {
     public let paymentInstrument: PaymentChargeInstrument
+    /// URL the customer is redirected to after completing a payment action (e.g. 3DS / bank login).
+    /// Optional; when `nil` it is omitted from the request. For the managed verification flow pass
+    /// ``GopaySDK/chargeReturnURL`` so ``PaymentSession/handle3dsVerification(redirectURL:presenting:)``
+    /// can detect completion.
+    public let returnUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case paymentInstrument = "payment_instrument"
+        case returnUrl = "return_url"
     }
 
-    public init(paymentInstrument: PaymentChargeInstrument) {
+    public init(paymentInstrument: PaymentChargeInstrument, returnUrl: String? = nil) {
         self.paymentInstrument = paymentInstrument
+        self.returnUrl = returnUrl
     }
 
     /// Charge with a permanent card token.
     public static func cardToken(
         _ cardToken: String,
         browserData: BrowserData,
-        challengePreference: ChallengePreference? = nil
+        challengePreference: ChallengePreference? = nil,
+        returnUrl: String? = nil
     ) -> ChargePaymentRequest {
         ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: .cardToken(cardToken),
                 browserData: browserData,
                 challengePreference: challengePreference
-            )
+            ),
+            returnUrl: returnUrl
         )
     }
 
@@ -225,14 +234,16 @@ public struct ChargePaymentRequest: Encodable {
         version: String,
         header: ApplePayHeader,
         browserData: BrowserData,
-        challengePreference: ChallengePreference? = nil
+        challengePreference: ChallengePreference? = nil,
+        returnUrl: String? = nil
     ) -> ChargePaymentRequest {
         ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: .applePay(data: data, signature: signature, version: version, header: header),
                 browserData: browserData,
                 challengePreference: challengePreference
-            )
+            ),
+            returnUrl: returnUrl
         )
     }
 }

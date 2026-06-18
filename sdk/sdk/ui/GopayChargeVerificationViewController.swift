@@ -56,7 +56,7 @@ final class GopayChargeVerificationViewController: UIViewController {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    required init?(coder _: NSCoder) { fatalError() }
 
     // MARK: - Lifecycle
 
@@ -65,7 +65,6 @@ final class GopayChargeVerificationViewController: UIViewController {
         view.backgroundColor = .white
 
         setupNavigationBar()
-        setupWebView()
         setupActivityIndicator()
 
         activityIndicator.startAnimating()
@@ -102,8 +101,6 @@ final class GopayChargeVerificationViewController: UIViewController {
         ])
     }
 
-    private func setupWebView() {}
-
     private func setupActivityIndicator() {
         view.addSubview(activityIndicator)
         NSLayoutConstraint.activate([
@@ -124,7 +121,7 @@ final class GopayChargeVerificationViewController: UIViewController {
 extension GopayChargeVerificationViewController: WKNavigationDelegate {
 
     func webView(
-        _ webView: WKWebView,
+        _: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
@@ -137,15 +134,15 @@ extension GopayChargeVerificationViewController: WKNavigationDelegate {
         decisionHandler(.allow)
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    func webView(_: WKWebView, didFinish _: WKNavigation!) {
         activityIndicator.stopAnimating()
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
         activityIndicator.startAnimating()
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    func webView(_: WKWebView, didFail _: WKNavigation!, withError _: Error) {
         activityIndicator.stopAnimating()
     }
 }

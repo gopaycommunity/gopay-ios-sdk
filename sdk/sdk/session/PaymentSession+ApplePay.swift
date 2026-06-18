@@ -46,42 +46,74 @@ public extension PaymentSession {
     ) async throws -> ChargePaymentResponse {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ChargePaymentResponse, Error>) in
             Task { @MainActor in
-                if SheetGuards.applePayInProgress {
-                    continuation.resume(throwing: GopaySDKError(
-                        .paymentApplePayInProgress,
-                        message: "An Apple Pay payment is already in progress"
-                    ))
-                    return
-                }
-                SheetGuards.applePayInProgress = true
-
-                let coordinator = GopayApplePayCoordinator(
+                self.startApplePayFlow(
                     appInfo: appInfo,
-                    charge: { fields, done in
-                        Task {
-                            do {
-                                let response = try await self.charge(
-                                    .applePay(
-                                        data: fields.data,
-                                        signature: fields.signature,
-                                        version: fields.version,
-                                        header: fields.header,
-                                        browserData: browserData,
-                                        challengePreference: challengePreference
-                                    )
-                                )
-                                done(.success(response))
-                            } catch {
-                                done(.failure(error))
-                            }
-                        }
-                    },
-                    completion: { result in
-                        SheetGuards.applePayInProgress = false
-                        continuation.resume(with: result)
-                    }
+                    browserData: browserData,
+                    challengePreference: challengePreference,
+                    continuation: continuation
                 )
-                coordinator.start()
+            }
+        }
+    }
+
+    /// Builds and starts the Apple Pay coordinator on the main actor, resolving `continuation` with
+    /// the final outcome. Split out of ``presentApplePay`` to keep closure nesting shallow.
+    @MainActor
+    private func startApplePayFlow(
+        appInfo: GopayApplePayAppInfoResponse,
+        browserData: BrowserData,
+        challengePreference: ChallengePreference?,
+        continuation: CheckedContinuation<ChargePaymentResponse, Error>
+    ) {
+        if SheetGuards.applePayInProgress {
+            continuation.resume(throwing: GopaySDKError(
+                .paymentApplePayInProgress,
+                message: "An Apple Pay payment is already in progress"
+            ))
+            return
+        }
+        SheetGuards.applePayInProgress = true
+
+        let coordinator = GopayApplePayCoordinator(
+            appInfo: appInfo,
+            charge: { fields, done in
+                self.submitApplePayCharge(
+                    fields: fields,
+                    browserData: browserData,
+                    challengePreference: challengePreference,
+                    done: done
+                )
+            },
+            completion: { result in
+                SheetGuards.applePayInProgress = false
+                continuation.resume(with: result)
+            }
+        )
+        coordinator.start()
+    }
+
+    /// Submits the charge built from the Apple Pay token fields and relays the result to `done`.
+    nonisolated private func submitApplePayCharge(
+        fields: GopayApplePayCoordinator.TokenFields,
+        browserData: BrowserData,
+        challengePreference: ChallengePreference?,
+        done: @escaping (Result<ChargePaymentResponse, Error>) -> Void
+    ) {
+        Task {
+            do {
+                let response = try await self.charge(
+                    .applePay(
+                        data: fields.data,
+                        signature: fields.signature,
+                        version: fields.version,
+                        header: fields.header,
+                        browserData: browserData,
+                        challengePreference: challengePreference
+                    )
+                )
+                done(.success(response))
+            } catch {
+                done(.failure(error))
             }
         }
     }

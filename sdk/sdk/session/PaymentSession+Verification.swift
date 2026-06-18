@@ -19,38 +19,54 @@ public extension PaymentSession {
     func handle3dsVerification(redirectURL: URL, presenting: UIViewController? = nil) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
-                if SheetGuards.verificationInProgress {
-                    continuation.resume(throwing: GopaySDKError(
-                        .paymentVerificationInProgress,
-                        message: "A payment verification is already in progress"
-                    ))
-                    return
-                }
-                guard let presenter = presenting ?? gopayTopViewController() else {
-                    continuation.resume(throwing: GopaySDKError(
-                        .unexpected,
-                        message: "Could not find a view controller to present verification"
-                    ))
-                    return
-                }
-                SheetGuards.verificationInProgress = true
-
-                let verificationVC = GopayChargeVerificationViewController(
+                self.startVerificationFlow(
                     redirectURL: redirectURL,
-                    returnURLString: GopaySDK.chargeReturnURL
-                ) { result in
-                    presenter.dismiss(animated: true) {
-                        SheetGuards.verificationInProgress = false
-                        switch result {
-                        case .completed:
-                            continuation.resume(returning: ())
-                        case .cancelled:
-                            continuation.resume(throwing: CancellationError())
-                        }
-                    }
-                }
-                presenter.present(verificationVC, animated: true)
+                    presenting: presenting,
+                    continuation: continuation
+                )
             }
         }
+    }
+
+    /// Presents the verification WebView on the main actor and resolves `continuation` with the
+    /// outcome. Split out of ``handle3dsVerification(redirectURL:presenting:)`` to keep closure
+    /// nesting shallow.
+    @MainActor
+    private func startVerificationFlow(
+        redirectURL: URL,
+        presenting: UIViewController?,
+        continuation: CheckedContinuation<Void, Error>
+    ) {
+        if SheetGuards.verificationInProgress {
+            continuation.resume(throwing: GopaySDKError(
+                .paymentVerificationInProgress,
+                message: "A payment verification is already in progress"
+            ))
+            return
+        }
+        guard let presenter = presenting ?? gopayTopViewController() else {
+            continuation.resume(throwing: GopaySDKError(
+                .unexpected,
+                message: "Could not find a view controller to present verification"
+            ))
+            return
+        }
+        SheetGuards.verificationInProgress = true
+
+        let verificationVC = GopayChargeVerificationViewController(
+            redirectURL: redirectURL,
+            returnURLString: GopaySDK.chargeReturnURL
+        ) { result in
+            presenter.dismiss(animated: true) {
+                SheetGuards.verificationInProgress = false
+                switch result {
+                case .completed:
+                    continuation.resume(returning: ())
+                case .cancelled:
+                    continuation.resume(throwing: CancellationError())
+                }
+            }
+        }
+        presenter.present(verificationVC, animated: true)
     }
 }

@@ -22,15 +22,15 @@ private func makeJWT(exp: TimeInterval?) -> String {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
-    let h = base64url(try! JSONSerialization.data(withJSONObject: header))
-    let p = base64url(try! JSONSerialization.data(withJSONObject: payload))
+    let h = base64url((try? JSONSerialization.data(withJSONObject: header)) ?? Data())
+    let p = base64url((try? JSONSerialization.data(withJSONObject: payload)) ?? Data())
     return "\(h).\(p).sig"
 }
 
 private func validToken() -> String { makeJWT(exp: Date().timeIntervalSince1970 + 3600) }
 
 private func json(_ object: [String: Any]) -> Data {
-    try! JSONSerialization.data(withJSONObject: object)
+    (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
 }
 
 private let stubBaseURL = "https://stub.test/"
