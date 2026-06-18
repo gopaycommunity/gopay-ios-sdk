@@ -4,6 +4,28 @@
 ### Bug Fixes
 
 * avoid exporting credentials and quote variable in release step GPOMA-2293 ([c6aefff](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/c6aefffd2d48733dfcf9b8af3cbb861b7a05f720))
+# [2.0.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.3.0...2.0.0) (2026-06-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* Migrated to the Payments 4.0 per-payment session model. The global token surface is gone:
+  `authenticate`, `setAuthenticationResponse`, `createPayment`, `getPayment`,
+  `getPaymentChargeState`, `getPaymentQRInfo`, `chargePayment`, `createCardToken`, the
+  token-returning `submitCardForm`, and Keychain token storage have all been removed. Use
+  `GopaySDK.shared.startPaymentSession(paymentId:paymentSecret:)` and the returned
+  `PaymentSession`. The public API is now async/await.
+
+
+### Features
+
+* per-payment `PaymentSession` with `payment_credentials` auth, in-memory tokens, single-flight
+  re-auth and one-retry-on-401 GPMOB-133
+* `shareable_key` basic auth for `GET /cards/public-key`; in-memory `PublicKeyCache` GPMOB-133
+* `encryptCardData` / `submitCardForm` now return a JWE for server-side tokenization GPMOB-133
+* Apple Pay and 3DS verification moved onto `PaymentSession`
+  (`chargeWithApplePay`, `handle3dsVerification`) GPMOB-133
+* structured `GopaySDKError` with stable error codes GPMOB-133
 
 # [1.3.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.2.0...1.3.0) (2026-03-03)
 

@@ -5,12 +5,15 @@ import CryptoKit
 
 /// Utility for JWE (JSON Web Encryption) operations following RFC 7516.
 public struct JweUtils {
+    /// How long the encrypted card payload stays valid. Short by design — tokenize right away.
+    private static let payloadValiditySeconds: TimeInterval = 600
     /// Creates a JWE string by encrypting card data using the provided JWK.
     /// - Parameters:
     ///   - cardData: The card data to encrypt.
+    ///   - clientId: The merchant `client_id`, required inside the encrypted payload by the backend.
     ///   - jwk: The JSON Web Key for encryption.
     /// - Returns: A Result containing the JWE string or an error.
-    public static func createJWE(cardData: GopayCardData, jwk: GopayJWK) -> Result<String, Error> {
+    public static func createJWE(cardData: GopayCardData, clientId: String, jwk: GopayJWK) -> Result<String, Error> {
         // Step 1: Create JWE header first (needed for AAD)
         let header: [String: String] = [
             "alg": jwk.alg,
@@ -45,12 +48,20 @@ public struct JweUtils {
             return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweIVGenerationFailed))
         }
         
-        // Step 4: Encrypt card data JSON with AES-256-GCM using CEK, IV, and header as AAD
-        let cardDataJSON: [String: String] = [
+        // Step 4: Encrypt card data JSON with AES-256-GCM using CEK, IV, and header as AAD.
+        // The backend requires JWT-style replay-protection claims on the encrypted payload:
+        // `iat` (issued-at) and `exp` (expiry) in Unix seconds — the payload's own validity window,
+        // distinct from the card's `exp_month`/`exp_year` — plus a unique `jti` (JWT ID).
+        let issuedAt = Int(Date().timeIntervalSince1970)
+        let cardDataJSON: [String: Any] = [
             "card_pan": cardData.cardPan,
             "exp_month": cardData.expMonth,
             "exp_year": cardData.expYear,
-            "cvv": cardData.cvv
+            "cvv": cardData.cvv,
+            "client_id": clientId,
+            "iat": issuedAt,
+            "exp": issuedAt + Int(payloadValiditySeconds),
+            "jti": "ios-\(UUID().uuidString)"
         ]
         
         // Use compact JSON serialization (no whitespace)

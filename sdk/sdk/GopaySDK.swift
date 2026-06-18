@@ -1,564 +1,273 @@
 import Foundation
-import SwiftUI
-import UIKit
+import PassKit
 
-/// The environment to use for the SDK.
+/// Main entry point for the GoPay SDK.
 ///
-/// - Note: Each case represents a different backend environment.
-public enum GopayEnvironment: Equatable {
-    /// The development environment with a custom base URL.
-    case development(baseURL: String)
-    /// The sandbox environment.
-    case sandbox
-    /// The production environment.
-    case production
-
-    private static let sandboxBaseURL = "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
-
-    /// The base URL for the selected environment.
-    var baseURL: String {
-        switch self {
-        case .development(let url): return url
-        case .sandbox: return Self.sandboxBaseURL
-        case .production: return ""
-        }
-    }
-}
-
-/// Configuration for the Gopay SDK.
+/// Usage:
+/// 1. `GopaySDK.shared.initialize(with: GopaySDKConfig(environment:, clientId:, shareableKey:))`
+///    once on app start.
+/// 2. The merchant backend creates a payment and returns `payment_id` + `payment_secret` to the
+///    device.
+/// 3. `try await GopaySDK.shared.startPaymentSession(paymentId:, paymentSecret:)` — returns a
+///    ``PaymentSession`` scoped to that single payment.
+/// 4. All charge / status / Apple Pay / 3DS operations run through `session.*`. Multiple sessions
+///    can run concurrently — they're keyed by `payment_id` and never share credentials.
+/// 5. `await session.close()` when done; the `payment_secret` and JWT are wiped from memory.
 ///
-/// Use this struct to configure the SDK before initialization.
-public struct GopaySDKConfig {
-    /// The environment to use for the SDK.
-    public let environment: GopayEnvironment
-    /// Whether to enable debug logging.
-    public let enableDebugLogging: Bool
-    /// The callback to use for errors.
-    public let errorCallback: ((Error) -> Void)?
-    
-    /// Creates a new configuration for the Gopay SDK.
-    /// - Parameters:
-    ///   - environment: The environment to use.
-    ///   - enableDebugLogging: Enable debug logging (default: `false`).
-    ///   - errorCallback: Callback for error handling (default: `nil`).
-    public init(
-        environment: GopayEnvironment,
-        enableDebugLogging: Bool = false,
-        errorCallback: ((Error) -> Void)? = nil
-    ) {
-        self.environment = environment
-        self.enableDebugLogging = enableDebugLogging
-        self.errorCallback = errorCallback
-    }
-}
-
-/// The main class for the Gopay SDK.
-///
-/// Use the shared instance to interact with the SDK.
+/// Card collection: ``encryptCardData(_:)`` (or ``submitCardForm(formId:)`` with a
+/// `GopayCardForm`) returns a JWE that the host app forwards to its backend; the merchant backend
+/// calls `POST /cards/tokens`. The mobile SDK never touches that endpoint.
 public class GopaySDK {
-    /// The current version of the SDK.
-    /// This version is automatically read from the bundle's Info.plist,
-    /// which is populated from the Xcode project's MARKETING_VERSION setting.
+
+    /// The current version of the SDK, read from the bundle's Info.plist (`MARKETING_VERSION`).
     public static var version: String {
         let bundle = Bundle(for: GopaySDK.self)
         return bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
     }
-    
+
     /// The shared instance of the SDK.
     public static let shared = GopaySDK()
 
-    /// Internal return URL used by the SDK for charge verification flows.
-    /// This URL is intercepted by the WebView and never actually loaded.
-    static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
-    
-    /// The keychain storage to use for the SDK.
-    private var keychainStorage: KeychainStorageProtocol = KeychainStorage.shared
+    /// Return URL the SDK uses for charge verification flows. The 3DS WebView intercepts it and
+    /// never actually loads it. Pass it as the `returnUrl` on a manual ``ChargePaymentRequest`` so
+    /// ``PaymentSession/handle3dsVerification(redirectURL:presenting:)`` can detect completion.
+    public static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
 
     /// The current configuration for the SDK.
     public private(set) var config: GopaySDKConfig?
-    /// The authentication service.
-    public private(set) var authService: GopayAuthService?
-    /// The encryption service.
-    public private(set) var encryptionService: GopayEncryptionService?
-    /// The card token service.
-    public private(set) var cardTokenService: GopayCardTokenService?
-    /// The payment service.
-    public private(set) var paymentService: GopayPaymentService?
-    /// The network client for making API requests.
-    private var networkClient: NetworkClientProtocol?
-    
+
+    /// Async HTTP client used by the per-payment session API layer.
+    private var asyncClient: AsyncHTTPClient?
+    /// Unauthenticated token endpoint used to acquire payment-scoped JWTs.
+    private var authAPI: AuthAPI?
+    /// In-memory cache of the merchant's encryption JWK.
+    private var publicKeyCache: PublicKeyCache?
+    /// Registry of live payment sessions keyed by `payment_id`. Supports concurrent payments.
+    private let sessionRegistry = SessionRegistry()
+
     /// Internal storage for card form data keyed by form ID (never exposed to the user).
     private var internalCardFormData: [String: GopayCardFormData] = [:]
-    
     /// Tracks the most recently active form ID.
     private var mostRecentFormId: String?
-    
-    /// Initializes the SDK with the given configuration.
+
+    /// Initializes the SDK with the given configuration. Call once before any other operation.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
         self.config = config
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
-        self.networkClient = client
-        self.authService = GopayAuthService(networkClient: client)
-        let encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
-        self.encryptionService = encryptionService
-        self.cardTokenService = GopayCardTokenService(networkClient: client, keychainStorage: keychainStorage, encryptionService: encryptionService)
-        self.paymentService = GopayPaymentService(networkClient: client, keychainStorage: keychainStorage)
+        self.asyncClient = client
+        self.authAPI = AuthAPI(client: client)
+        self.publicKeyCache = PublicKeyCache(
+            publicAPI: PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
+        )
     }
-    
-    /// Handles an error using the configured error callback and debug logging.
-    /// - Parameter error: The error to handle.
+
+    /// Internal/test initializer for dependency injection.
+    internal init(config: GopaySDKConfig? = nil, networkClient: AsyncHTTPClient? = nil) {
+        self.config = config
+        let environment = config?.environment ?? GopayEnvironment.sandbox
+        let client = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
+        self.asyncClient = client
+        self.authAPI = AuthAPI(client: client)
+        self.publicKeyCache = PublicKeyCache(
+            publicAPI: PublicAPI(client: client, clientId: config?.clientId, shareableKey: config?.shareableKey)
+        )
+    }
+
+    // MARK: - Payment sessions
+
+    /// Starts a payment-scoped session.
+    ///
+    /// Performs the `POST /oauth2/token` call with `grant_type=payment_credentials` and basic auth
+    /// `paymentId:paymentSecret` eagerly, so bad credentials surface at the start of the flow
+    /// rather than on the first API call. The resulting JWT is held in memory only — neither the
+    /// secret nor the token is persisted.
+    ///
+    /// Each `paymentId` may have at most one live session at a time; ``PaymentSession/close()`` it
+    /// before starting another for the same payment, or reuse an existing one via
+    /// ``getPaymentSession(_:)``.
+    ///
+    /// - Parameters:
+    ///   - paymentId: The payment identifier issued by the merchant backend.
+    ///   - paymentSecret: The matching `payment_secret`.
+    ///   - scope: OAuth scopes to request. Defaults to ``PaymentSession/defaultScope``
+    ///     (`payment:charge payment:read`). Override only when a wider scope is needed.
+    public func startPaymentSession(
+        paymentId: String,
+        paymentSecret: String,
+        scope: String = PaymentSession.defaultScope
+    ) async throws -> PaymentSession {
+        guard !paymentId.isEmpty else {
+            throw GopaySDKError(.validationInvalidInput, message: "paymentId must not be empty")
+        }
+        guard !paymentSecret.isEmpty else {
+            throw GopaySDKError(.validationInvalidInput, message: "paymentSecret must not be empty")
+        }
+        guard let authAPI = authAPI, let client = asyncClient else {
+            throw GopaySDKError(
+                .sdkNotInitialized,
+                message: "GopaySDK has not been initialized. Call initialize(with:) first."
+            )
+        }
+
+        let registry = sessionRegistry
+        let session = try await PaymentSession.create(
+            paymentId: paymentId,
+            paymentSecret: paymentSecret,
+            scope: scope,
+            authApi: authAPI,
+            client: client,
+            onClose: { session in await registry.remove(session) }
+        )
+        do {
+            try await registry.register(session)
+        } catch {
+            // Lost a race for this paymentId — wipe the just-created session and surface the error.
+            await session.close()
+            handleError(error)
+            throw error
+        }
+        return session
+    }
+
+    /// Looks up an in-progress ``PaymentSession`` by `payment_id`. Returns `nil` if none is
+    /// registered (never started, or already closed).
+    public func getPaymentSession(_ paymentId: String) async -> PaymentSession? {
+        await sessionRegistry.get(paymentId)
+    }
+
+    /// Closes and unregisters every live ``PaymentSession``, wiping in-memory secrets and tokens.
+    /// Intended for global teardown (e.g. the user signs out of the host app).
+    public func closeAllPaymentSessions() async {
+        for session in await sessionRegistry.all() {
+            await session.close()
+        }
+    }
+
+    // MARK: - Card encryption
+
+    /// Fetches the merchant's encryption JWK from `GET /cards/public-key` using the `shareable_key`
+    /// basic-auth scheme. Requires `clientId` and `shareableKey` on ``GopaySDKConfig``. The key is
+    /// cached in memory only.
+    /// - Parameter forceRefresh: Bypass the in-memory cache and fetch fresh.
+    public func getPublicEncryptionKey(forceRefresh: Bool = false) async throws -> GopayJWK {
+        guard let publicKeyCache = publicKeyCache else {
+            throw GopaySDKError(
+                .sdkNotInitialized,
+                message: "GopaySDK has not been initialized. Call initialize(with:) first."
+            )
+        }
+        do {
+            return try await publicKeyCache.get(forceRefresh: forceRefresh)
+        } catch {
+            handleError(error)
+            throw error
+        }
+    }
+
+    /// Encrypts card data into a JWE for server-side tokenization.
+    ///
+    /// The mobile SDK never calls `POST /cards/tokens` itself (that endpoint requires merchant
+    /// credentials). Instead, the host app forwards the returned JWE to its backend, which submits
+    /// it on the device's behalf. The public key is fetched via ``getPublicEncryptionKey(forceRefresh:)``
+    /// and cached in memory; card data is never persisted.
+    ///
+    /// - Returns: A JWE compact serialization (RFC 7516) ready to send to the merchant backend.
+    /// - Throws: ``GopaySDKError`` if `cardData` fails validation, the public key fetch fails, or
+    ///   encryption fails.
+    public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
+        try validateCardData(cardData)
+        let jwk = try await getPublicEncryptionKey()
+        guard let clientId = config?.clientId, !clientId.isEmpty else {
+            let error = GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopaySDKConfig to encrypt card data")
+            handleError(error)
+            throw error
+        }
+        switch JweUtils.createJWE(cardData: cardData, clientId: clientId, jwk: jwk) {
+        case .success(let jwe):
+            return jwe
+        case .failure(let error):
+            handleError(error)
+            throw error
+        }
+    }
+
+    /// Encrypts the card data currently held by a ``GopayCardForm`` into a JWE for server-side
+    /// tokenization. The sensitive PAN/CVV never leave the SDK — only the JWE is returned.
+    ///
+    /// - Parameter formId: The form to read. When `nil`, uses the most recently active form.
+    public func submitCardForm(formId: String? = nil) async throws -> String {
+        let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
+        guard let id = resolvedId, let data = internalCardFormData[id] else {
+            let error = GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.noCardFormData)
+            handleError(error)
+            throw error
+        }
+        guard data.isValid else {
+            let error = GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.invalidCardFormData)
+            handleError(error)
+            throw error
+        }
+        let cardData = GopayCardData(
+            cardPan: data.cardNumber,
+            expMonth: data.expirationMonth,
+            expYear: data.expirationYear,
+            cvv: data.cvv
+        )
+        return try await encryptCardData(cardData)
+    }
+
+    private func validateCardData(_ cardData: GopayCardData) throws {
+        func require(_ condition: Bool, _ message: String) throws {
+            guard condition else { throw GopaySDKError(.validationInvalidInput, message: message) }
+        }
+        func matches(_ value: String, _ pattern: String) -> Bool {
+            value.range(of: pattern, options: .regularExpression) != nil
+        }
+        try require(!cardData.cardPan.isEmpty, "Card PAN cannot be empty")
+        try require((13...19).contains(cardData.cardPan.count), "Card PAN must be 13-19 digits")
+        try require(cardData.cardPan.allSatisfy { $0.isNumber }, "Card PAN must contain only digits")
+        try require(matches(cardData.expMonth, "^(0[1-9]|1[0-2])$"), "Expiration month must be 01-12")
+        try require(matches(cardData.expYear, "^[0-9]{2,4}$"), "Expiration year must be 2-4 digits")
+        try require(matches(cardData.cvv, "^[0-9]{3,4}$"), "CVV must be 3-4 digits")
+    }
+
+    // MARK: - Apple Pay availability
+
+    /// Default card networks used by ``canUseApplePay(networks:)`` when the caller doesn't pass its
+    /// own list. The authoritative list for a given payment always comes from the BE
+    /// (`/apple-pay/app-info`); this constant only exists for a cheap availability check before a
+    /// payment has been created.
+    public static let defaultApplePayNetworks: [PKPaymentNetwork] = {
+        var networks: [PKPaymentNetwork] = [.visa, .masterCard, .amex]
+        if #available(iOS 12.0, *) {
+            networks.append(contentsOf: [.maestro, .electron, .vPay])
+        }
+        return networks
+    }()
+
+    /// Indicates whether this device can present an Apple Pay sheet. Checks device capability only;
+    /// does NOT require a card to already be in the Wallet — the sheet will guide the user to add
+    /// one if needed. Safe to call synchronously (e.g. from a SwiftUI view body).
+    public static func canUseApplePay(
+        networks: [PKPaymentNetwork] = GopaySDK.defaultApplePayNetworks
+    ) -> Bool {
+        return PKPaymentAuthorizationController.canMakePayments()
+    }
+
+    // MARK: - Internals
+
+    /// Internal method to update card form data (called automatically by ``GopayCardForm``).
+    internal func updateCardFormData(_ data: GopayCardFormData, formId: String) {
+        self.internalCardFormData[formId] = data
+        self.mostRecentFormId = formId
+    }
+
+    /// Routes an error through the configured error callback and debug logging.
     func handleError(_ error: Error) {
         config?.errorCallback?(error)
         if config?.enableDebugLogging == true {
             print("[GopaySDK] Error: \(error)")
         }
-    }
-    
-    /// Internal method to update card form data (called automatically by GopayCardForm).
-    /// - Parameters:
-    ///   - data: The card form data to store internally.
-    ///   - formId: The unique identifier for the form instance.
-    internal func updateCardFormData(_ data: GopayCardFormData, formId: String) {
-        self.internalCardFormData[formId] = data
-        self.mostRecentFormId = formId
-    }
-    
-    /// Authenticates using the configured auth service.
-    /// - Parameters:
-    ///   - clientId: The client ID.
-    ///   - clientSecret: The client secret.
-    ///   - scope: The requested scopes (space-separated).
-    ///   - completion: Completion handler with result.
-    public func authenticate(clientId: String, clientSecret: String, scope: String, completion: @escaping (Result<GopayAuthResponse, Error>) -> Void) {
-        guard let authService = self.authService else {
-            completion(.failure(GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedAuthService)))
-            return
-        }
-        authService.authenticate(clientId: clientId, clientSecret: clientSecret, scope: scope) { result in
-            switch result {
-            case .success(let response):
-                self.keychainStorage.storeAccessToken(response.accessToken)
-                if let refresh = response.refreshToken {
-                    self.keychainStorage.storeRefreshToken(refresh)
-                }
-                completion(.success(response))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-    
-    /// Sets the authentication response to the storage.
-    /// - Parameter response: The authentication response containing tokens.
-    public func setAuthenticationResponse(with response: GopayAuthResponse) throws {
-        if let isExpired = JwtUtils.isExpired(jwt: response.accessToken), isExpired {
-            throw GopaySDKErrors.sdkError(GopaySDKErrors.accessTokenExpiredShort)
-        }
-
-        self.keychainStorage.storeAccessToken(response.accessToken)
-        if let refresh = response.refreshToken {
-            self.keychainStorage.storeRefreshToken(refresh)
-        }
-    }
-    
-    /// Retrieves the public encryption key to be used for encrypting card data.
-    ///
-    /// The key is structured as a JWK (JSON Web Key) described by RFC 7517.
-    /// Before making the request, validates that the access token is not expired.
-    ///
-    /// - Parameter completion: Completion handler with result containing the JWK or an error.
-    public func getPublicKey(completion: @escaping (Result<GopayJWK, Error>) -> Void) {
-        guard let encryptionService = self.encryptionService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedEncryptionService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-        
-        encryptionService.getPublicKey { result in
-            switch result {
-            case .success(let jwk):
-                completion(.success(jwk))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-    
-    /// Creates a card token by encrypting card data and sending it to the API.
-    ///
-    /// This method encrypts the card data using JWE (JSON Web Encryption) with RSA-OAEP-256
-    /// for key encryption and AES-256-GCM for content encryption, then sends it to the
-    /// GoPay API to create a card token.
-    ///
-    /// - Parameters:
-    ///   - cardPan: The card PAN (Primary Account Number).
-    ///   - expMonth: The expiration month in MM format.
-    ///   - expYear: The expiration year in YY format.
-    ///   - cvv: The card CVV.
-    ///   - permanent: Whether to save the card for permanent usage.
-    ///   - completion: Completion handler with result containing the card token response or an error.
-    public func createCardToken(cardPan: String, expMonth: String, expYear: String, cvv: String, permanent: Bool, completion: @escaping (Result<GopayCreateCardTokenResponse, Error>) -> Void) {
-        guard let cardTokenService = self.cardTokenService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedCardTokenService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-        
-        let cardData = GopayCardData(cardPan: cardPan, expMonth: expMonth, expYear: expYear, cvv: cvv)
-        cardTokenService.createCardToken(cardData: cardData, permanent: permanent) { result in
-            switch result {
-            case .success(let response):
-                completion(.success(response))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-
-    /// Creates a payment for a specific e-shop (`goid`).
-    /// - Parameters:
-    ///   - goid: E-shop identifier.
-    ///   - request: Full payment creation request payload.
-    ///   - completion: Completion handler with created payment response or an error.
-    public func createPayment(
-        goid: String,
-        request: GopayCreatePaymentRequest,
-        completion: @escaping (Result<GopayCreatePaymentResponse, Error>) -> Void
-    ) {
-        guard let paymentService = self.paymentService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-
-        paymentService.createPayment(goid: goid, requestBody: request) { result in
-            switch result {
-            case .success(let response):
-                completion(.success(response))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-
-    /// Fetches payment status by payment ID.
-    /// - Parameters:
-    ///   - paymentId: The payment identifier to query.
-    ///   - completion: Completion handler with payment status response or an error.
-    public func getPayment(
-        paymentId: String,
-        completion: @escaping (Result<GopayPaymentStatusResponse, Error>) -> Void
-    ) {
-        guard let paymentService = self.paymentService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-
-        paymentService.getPayment(paymentId: paymentId) { result in
-            switch result {
-            case .success(let response):
-                completion(.success(response))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-
-    /// Fetches payment charge state by payment ID.
-    /// - Parameters:
-    ///   - paymentId: The payment identifier to query.
-    ///   - completion: Completion handler with charge state response or an error.
-    public func getPaymentChargeState(
-        paymentId: String,
-        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
-    ) {
-        guard let paymentService = self.paymentService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-
-        paymentService.getPaymentChargeState(paymentId: paymentId) { result in
-            switch result {
-            case .success(let response):
-                completion(.success(response))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-
-    /// Fetches QR payment info by payment ID.
-    /// - Parameters:
-    ///   - paymentId: The payment identifier to query.
-    ///   - format: QR info format (`png` or `svg`). Default is `png`.
-    ///   - completion: Completion handler with QR payment info response or an error.
-    public func getPaymentQRInfo(
-        paymentId: String,
-        format: GopayPaymentQRInfoFormat = .png,
-        completion: @escaping (Result<GopayPaymentQRInfoResponse, Error>) -> Void
-    ) {
-        guard let paymentService = self.paymentService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-
-        paymentService.getPaymentQRInfo(paymentId: paymentId, format: format) { result in
-            switch result {
-            case .success(let response):
-                completion(.success(response))
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-
-    /// Charges a payment using a card token and handles 3DS / PSD2 verification
-    /// automatically when the server requires it.
-    ///
-    /// The SDK sends its own internal `return_url` to the API. If the charge
-    /// response contains an action with a `redirect_url`, the SDK presents a
-    /// WKWebView for the user to complete verification. Once the verification
-    /// provider redirects back to the SDK's return URL the WebView is dismissed
-    /// and the completion handler is called.
-    ///
-    /// - Note: After a successful 3DS verification the returned response will
-    ///   still reflect the initial charge state (typically `ACTION_REQUIRED`).
-    ///   Use a separate payment status query to confirm the final outcome.
-    ///
-    /// - Parameters:
-    ///   - paymentId: The payment identifier to charge.
-    ///   - cardToken: The card token obtained from card tokenization.
-    ///   - challengePreference: Optional 3DS challenge preference (default `nil`).
-    ///   - presentingViewController: The view controller used to present the
-    ///     verification WebView. If `nil`, the SDK will attempt to find the
-    ///     topmost view controller automatically.
-    ///   - completion: Completion handler with the charge response or an error.
-    public func chargePayment(
-        paymentId: String,
-        cardToken: String,
-        challengePreference: GopayChallengPreference? = nil,
-        presentingViewController: UIViewController? = nil,
-        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
-    ) {
-        guard let paymentService = self.paymentService else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.sdkNotInitializedPaymentService)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-
-        paymentService.chargePayment(
-            paymentId: paymentId,
-            cardToken: cardToken,
-            challengePreference: challengePreference,
-            returnURL: GopaySDK.chargeReturnURL
-        ) { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success(let response):
-                if let redirectURLString = response.action?.redirectURL,
-                   let redirectURL = URL(string: redirectURLString) {
-                    self.presentChargeVerification(
-                        redirectURL: redirectURL,
-                        presentingViewController: presentingViewController,
-                        chargeResponse: response,
-                        completion: completion
-                    )
-                } else {
-                    completion(.success(response))
-                }
-            case .failure(let error):
-                self.handleError(error)
-                completion(.failure(error))
-            }
-        }
-    }
-
-    // MARK: - Charge Verification (Private)
-
-    private func presentChargeVerification(
-        redirectURL: URL,
-        presentingViewController: UIViewController?,
-        chargeResponse: GopayChargePaymentResponse,
-        completion: @escaping (Result<GopayChargePaymentResponse, Error>) -> Void
-    ) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-
-            guard let presenter = presentingViewController ?? Self.topViewController() else {
-                let error = GopaySDKErrors.sdkError(GopaySDKErrors.noPresentingViewController)
-                self.handleError(error)
-                completion(.failure(error))
-                return
-            }
-
-            let verificationVC = GopayChargeVerificationViewController(
-                redirectURL: redirectURL,
-                returnURLString: GopaySDK.chargeReturnURL
-            ) { [weak self] result in
-                DispatchQueue.main.async {
-                    presenter.dismiss(animated: true) {
-                        switch result {
-                        case .completed:
-                            completion(.success(chargeResponse))
-                        case .cancelled:
-                            let error = GopaySDKErrors.sdkError(GopaySDKErrors.chargeVerificationCancelled)
-                            self?.handleError(error)
-                            completion(.failure(error))
-                        }
-                    }
-                }
-            }
-
-            presenter.present(verificationVC, animated: true)
-        }
-    }
-
-    private static func topViewController(
-        base: UIViewController? = nil
-    ) -> UIViewController? {
-        let root: UIViewController?
-        if let base = base {
-            root = base
-        } else if #available(iOS 13.0, *) {
-            root = UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .first { $0.isKeyWindow }?
-                .rootViewController
-        } else {
-            root = UIApplication.shared.keyWindow?.rootViewController
-        }
-
-        if let nav = root as? UINavigationController {
-            return topViewController(base: nav.visibleViewController)
-        }
-        if let tab = root as? UITabBarController,
-           let selected = tab.selectedViewController {
-            return topViewController(base: selected)
-        }
-        if let presented = root?.presentedViewController {
-            return topViewController(base: presented)
-        }
-        return root
-    }
-
-    /// Submits card form data to create a card token.
-    ///
-    /// This method uses the card form data that was automatically stored internally by `GopayCardForm`.
-    /// It validates the card form data and then creates a card token by encrypting the card data
-    /// using JWE (JSON Web Encryption) with RSA-OAEP-256 for key encryption and AES-256-GCM for
-    /// content encryption, then sends it to the GoPay API.
-    ///
-    /// The sensitive card data (PAN, CVV) remains internal to the SDK and is never exposed
-    /// to the caller. Only the masked response is returned.
-    ///
-    /// - Note: The card form data must be provided via `GopayCardForm`, which automatically
-    ///   syncs the data to the SDK. This method retrieves the data internally. If multiple forms
-    ///   are present, it uses the most recently active form. To submit a specific form, use
-    ///   `submitCardForm(formId:permanent:completion:)`.
-    ///
-    /// - Parameters:
-    ///   - permanent: Whether to save the card for permanent usage.
-    ///   - completion: Completion handler with result containing the card token response or an error.
-    public func submitCardForm(permanent: Bool, completion: @escaping (Result<GopayCreateCardTokenResponse, Error>) -> Void) {
-        // Use the most recently active form, or the first available form if none is tracked
-        let formId = mostRecentFormId ?? internalCardFormData.keys.first
-        
-        guard let formId = formId,
-              let data = internalCardFormData[formId] else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.noCardFormData)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-        
-        // Validate form data
-        guard data.isValid else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.invalidCardFormData)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-        
-        // Extract card data internally (sensitive data stays within SDK)
-        let cardPan = data.cardNumber
-        let expMonth = data.expirationMonth
-        let expYear = data.expirationYear
-        let cvv = data.cvv
-        
-        // Call existing createCardToken method with extracted data
-        createCardToken(cardPan: cardPan, expMonth: expMonth, expYear: expYear, cvv: cvv, permanent: permanent, completion: completion)
-    }
-    
-    /// Submits card form data from a specific form to create a card token.
-    ///
-    /// This method allows you to submit data from a specific form when multiple forms are present.
-    /// Use this when you need to submit a particular form's data rather than the most recently active one.
-    ///
-    /// - Parameters:
-    ///   - formId: The unique identifier of the form to submit (obtained from `GopayCardForm.formId`).
-    ///   - permanent: Whether to save the card for permanent usage.
-    ///   - completion: Completion handler with result containing the card token response or an error.
-    public func submitCardForm(formId: String, permanent: Bool, completion: @escaping (Result<GopayCreateCardTokenResponse, Error>) -> Void) {
-        // Retrieve form data for the specified form ID
-        guard let data = internalCardFormData[formId] else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.noCardFormData)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-        
-        // Validate form data
-        guard data.isValid else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.invalidCardFormData)
-            handleError(error)
-            completion(.failure(error))
-            return
-        }
-        
-        // Extract card data internally (sensitive data stays within SDK)
-        let cardPan = data.cardNumber
-        let expMonth = data.expirationMonth
-        let expYear = data.expirationYear
-        let cvv = data.cvv
-        
-        // Call existing createCardToken method with extracted data
-        createCardToken(cardPan: cardPan, expMonth: expMonth, expYear: expYear, cvv: cvv, permanent: permanent, completion: completion)
-    }
-    
-    /// Internal/test initializer for dependency injection
-    internal init(
-        config: GopaySDKConfig? = nil,
-        networkClient: NetworkClientProtocol? = nil,
-        keychainStorage: KeychainStorageProtocol = KeychainStorage.shared
-    ) {
-        self.config = config
-        let environment = config?.environment ?? GopayEnvironment.sandbox
-        let client = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
-        self.networkClient = client
-        self.authService = GopayAuthService(networkClient: client)
-        let encryptionService = GopayEncryptionService(networkClient: client, keychainStorage: keychainStorage)
-        self.encryptionService = encryptionService
-        self.cardTokenService = GopayCardTokenService(networkClient: client, keychainStorage: keychainStorage, encryptionService: encryptionService)
-        self.paymentService = GopayPaymentService(networkClient: client, keychainStorage: keychainStorage)
-        self.keychainStorage = keychainStorage
     }
 }

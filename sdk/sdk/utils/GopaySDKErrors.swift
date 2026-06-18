@@ -103,6 +103,24 @@ public enum GopaySDKErrors {
     /// Invalid URL for QR payment info endpoint.
     public static let invalidQRPaymentInfoURL = "Invalid URL for QR payment info endpoint."
 
+    /// Invalid URL for Apple Pay app-info endpoint.
+    public static let invalidApplePayAppInfoURL = "Invalid URL for Apple Pay app-info endpoint."
+
+    /// Apple Pay is not available on this device (no provisioned cards or unsupported networks).
+    public static let applePayUnavailable = "Apple Pay is not available on this device."
+
+    /// Apple Pay is not configured for this merchant.
+    public static let applePayNotConfigured = "Apple Pay is not configured for this merchant."
+
+    /// Apple Pay payment was cancelled by the user.
+    public static let applePayCancelled = "Apple Pay payment was cancelled by the user."
+
+    /// Apple Pay authorization failed.
+    public static let applePayAuthorizationFailed = "Apple Pay authorization failed."
+
+    /// Apple Pay response from the backend is missing a payment request.
+    public static let applePayMissingRequest = "Apple Pay response is missing the payment request."
+
     /// Payment verification was cancelled by the user.
     public static let chargeVerificationCancelled = "Payment verification was cancelled by the user."
 
