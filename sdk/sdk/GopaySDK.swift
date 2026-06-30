@@ -29,8 +29,9 @@ public class GopaySDK {
     public static let shared = GopaySDK()
 
     /// Return URL the SDK uses for charge verification flows. The 3DS WebView intercepts it and
-    /// never actually loads it. Pass it as the `returnUrl` on a manual ``ChargePaymentRequest`` so
-    /// ``PaymentSession/handle3dsVerification(redirectURL:presenting:)`` can detect completion.
+    /// never actually loads it; ``PaymentSession/handle3dsVerification(redirectURL:presenting:)``
+    /// uses it internally to detect completion. (It is not sent on the charge request — the
+    /// deployed gateway rejects a request-level `return_url`.)
     public static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
 
     /// The current configuration for the SDK.

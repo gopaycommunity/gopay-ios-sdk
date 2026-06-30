@@ -184,8 +184,26 @@ tokenizes via `POST /cards/tokens`. Your backend returns a card token, which you
 let request = ChargePaymentRequest.cardToken(
     cardToken,
     browserData: await BrowserData.deviceDefault(),
-    challengePreference: .auto,
-    returnUrl: GopaySDK.chargeReturnURL   // lets handle3dsVerification detect completion
+    challengePreference: .auto
+)
+let charge = try await session.charge(request)
+if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
+    try await session.handle3dsVerification(redirectURL: url)
+}
+```
+
+### Charging with an encrypted card (JWE)
+
+If you don't need a reusable card token, charge the JWE directly with the `ENCRYPTED_CARD`
+input — this skips the server-side `POST /cards/tokens` round-trip. Encrypt the card (via
+`submitCardForm()` or `encryptCardData(_:)`, see below) and pass the resulting JWE as `payload`:
+
+```swift
+let jwe = try await GopaySDK.shared.submitCardForm()   // or encryptCardData(_:)
+let request = ChargePaymentRequest.encryptedCard(
+    jwe,
+    browserData: await BrowserData.deviceDefault(),
+    challengePreference: .auto
 )
 let charge = try await session.charge(request)
 if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {

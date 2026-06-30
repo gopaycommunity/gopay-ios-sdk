@@ -98,13 +98,16 @@ public struct ApplePayHeader: Encodable {
 
 /// Card-payment input — the discriminated `oneOf` over `input_type`. Maps to `Payment-Card-Input`.
 ///
-/// iOS exposes the `CARD_TOKEN` and `APPLE_PAY` variants (Google Pay is Android-only). Optional
-/// fields that don't belong to the active variant are `nil` and omitted from the encoded JSON.
-/// Use the factories rather than the memberwise initializer.
+/// iOS exposes the `CARD_TOKEN`, `ENCRYPTED_CARD`, and `APPLE_PAY` variants (Google Pay is
+/// Android-only). `payload` is the JWE for the `ENCRYPTED_CARD` variant. Optional fields that
+/// don't belong to the active variant are `nil` and omitted from the encoded JSON. Use the
+/// factories rather than the memberwise initializer.
 public struct PaymentCardInput: Encodable {
     public let inputType: String
     // CARD_TOKEN
     public let cardToken: String?
+    // ENCRYPTED_CARD
+    public let payload: String?
     // APPLE_PAY
     public let data: String?
     public let signature: String?
@@ -114,6 +117,7 @@ public struct PaymentCardInput: Encodable {
     enum CodingKeys: String, CodingKey {
         case inputType = "input_type"
         case cardToken = "card_token"
+        case payload
         case data
         case signature
         case version
@@ -123,6 +127,7 @@ public struct PaymentCardInput: Encodable {
     private init(
         inputType: String,
         cardToken: String? = nil,
+        payload: String? = nil,
         data: String? = nil,
         signature: String? = nil,
         version: String? = nil,
@@ -130,6 +135,7 @@ public struct PaymentCardInput: Encodable {
     ) {
         self.inputType = inputType
         self.cardToken = cardToken
+        self.payload = payload
         self.data = data
         self.signature = signature
         self.version = version
@@ -139,6 +145,12 @@ public struct PaymentCardInput: Encodable {
     /// `CARD_TOKEN` input — a permanent card token the merchant tokenized server-side.
     public static func cardToken(_ cardToken: String) -> PaymentCardInput {
         PaymentCardInput(inputType: "CARD_TOKEN", cardToken: cardToken)
+    }
+
+    /// `ENCRYPTED_CARD` input — a JWE produced by `encryptCardData` / `submitCardForm`. Charges
+    /// the encrypted card directly, skipping the server-side `POST /cards/tokens` round-trip.
+    public static func encryptedCard(_ payload: String) -> PaymentCardInput {
+        PaymentCardInput(inputType: "ENCRYPTED_CARD", payload: payload)
     }
 
     /// `APPLE_PAY` input — fields extracted from a `PKPaymentToken`.
@@ -191,13 +203,14 @@ public struct PaymentChargeInstrument: Encodable {
 
 /// Request body for `POST /payments/{payment_id}/charge`. Maps to `Payment-Charge-Input`.
 ///
-/// Use the factories for the common card-token and Apple Pay flows.
+/// Use the factories for the common card-token, encrypted-card, and Apple Pay flows.
 public struct ChargePaymentRequest: Encodable {
     public let paymentInstrument: PaymentChargeInstrument
-    /// URL the customer is redirected to after completing a payment action (e.g. 3DS / bank login).
-    /// Optional; when `nil` it is omitted from the request. For the managed verification flow pass
-    /// ``GopaySDK/chargeReturnURL`` so ``PaymentSession/handle3dsVerification(redirectURL:presenting:)``
-    /// can detect completion.
+    /// `return_url` is defined on `Payment-Charge-Input` in the spec, but the deployed Payments 4.0
+    /// gateway rejects it ("Unrecognized field return_url"). Leave `nil` so it's omitted from the
+    /// request — the 3DS redirect comes from the charge response's `action.redirectUrl`, and
+    /// ``PaymentSession/handle3dsVerification(redirectURL:presenting:)`` detects completion using
+    /// ``GopaySDK/chargeReturnURL`` internally.
     public let returnUrl: String?
 
     enum CodingKeys: String, CodingKey {
@@ -220,6 +233,25 @@ public struct ChargePaymentRequest: Encodable {
         ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: .cardToken(cardToken),
+                browserData: browserData,
+                challengePreference: challengePreference
+            ),
+            returnUrl: returnUrl
+        )
+    }
+
+    /// Charge directly with a JWE-encrypted card (`payload`), skipping the server-side
+    /// `POST /cards/tokens` tokenization step. `payload` is the JWE produced by
+    /// ``GopaySDK/encryptCardData(_:)`` / ``GopaySDK/submitCardForm()``.
+    public static func encryptedCard(
+        _ payload: String,
+        browserData: BrowserData,
+        challengePreference: ChallengePreference? = nil,
+        returnUrl: String? = nil
+    ) -> ChargePaymentRequest {
+        ChargePaymentRequest(
+            paymentInstrument: PaymentChargeInstrument(
+                input: .encryptedCard(payload),
                 browserData: browserData,
                 challengePreference: challengePreference
             ),

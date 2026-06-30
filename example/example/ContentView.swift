@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var paymentSecret = ""
     @State private var session: PaymentSession?
     @State private var cardToken: String = ""
+    @State private var jwe: String = ""
     @State private var pending3dsURL: URL?
     @State private var isFormValid: Bool?
 
@@ -130,17 +131,24 @@ struct ContentView: View {
     }
 
     private var cardFormSection: some View {
-        section("4. Card form → JWE (tokenize server-side)") {
+        section("4. Card form → JWE") {
             GopayCardForm(isValid: $isFormValid)
                 .padding()
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(12)
 
             button("Encrypt card → JWE", system: "lock.fill") {
-                let jwe = try await GopaySDK.shared.submitCardForm()
-                log("// submitCardForm() -> JWE (send to your server for POST /cards/tokens)\n\(jwe)")
+                let encrypted = try await GopaySDK.shared.submitCardForm()
+                await MainActor.run { jwe = encrypted }
+                log("// submitCardForm() -> JWE (filled into the field below)\n\(encrypted)")
             }
             .disabled(isFormValid == false)
+
+            labeledField("JWE (from on-device card encryption)", text: $jwe)
+            button("Charge with encrypted card (JWE)", system: "lock.circle.fill") {
+                try await chargeWithEncryptedCard()
+            }
+            .disabled(jwe.isEmpty)
         }
     }
 
@@ -184,6 +192,23 @@ struct ContentView: View {
         )
         let charge = try await session.charge(request)
         logResponse("charge(.cardToken) -> ChargePaymentResponse", charge)
+        if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
+            await MainActor.run { pending3dsURL = url }
+            log("3DS required — tap \"Handle 3DS verification\" to continue.")
+        }
+    }
+
+    /// Charges the JWE from the field directly via the `ENCRYPTED_CARD` input — no
+    /// `POST /cards/tokens` round-trip. The field is autofilled by "Encrypt card → JWE" above.
+    private func chargeWithEncryptedCard() async throws {
+        let session = try requireSession()
+        let request = ChargePaymentRequest.encryptedCard(
+            jwe.trimmingCharacters(in: .whitespacesAndNewlines),
+            browserData: await BrowserData.deviceDefault(),
+            challengePreference: .auto
+        )
+        let charge = try await session.charge(request)
+        logResponse("charge(.encryptedCard) -> ChargePaymentResponse", charge)
         if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
             await MainActor.run { pending3dsURL = url }
             log("3DS required — tap \"Handle 3DS verification\" to continue.")

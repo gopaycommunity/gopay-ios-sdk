@@ -160,6 +160,26 @@ struct ChargeModelsTests {
         #expect((input["header"] as! [String: Any])["transactionId"] as? String == "tx")
         #expect(input["card_token"] == nil)
     }
+
+    @Test func encryptedCardInput_encodesPayloadAndOmitsCardToken() throws {
+        let request = ChargePaymentRequest.encryptedCard(
+            "jwe.compact.string",
+            browserData: BrowserData(language: "en", timezone: 0, screenWidth: 1, screenHeight: 1, colorDepth: 24),
+            challengePreference: .auto
+        )
+        let dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+        // The deployed gateway rejects a request-level return_url, so charges must not send one.
+        #expect(dict["return_url"] == nil)
+        let instrument = dict["payment_instrument"] as! [String: Any]
+        #expect(instrument["challenge_preference"] as? String == "AUTO")
+
+        let input = instrument["input"] as! [String: Any]
+        #expect(input["input_type"] as? String == "ENCRYPTED_CARD")
+        #expect(input["payload"] as? String == "jwe.compact.string")
+        // Fields from other variants are omitted for an ENCRYPTED_CARD input.
+        #expect(input["card_token"] == nil)
+        #expect(input["signature"] == nil)
+    }
 }
 
 // MARK: - PaymentSession + GopaySDK (network)
