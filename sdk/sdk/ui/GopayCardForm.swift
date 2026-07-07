@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Foundation
 
 /// Payment card form data model.
@@ -31,31 +32,6 @@ internal struct GopayCardFormData {
         self.expirationMonth = expirationMonth
         self.expirationYear = expirationYear
         self.cvv = cvv
-    }
-    
-    /// Returns the card number formatted as 4 groups separated by whitespace.
-    var formattedCardNumber: String {
-        let digits = cardNumber.filter { $0.isNumber }
-        var formatted = ""
-        for (index, digit) in digits.enumerated() {
-            if index > 0 && index % 4 == 0 {
-                formatted += " "
-            }
-            formatted += String(digit)
-        }
-        return formatted
-    }
-    
-    /// Returns the expiration date formatted as MM/YY.
-    var formattedExpiration: String {
-        let monthDigits = expirationMonth.filter { $0.isNumber }
-        let yearDigits = expirationYear.filter { $0.isNumber }
-        
-        var formatted = monthDigits
-        if monthDigits.count >= 2 {
-            formatted += "/" + yearDigits
-        }
-        return formatted
     }
     
     /// Returns true if all fields are valid.
@@ -154,10 +130,6 @@ public struct GopayCardForm: View {
     @State private var expirationEdited: Bool = false
     @State private var cvvEdited: Bool = false
 
-    // Local state for formatted display strings (for real-time formatting)
-    @State private var cardNumberDisplay: String = ""
-    @State private var expirationDisplay: String = ""
-    
     /// Creates a payment card form.
     ///
     /// Field labels and placeholders are localized. By default they follow the SDK-wide locale
@@ -226,50 +198,33 @@ public struct GopayCardForm: View {
                     .font(theme.labelFont)
                     .foregroundColor(theme.textColor)
 
-                TextField(localeStrings.panPlaceholder, text: Binding(
-                    get: { cardNumberDisplay },
-                    set: { newValue in
-                        // Remove all non-digits and whitespace
-                        let digits = newValue.filter { $0.isNumber }
-                        // Limit to 16 digits
-                        let limitedDigits = String(digits.prefix(16))
-                        // Format immediately
-                        var formatted = ""
-                        for (index, digit) in limitedDigits.enumerated() {
-                            if index > 0 && index % 4 == 0 {
-                                formatted += " "
+                FormattedTextField(
+                    placeholder: localeStrings.panPlaceholder,
+                    digits: Binding(
+                        get: { data.cardNumber },
+                        set: { newDigits in
+                            data.cardNumber = newDigits
+                            cardNumberEdited = true
+                            GopaySDK.shared.updateCardFormData(data, formId: formId)
+                            updateValidationBinding()
+                            if newDigits.count == 16 {
+                                isCardNumberFocused = false
+                                isExpirationFocused = true
                             }
-                            formatted += String(digit)
                         }
-                        // Update display synchronously
-                        cardNumberDisplay = formatted
-                        // Update the underlying data
-                        data.cardNumber = limitedDigits
-                        cardNumberEdited = true
-                        // Sync to SDK internally
-                        GopaySDK.shared.updateCardFormData(data, formId: formId)
-                        // Update validation binding if provided
-                        updateValidationBinding()
+                    ),
+                    formatter: .cardNumber,
+                    textColor: UIColor.from(theme.textColor),
+                    textContentType: .creditCardNumber,
+                    isFocused: isCardNumberFocused,
+                    onFocusChange: { isFocused in
+                        isCardNumberFocused = isFocused
+                        if isFocused {
+                            isExpirationFocused = false
+                            isCvvFocused = false
+                        }
                     }
-                ), onEditingChanged: { isEditing in
-                    isCardNumberFocused = isEditing
-                    if isEditing {
-                        isExpirationFocused = false
-                        isCvvFocused = false
-                    }
-                })
-                .onAppear {
-                    // Initialize display strings from data when view appears
-                    // Safely access data properties
-                    if cardNumberDisplay.isEmpty {
-                        cardNumberDisplay = data.formattedCardNumber
-                    }
-                    if expirationDisplay.isEmpty {
-                        expirationDisplay = data.formattedExpiration
-                    }
-                }
-                .font(theme.font)
-                .foregroundColor(theme.textColor)
+                )
                 .padding(theme.textFieldPadding)
                 .background(theme.backgroundColor)
                 .overlay(
@@ -280,7 +235,6 @@ public struct GopayCardForm: View {
                         )
                 )
                 .cornerRadius(theme.cornerRadius)
-                .keyboardType(.numberPad)
 
                 errorLabel(errors.cardNumber)
             }
@@ -293,80 +247,39 @@ public struct GopayCardForm: View {
                         .font(theme.labelFont)
                         .foregroundColor(theme.textColor)
 
-                    TextField(localeStrings.expPlaceholder, text: Binding(
-                        get: { expirationDisplay },
-                        set: { newValue in
-                            // Remove slash and keep only digits
-                            let digits = newValue.filter { $0.isNumber }
-                            
-                            // Limit to 4 digits total (2 for month, 2 for year)
-                            let limitedDigits = String(digits.prefix(4))
-                            
-                            if limitedDigits.count <= 2 {
-                                // Only month entered so far
-                                var monthString = limitedDigits
-                                // Auto-validate month (prevent > 12)
-                                if let month = Int(monthString), month > 12 {
-                                    monthString = String(limitedDigits.prefix(1))
-                                }
-                                data.expirationMonth = monthString
-                                data.expirationYear = ""
-                            } else {
-                                // Month and year entered
-                                let monthString = String(limitedDigits.prefix(2))
-                                // Validate month
-                                if let month = Int(monthString), month >= 1 && month <= 12 {
-                                    // Format month with leading zero in real-time
-                                    data.expirationMonth = String(format: "%02d", month)
-                                    data.expirationYear = String(limitedDigits.dropFirst(2))
-                                } else {
-                                    // Invalid month, keep only first digit
-                                    data.expirationMonth = String(limitedDigits.prefix(1))
-                                    data.expirationYear = ""
-                                }
-                            }
-                            
-                            // Format and update display immediately
-                            let monthDigits = data.expirationMonth.filter { $0.isNumber }
-                            let yearDigits = data.expirationYear.filter { $0.isNumber }
-                            var formatted = monthDigits
-                            if monthDigits.count >= 2 {
-                                formatted += "/" + yearDigits
-                            }
-                            // Update display synchronously
-                            expirationDisplay = formatted
-                            expirationEdited = true
-                            // Sync to SDK internally
-                            GopaySDK.shared.updateCardFormData(data, formId: formId)
-                            // Update validation binding if provided
-                            updateValidationBinding()
-                        }
-                    ), onEditingChanged: { isEditing in
-                        isExpirationFocused = isEditing
-                        if isEditing {
-                            isCardNumberFocused = false
-                            isCvvFocused = false
-                        } else {
-                            // Format month with leading zero when field loses focus (if not already formatted)
-                            if data.expirationMonth.count == 1, let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
-                                data.expirationMonth = String(format: "%02d", month)
-                                // Update display
-                                let monthDigits = data.expirationMonth.filter { $0.isNumber }
-                                let yearDigits = data.expirationYear.filter { $0.isNumber }
-                                var formatted = monthDigits
-                                if monthDigits.count >= 2 {
-                                    formatted += "/" + yearDigits
-                                }
-                                expirationDisplay = formatted
-                                // Sync to SDK internally
+                    FormattedTextField(
+                        placeholder: localeStrings.expPlaceholder,
+                        digits: Binding(
+                            get: { data.expirationMonth + data.expirationYear },
+                            set: { newDigits in
+                                data.expirationMonth = String(newDigits.prefix(2))
+                                data.expirationYear = newDigits.count > 2 ? String(newDigits.dropFirst(2)) : ""
+                                expirationEdited = true
                                 GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                // Update validation binding if provided
+                                updateValidationBinding()
+                                if newDigits.count == 4 {
+                                    isExpirationFocused = false
+                                    isCvvFocused = true
+                                }
+                            }
+                        ),
+                        formatter: .expiration,
+                        textColor: UIColor.from(theme.textColor),
+                        isFocused: isExpirationFocused,
+                        onFocusChange: { isFocused in
+                            isExpirationFocused = isFocused
+                            if isFocused {
+                                isCardNumberFocused = false
+                                isCvvFocused = false
+                            } else if data.expirationMonth.count == 1,
+                                      let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
+                                // Pad a single-digit month with a leading zero once the field loses focus.
+                                data.expirationMonth = String(format: "%02d", month)
+                                GopaySDK.shared.updateCardFormData(data, formId: formId)
                                 updateValidationBinding()
                             }
                         }
-                    })
-                    .font(theme.font)
-                    .foregroundColor(theme.textColor)
+                    )
                     .padding(theme.textFieldPadding)
                     .background(theme.backgroundColor)
                     .overlay(
@@ -377,7 +290,6 @@ public struct GopayCardForm: View {
                             )
                     )
                     .cornerRadius(theme.cornerRadius)
-                    .keyboardType(.numberPad)
                     .frame(maxWidth: .infinity)
 
                     errorLabel(errors.expiration)
@@ -389,23 +301,29 @@ public struct GopayCardForm: View {
                         .font(theme.labelFont)
                         .foregroundColor(theme.textColor)
 
-                    SecureField(localeStrings.cvvPlaceholder, text: Binding(
-                        get: { data.cvv },
-                        set: { newValue in
-                            let digits = newValue.filter { $0.isNumber }
-                            // Limit to 3 digits
-                            data.cvv = String(digits.prefix(3))
-                            cvvEdited = true
-                            // Sync to SDK internally
-                            GopaySDK.shared.updateCardFormData(data, formId: formId)
-                            // Update validation binding if provided
-                            updateValidationBinding()
+                    FormattedTextField(
+                        placeholder: localeStrings.cvvPlaceholder,
+                        digits: Binding(
+                            get: { data.cvv },
+                            set: { newDigits in
+                                data.cvv = newDigits
+                                cvvEdited = true
+                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                updateValidationBinding()
+                            }
+                        ),
+                        formatter: .cvv,
+                        textColor: UIColor.from(theme.textColor),
+                        isSecure: true,
+                        isFocused: isCvvFocused,
+                        onFocusChange: { isFocused in
+                            isCvvFocused = isFocused
+                            if isFocused {
+                                isCardNumberFocused = false
+                                isExpirationFocused = false
+                            }
                         }
-                    ), onCommit: {
-                        isCvvFocused = false
-                    })
-                    .font(theme.font)
-                    .foregroundColor(theme.textColor)
+                    )
                     .padding(theme.textFieldPadding)
                     .background(theme.backgroundColor)
                     .overlay(
@@ -416,12 +334,6 @@ public struct GopayCardForm: View {
                             )
                     )
                     .cornerRadius(theme.cornerRadius)
-                    .keyboardType(.numberPad)
-                    .onTapGesture {
-                        isCardNumberFocused = false
-                        isExpirationFocused = false
-                        isCvvFocused = true
-                    }
 
                     errorLabel(errors.cvv)
                 }
