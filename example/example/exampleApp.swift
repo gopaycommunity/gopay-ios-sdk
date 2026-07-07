@@ -13,12 +13,20 @@ struct exampleApp: App {
     init() {
         // Initialize the SDK once on app start. `clientId` + `shareableKey` are safe to embed —
         // they only authorize the public `/cards/public-key` endpoint, never charging.
+        // Register a custom locale (code "xx") the form can select alongside the built-ins, and
+        // leave `locale = nil` so the default follows the device language (falling back to cs).
+        var customLocale = GopayLocales.en
+        customLocale.panLabel = "Yer card number"
+        customLocale.expLabel = "Doom date"
+        customLocale.cvvLabel = "Secret code"
+
         GopaySDK.shared.initialize(
             with: GopaySDKConfig(
                 environment: .development(baseURL: DemoConfig.baseURL),
                 clientId: DemoConfig.clientId,
                 shareableKey: DemoConfig.shareableKey,
-                enableDebugLogging: true
+                enableDebugLogging: true,
+                customLocales: ["xx": customLocale]
             )
         )
     }

@@ -103,17 +103,37 @@ internal struct GopayCardFormData {
     }
 }
 
+/// Controls whether and when ``GopayCardForm`` renders localized inline validation errors.
+public enum GopayCardFormValidationDisplay {
+    /// Do not render inline errors — display is host-driven (default). Read the localized strings
+    /// via `GopaySDK.shared.currentLocaleStrings(...)` to show your own.
+    case hidden
+    /// Show a field's error live, as soon as it holds non-empty, invalid content while typing.
+    case live
+    /// Show errors only while `attempted` is `true`. Flip it (e.g. when the user taps your submit
+    /// button) to reveal errors for all invalid fields; set it back to `false` to hide them again.
+    case onSubmit(attempted: Binding<Bool>)
+}
+
 /// Payment card form UI component.
 ///
 /// This view provides a complete payment card form with card number, expiration, and CVV inputs.
 /// The form can be customized using a theme.
-/// 
+///
 /// The form manages card data internally and automatically syncs it to the SDK.
 /// Card data is never exposed to your app code for security.
 public struct GopayCardForm: View {
     /// Theme for customizing the appearance.
     public var theme: GopayCardFormTheme
-    
+
+    /// Localized strings used for the field labels and placeholders.
+    public var localeStrings: GopayLocaleStrings
+
+    /// Controls whether and when the form renders localized inline validation errors (from
+    /// `localeStrings`) beneath each field. Defaults to ``GopayCardFormValidationDisplay/hidden``,
+    /// which keeps error display host-driven.
+    public var validation: GopayCardFormValidationDisplay
+
     /// Optional binding to track form validation state (for UI feedback).
     /// Set this if you want to enable/disable submit buttons based on form validity.
     @Binding public var isValid: Bool?
@@ -128,36 +148,85 @@ public struct GopayCardForm: View {
     @State private var isCardNumberFocused: Bool = false
     @State private var isExpirationFocused: Bool = false
     @State private var isCvvFocused: Bool = false
-    
+
+    // Tracks whether a field has been edited yet, so errors don't show on a pristine form.
+    @State private var cardNumberEdited: Bool = false
+    @State private var expirationEdited: Bool = false
+    @State private var cvvEdited: Bool = false
+
     // Local state for formatted display strings (for real-time formatting)
     @State private var cardNumberDisplay: String = ""
     @State private var expirationDisplay: String = ""
     
     /// Creates a payment card form.
+    ///
+    /// Field labels and placeholders are localized. By default they follow the SDK-wide locale
+    /// (`GopaySDKConfig.locale`), then the device language, falling back to Czech. Pass `locale`
+    /// to override per form, or `localeStrings` to supply strings directly.
     /// - Parameters:
     ///   - theme: Theme for customizing the appearance (default: `.standard`).
+    ///   - locale: Locale code (e.g. `"cs"`, `"de"`) for the field labels. `nil` uses the SDK
+    ///             default. Ignored when `localeStrings` is supplied.
+    ///   - localeStrings: Explicit locale strings to use, bypassing `locale` resolution.
+    ///   - validation: When/whether to render localized inline validation errors
+    ///                 (default: ``GopayCardFormValidationDisplay/hidden``).
     ///   - isValid: Optional binding to track form validation state (default: `nil`).
     ///   - formId: Optional unique identifier for this form. If not provided, a UUID will be generated.
     public init(
         theme: GopayCardFormTheme = .standard,
+        locale: String? = nil,
+        localeStrings: GopayLocaleStrings? = nil,
+        validation: GopayCardFormValidationDisplay = .hidden,
         isValid: Binding<Bool?> = .constant(nil),
         formId: String? = nil
     ) {
         self.theme = theme
+        self.localeStrings = localeStrings ?? GopayLocales.resolve(locale)
+        self.validation = validation
         self._isValid = isValid
         self.formId = formId ?? UUID().uuidString
         self._data = State(initialValue: GopayCardFormData())
+    }
+
+    // MARK: - Inline validation error helpers
+
+    /// The localized errors currently displayed under each field (see ``GopayCardFormErrors``).
+    private var errors: GopayCardFormErrors {
+        let mode: GopayCardFormErrors.Mode
+        switch validation {
+        case .hidden: mode = .hidden
+        case .live: mode = .live
+        case .onSubmit(let attempted): mode = .onSubmit(attempted: attempted.wrappedValue)
+        }
+        return GopayCardFormErrors(
+            data: data,
+            strings: localeStrings,
+            mode: mode,
+            cardNumberEdited: cardNumberEdited,
+            expirationEdited: expirationEdited,
+            cvvEdited: cvvEdited
+        )
+    }
+
+    /// Inline error label styled with the theme's error color.
+    @ViewBuilder
+    private func errorLabel(_ message: String?) -> some View {
+        if let message = message {
+            Text(message)
+                .font(theme.labelFont)
+                .foregroundColor(theme.errorColor)
+        }
     }
     
     public var body: some View {
         VStack(spacing: theme.spacing) {
             // Card number input (first row)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Card Number")
+                Text(localeStrings.panLabel)
                     .font(theme.labelFont)
                     .foregroundColor(theme.textColor)
-                
-                TextField("1234 5678 9012 3456", text: Binding(
+
+                TextField(localeStrings.panPlaceholder, text: Binding(
                     get: { cardNumberDisplay },
                     set: { newValue in
                         // Remove all non-digits and whitespace
@@ -176,6 +245,7 @@ public struct GopayCardForm: View {
                         cardNumberDisplay = formatted
                         // Update the underlying data
                         data.cardNumber = limitedDigits
+                        cardNumberEdited = true
                         // Sync to SDK internally
                         GopaySDK.shared.updateCardFormData(data, formId: formId)
                         // Update validation binding if provided
@@ -211,17 +281,19 @@ public struct GopayCardForm: View {
                 )
                 .cornerRadius(theme.cornerRadius)
                 .keyboardType(.numberPad)
+
+                errorLabel(errors.cardNumber)
             }
-            
+
             // Expiration and CVV inputs (second row)
             HStack(spacing: theme.spacing) {
                 // Expiration input (single field with automatic slash)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Expiration")
+                    Text(localeStrings.expLabel)
                         .font(theme.labelFont)
                         .foregroundColor(theme.textColor)
-                    
-                    TextField("MM/YY", text: Binding(
+
+                    TextField(localeStrings.expPlaceholder, text: Binding(
                         get: { expirationDisplay },
                         set: { newValue in
                             // Remove slash and keep only digits
@@ -263,6 +335,7 @@ public struct GopayCardForm: View {
                             }
                             // Update display synchronously
                             expirationDisplay = formatted
+                            expirationEdited = true
                             // Sync to SDK internally
                             GopaySDK.shared.updateCardFormData(data, formId: formId)
                             // Update validation binding if provided
@@ -306,20 +379,23 @@ public struct GopayCardForm: View {
                     .cornerRadius(theme.cornerRadius)
                     .keyboardType(.numberPad)
                     .frame(maxWidth: .infinity)
+
+                    errorLabel(errors.expiration)
                 }
-                
+
                 // CVV input
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CVV")
+                    Text(localeStrings.cvvLabel)
                         .font(theme.labelFont)
                         .foregroundColor(theme.textColor)
-                    
-                    SecureField("123", text: Binding(
+
+                    SecureField(localeStrings.cvvPlaceholder, text: Binding(
                         get: { data.cvv },
                         set: { newValue in
                             let digits = newValue.filter { $0.isNumber }
                             // Limit to 3 digits
                             data.cvv = String(digits.prefix(3))
+                            cvvEdited = true
                             // Sync to SDK internally
                             GopaySDK.shared.updateCardFormData(data, formId: formId)
                             // Update validation binding if provided
@@ -346,6 +422,8 @@ public struct GopayCardForm: View {
                         isExpirationFocused = false
                         isCvvFocused = true
                     }
+
+                    errorLabel(errors.cvv)
                 }
             }
         }

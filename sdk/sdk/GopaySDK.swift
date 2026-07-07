@@ -55,12 +55,23 @@ public class GopaySDK {
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
         self.config = config
+        GopayLocales.registerAll(config.customLocales)
+        GopayLocales.setDefaultLocale(config.locale)
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
         self.asyncClient = client
         self.authAPI = AuthAPI(client: client)
         self.publicKeyCache = PublicKeyCache(
             publicAPI: PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
         )
+    }
+
+    /// Resolves the ``GopayLocaleStrings`` the payment card form uses for its labels.
+    ///
+    /// Resolution order: `preferred` (if given and known) -> the SDK-wide `GopaySDKConfig.locale`
+    /// -> the device language -> Czech. Handy for reading the localized error / pay strings from
+    /// host code (e.g. to display inline validation messages).
+    public func currentLocaleStrings(preferred: String? = nil) -> GopayLocaleStrings {
+        GopayLocales.resolve(preferred)
     }
 
     /// Internal/test initializer for dependency injection.

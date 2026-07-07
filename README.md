@@ -15,6 +15,8 @@ The SDK implements the **Payments 4.0** per-payment session model:
 - **JWE card encryption** (RSA-OAEP-256 + A256GCM) — the SDK turns card data into a JWE that your
   backend tokenizes; the SDK never calls the tokenization endpoint itself.
 - A secure **SwiftUI card form** (`GopayCardForm`) that keeps PAN/CVV inside the SDK.
+- **Localized form labels** in 20 languages (device language, falling back to Czech), with
+  per-form overrides and custom locale registration.
 - **Concurrent payments** — multiple independent `PaymentSession`s, keyed by `payment_id`.
 
 The public library product is named **`GopaySDK`** and targets **iOS 13+**. The API is built on
@@ -257,6 +259,57 @@ let jwe = try await GopaySDK.shared.encryptCardData(
 
 `GopayCardForm` accepts a `GopayCardFormTheme` and a `formId` (when multiple forms are on screen,
 pass the same `formId` to `submitCardForm(formId:)`).
+
+### Localizing the form
+
+Form labels and placeholders are localized. By default the form uses the **device language and
+falls back to Czech (`cs`)** when the language has no translation. 20 languages ship built in
+(`bg cs de en es et fr hr hu it lt lv nl pl pt ro ru sk sl uk`).
+
+Set a preferred locale globally on the config, or per form:
+
+```swift
+// Global default for every form (nil = follow the device language)
+GopaySDK.shared.initialize(with: GopaySDKConfig(environment: .sandbox, locale: "de"))
+
+// Per-form override (wins over the global default)
+GopayCardForm(locale: "cs", isValid: $isCardValid)
+```
+
+Add your own translation with the same structure and select it by code:
+
+```swift
+var brandEnglish = GopayLocales.en
+brandEnglish.panLabel = "Your card number"
+
+GopaySDK.shared.initialize(
+    with: GopaySDKConfig(environment: .sandbox, customLocales: ["en": brandEnglish])
+)
+// or at runtime: GopayLocales.register(brandEnglish, for: "en")
+GopayCardForm(locale: "en", isValid: $isCardValid)
+```
+
+Validation error strings are localized too. The form can render them inline for you — choose when
+with the `validation` parameter:
+
+```swift
+// Errors appear only after the user taps your submit button (mirrors the Android example):
+@State private var attemptedSubmit = false
+GopayCardForm(locale: "cs", validation: .onSubmit(attempted: $attemptedSubmit), isValid: $isCardValid)
+// …then in your submit action: attemptedSubmit = true
+
+// Or validate live as the user types:
+GopayCardForm(locale: "cs", validation: .live, isValid: $isCardValid)
+```
+
+`.onSubmit` shows the localized required/pattern message for every invalid field while `attempted`
+is `true`; `.live` shows a field's error once it holds non-empty, invalid content. The default is
+`.hidden` — the form renders nothing and you display errors yourself from the resolved locale:
+
+```swift
+let strings = GopaySDK.shared.currentLocaleStrings(preferred: "cs")
+// strings.panErrorPattern, strings.expErrorPattern, strings.cvvErrorPattern, …
+```
 
 ---
 

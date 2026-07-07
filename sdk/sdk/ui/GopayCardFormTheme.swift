@@ -12,6 +12,8 @@ public struct GopayCardFormTheme {
     public var borderColor: Color
     /// Border color when a field is focused.
     public var focusedBorderColor: Color
+    /// Text color for inline validation error messages.
+    public var errorColor: Color
     /// Border width for text fields.
     public var borderWidth: CGFloat
     /// Corner radius for text fields.
@@ -31,6 +33,7 @@ public struct GopayCardFormTheme {
     ///   - backgroundColor: Background color for text fields.
     ///   - borderColor: Border color for text fields.
     ///   - focusedBorderColor: Border color when a field is focused.
+    ///   - errorColor: Text color for inline validation error messages.
     ///   - borderWidth: Border width for text fields.
     ///   - cornerRadius: Corner radius for text fields.
     ///   - font: Font for text fields.
@@ -42,6 +45,7 @@ public struct GopayCardFormTheme {
         backgroundColor: Color = Color(.systemBackground),
         borderColor: Color = Color(.separator),
         focusedBorderColor: Color = .blue,
+        errorColor: Color = .red,
         borderWidth: CGFloat = 1.0,
         cornerRadius: CGFloat = 8.0,
         font: Font = .body,
@@ -53,6 +57,7 @@ public struct GopayCardFormTheme {
         self.backgroundColor = backgroundColor
         self.borderColor = borderColor
         self.focusedBorderColor = focusedBorderColor
+        self.errorColor = errorColor
         self.borderWidth = borderWidth
         self.cornerRadius = cornerRadius
         self.font = font

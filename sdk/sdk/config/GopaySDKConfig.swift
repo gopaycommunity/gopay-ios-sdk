@@ -47,6 +47,16 @@ public struct GopaySDKConfig {
     /// The callback to use for errors.
     public let errorCallback: ((Error) -> Void)?
 
+    /// Preferred locale code (ISO 639-1, e.g. `"cs"`, `"de"`) for the payment card form labels.
+    /// When `nil` (default) the SDK uses the device language, falling back to Czech. A
+    /// ``GopayCardForm`` `locale` parameter overrides this per form.
+    public let locale: String?
+
+    /// Custom locale translations to register with the SDK, keyed by locale code. These are
+    /// available to the payment card form alongside the built-in locales and take priority over a
+    /// built-in of the same code. See ``GopayLocaleStrings``.
+    public let customLocales: [String: GopayLocaleStrings]
+
     /// Creates a new configuration for the Gopay SDK.
     /// - Parameters:
     ///   - environment: The environment to use.
@@ -54,17 +64,23 @@ public struct GopaySDKConfig {
     ///   - shareableKey: Merchant `shareable_key` for public-resource endpoints (default: `nil`).
     ///   - enableDebugLogging: Enable debug logging (default: `false`).
     ///   - errorCallback: Callback for error handling (default: `nil`).
+    ///   - locale: Preferred form locale code; `nil` follows the device language (default: `nil`).
+    ///   - customLocales: Custom locale translations to register (default: empty).
     public init(
         environment: GopayEnvironment,
         clientId: String? = nil,
         shareableKey: String? = nil,
         enableDebugLogging: Bool = false,
-        errorCallback: ((Error) -> Void)? = nil
+        errorCallback: ((Error) -> Void)? = nil,
+        locale: String? = nil,
+        customLocales: [String: GopayLocaleStrings] = [:]
     ) {
         self.environment = environment
         self.clientId = clientId
         self.shareableKey = shareableKey
         self.enableDebugLogging = enableDebugLogging
         self.errorCallback = errorCallback
+        self.locale = locale
+        self.customLocales = customLocales
     }
 }

@@ -24,6 +24,10 @@ struct ContentView: View {
     @State private var jwe: String = ""
     @State private var pending3dsURL: URL?
     @State private var isFormValid: Bool?
+    // Flipped true when the user taps submit, revealing the form's inline validation errors.
+    @State private var didAttemptSubmit = false
+    // nil follows the SDK/device default locale (which falls back to Czech).
+    @State private var selectedLocale: String?
 
     @State private var responseText = "Ready."
     @State private var busyLabel: String?
@@ -132,17 +136,31 @@ struct ContentView: View {
 
     private var cardFormSection: some View {
         section("4. Card form → JWE") {
-            GopayCardForm(isValid: $isFormValid)
+            // Locale selector — switch the language of the form labels/placeholders live.
+            Picker("Locale", selection: $selectedLocale) {
+                Text("System default").tag(String?.none)
+                ForEach(GopayLocales.availableCodes(), id: \.self) { code in
+                    Text(code).tag(String?.some(code))
+                }
+            }
+            .pickerStyle(.menu)
+
+            // Re-create the form when the locale changes so it picks up the new strings.
+            // `.onSubmit` shows the localized error messages only after the user taps submit.
+            GopayCardForm(locale: selectedLocale, validation: .onSubmit(attempted: $didAttemptSubmit), isValid: $isFormValid)
+                .id(selectedLocale ?? "system")
                 .padding()
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(12)
 
             button("Encrypt card → JWE", system: "lock.fill") {
+                // Reveal inline validation errors; only encrypt once the form is valid.
+                await MainActor.run { didAttemptSubmit = true }
+                guard isFormValid != false else { return }
                 let encrypted = try await GopaySDK.shared.submitCardForm()
                 await MainActor.run { jwe = encrypted }
                 log("// submitCardForm() -> JWE (filled into the field below)\n\(encrypted)")
             }
-            .disabled(isFormValid == false)
 
             labeledField("JWE (from on-device card encryption)", text: $jwe)
             button("Charge with encrypted card (JWE)", system: "lock.circle.fill") {
