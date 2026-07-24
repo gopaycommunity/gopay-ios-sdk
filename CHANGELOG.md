@@ -1,3 +1,23 @@
+# [1.4.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.3.1...1.4.0) (2026-07-24)
+
+
+### Bug Fixes
+
+* sonarQube issues GPMOB-133 ([f1113ff](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/f1113ffce334b46418c61ec9ef4f567054b12e48))
+
+
+### Features
+
+* add charge payment endpoint with web transaction ([61f3d6b](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/61f3d6b22d67f7cacd91295752669e1e39c16160))
+* add create payment API method GPMOB-117 ([a259af2](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/a259af27ca2674cb78d465249fb560830345c6dd))
+* add example usage of create payment endpoint GPMOB-117 ([ec8d5dd](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/ec8d5ddcf06a4276684266f5a5ad87397e2abdb1))
+* add payement charge status method GPMOB-121 ([552c445](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/552c44597969e660547e2ec8799cf4bf34d6957a))
+* add Payment status method GPMOB-120 ([91f3950](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/91f39507789dc3cbbc8abc6c98cf90861cba2fdf))
+* add QR payment info method GPMOB-122 ([5042e07](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/5042e07c7fdff1655ac3e445c414df35daeb7b23))
+* added form locales and localization logic GPMOB-125 ([5d5d301](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/5d5d3014694fea08ca2192e51ae3453d71b34d28))
+* added formatting textField in payment form GPMOB-136 ([0b13c40](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/0b13c40e8e2f654d2352c6773cbc2a8b43ebc4f3))
+* charge with JWE payload GPMOB-134 ([fdfef38](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/fdfef38af7a815401805f487f658d55e30708e4e))
+
 ## [1.3.1](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.3.0...1.3.1) (2026-06-02)
 
 
