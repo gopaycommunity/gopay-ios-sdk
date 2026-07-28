@@ -1,3 +1,10 @@
+# [1.5.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.4.0...1.5.0) (2026-07-28)
+
+
+### Features
+
+* fill browser data on charge GPMOB-123 ([5745f29](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/5745f29540dcd944ee8ef55b2989c84cf42fa65a))
+
 # [1.4.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.3.1...1.4.0) (2026-07-24)
 
 
