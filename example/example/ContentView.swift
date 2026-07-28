@@ -35,21 +35,21 @@ struct ContentView: View {
     private var isBusy: Bool { busyLabel != nil }
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    merchantSection
-                    sessionSection
-                    if session != nil {
-                        operationsSection
-                        cardFormSection
-                    }
-                    responseSection
+        // Presented inside `RootView`'s NavigationStack — no navigation container of its own.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                merchantSection
+                sessionSection
+                if session != nil {
+                    operationsSection
+                    cardFormSection
                 }
-                .padding()
+                responseSection
             }
-            .navigationTitle("GoPay SDK")
+            .padding()
         }
+        .navigationTitle("Developer sandbox")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Sections
@@ -183,7 +183,7 @@ struct ContentView: View {
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(12)
         }
-    }
+    } 
 
     // MARK: - Flows
 
@@ -314,25 +314,15 @@ struct ContentView: View {
     /// can see the full shape the method returns.
     @MainActor
     private func logResponse<T: Encodable>(_ label: String, _ value: T) {
-        log("// \(label)\n" + Self.prettyJSON(value))
+        log("// \(label)\n" + JSONPreview.string(value))
     }
 
     @MainActor
     private func log(_ message: String) {
         responseText += responseText.isEmpty ? message : "\n\n\(message)"
     }
-
-    private static func prettyJSON<T: Encodable>(_ value: T) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? encoder.encode(value),
-              let string = String(data: data, encoding: .utf8) else {
-            return String(describing: value)
-        }
-        return string
-    }
 }
 
 #Preview {
-    ContentView()
+    NavigationStack { ContentView() }
 }
