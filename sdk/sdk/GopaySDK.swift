@@ -19,11 +19,14 @@ import PassKit
 /// calls `POST /cards/tokens`. The mobile SDK never touches that endpoint.
 public class GopaySDK {
 
-    /// The current version of the SDK, read from the bundle's Info.plist (`MARKETING_VERSION`).
-    public static var version: String {
-        let bundle = Bundle(for: GopaySDK.self)
-        return bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
-    }
+    /// The current version of the SDK.
+    ///
+    /// A compiled-in constant rather than an Info.plist lookup: under Swift Package Manager the
+    /// SDK links statically into the host app, so `Bundle(for:)` resolves to the *app* bundle and
+    /// would report the integrating app's `MARKETING_VERSION` instead of the SDK's.
+    ///
+    /// - Note: Rewritten automatically on release by `scripts/set-version.sh`. Don't edit by hand.
+    public static let version = "1.5.0"
 
     /// The shared instance of the SDK.
     public static let shared = GopaySDK()

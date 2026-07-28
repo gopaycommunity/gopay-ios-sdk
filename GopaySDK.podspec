@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = "GopaySDK"
-  spec.version      = "2.0.0"
+  spec.version      = "1.5.0"
   spec.summary      = "Gopay SDK for iOS applications"
   spec.description  = <<-DESC
                    A payment SDK that allows merchants to integrate payment services into their iOS applications.
