@@ -43,13 +43,13 @@ Swift **async/await**.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "2.0.0")
+    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "1.5.0")
 ],
 targets: [
     .target(
         name: "YourApp",
         dependencies: [
-            .product(name: "GopaySDK", package: "gpy-sdk-ios")
+            .product(name: "GopaySDK", package: "gopay-ios-sdk")
         ]
     )
 ]
@@ -60,7 +60,7 @@ targets: [
 ```ruby
 target 'YourApp' do
   use_frameworks!
-  pod 'GopaySDK', '~> 2.0'
+  pod 'GopaySDK', '~> 1.5'
 end
 ```
 
@@ -68,6 +68,9 @@ end
 pod repo update
 pod install
 ```
+
+`1.5.0` is the newest published version — see the
+[tags](https://github.com/gopaycommunity/gopay-ios-sdk/tags) for anything later.
 
 ---
 
@@ -93,7 +96,9 @@ never sees the merchant secret and cannot create payments. The example app inclu
 
 ---
 
-## Initialization
+## Quick start
+
+### Initialize
 
 Initialize once on app start. `clientId` + `shareableKey` are safe to embed — they only authorize
 the public `GET /cards/public-key` endpoint, never charging.
@@ -114,7 +119,7 @@ GopaySDK.shared.initialize(
 
 ---
 
-## Starting a payment session
+### Start a session and charge
 
 ```swift
 // `paymentId` and `paymentSecret` come from your backend after it created the payment.
@@ -170,7 +175,10 @@ do {
         print("Charge state:", charge.state)
     }
 } catch is CancellationError {
-    print("User dismissed Apple Pay / verification")
+    print("User dismissed the 3DS verification")
+} catch {
+    // Dismissing the Apple Pay sheet lands here, not in the CancellationError branch
+    print("Charge failed or Apple Pay was dismissed:", error.localizedDescription)
 }
 ```
 
@@ -313,6 +321,20 @@ let strings = GopaySDK.shared.currentLocaleStrings(preferred: "cs")
 
 ---
 
+## Environments
+
+| Environment | Base URL | Status |
+| --- | --- | --- |
+| `.development(baseURL:)` | whatever you pass in | Use this |
+| `.sandbox` | `https://gw.sandbox.gopay.com/gp-gw/api/4.0/` | Works |
+| `.production` | *(empty)* | No URL configured |
+
+`.production` resolves to an empty base URL, so calls fail with `unsupported URL`
+(`NSURLErrorUnsupportedURL`). Pass the production gateway through `.development(baseURL:)` until a
+real URL is set.
+
+---
+
 ## Error handling
 
 Session and config failures throw `GopaySDKError`, which carries a stable `code` (matching the
@@ -327,6 +349,14 @@ Android SDK) and a message:
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
+| `NETWORK_002` | Gateway returned 4xx |
+| `NETWORK_003` | Gateway returned 5xx |
+| `CONFIG_001` | `initialize(with:)` was never called |
+| `CONFIG_003` | A required configuration parameter is missing |
+| `CONFIG_006` | The resolved base URL is not a valid URL |
+| `VALIDATION_007` | Invalid input — empty ids, or card-form validation failed |
+| `INTERNAL_001` | Unexpected internal error |
+| `INTERNAL_003` | Response could not be decoded |
 
 ```swift
 } catch let error as GopaySDKError {
@@ -334,49 +364,79 @@ Android SDK) and a message:
 }
 ```
 
-User dismissal of the Apple Pay sheet or the 3DS WebView surfaces as `CancellationError`.
+Dismissing the 3DS WebView surfaces as `CancellationError`. Dismissing the **Apple Pay** sheet
+does not — it throws a `GopaySDK` `NSError` carrying "Apple Pay payment was cancelled by the
+user.", so a `catch is CancellationError` branch alone will not catch it.
+
+Every code above, with its causes and what to do about it, is in
+[`sdk/docs/ERROR_CODES.md`](sdk/docs/ERROR_CODES.md). The codes are shared with the Android SDK —
+the iOS surface throws the subset listed there.
 
 ---
 
-## Running the Example App
+## Example app
 
 ```bash
 cd example
 open example.xcodeproj
 ```
 
-Select the `example` scheme, choose a simulator, and Run (⌘R). Fill in your `shareableKey` /
-merchant `clientSecret` in `DemoConfig` (`exampleApp.swift`). The demo walks the whole flow:
-create payment (simulated server) → start session → status → card-form→JWE → Apple Pay → 3DS →
-charge state → QR.
+Select the `example` scheme, choose a simulator, and Run (⌘R).
+
+The demo targets the alpha8 dev gateway, which resolves to a private address — **you need the
+GoPay VPN**, or every "server" call fails. Fill in `shareableKey`, `clientSecret` and `goid` in
+`DemoConfig` (`exampleApp.swift`): the committed values are placeholders, and the dev credentials
+are rotated whenever that environment is reset.
+
+The screen has four sections — **1.** simulated merchant backend, **2.** payment session,
+**3.** operations (status, Apple Pay, card token, charge, charge state, 3DS, QR), and **4.** card
+form → JWE. Sections 3 and 4 appear once a session is live.
+
+See [`example/README.md`](example/README.md) for the full walkthrough.
 
 ---
 
-## Maintainer Notes – Releasing New Versions
+## Security notes
 
-### Swift Package
+- `payment_secret` and the payment-scoped JWT live in memory only — never written to disk, and
+  wiped by `close()`.
+- `GopayCardForm` keeps PAN and CVV inside the SDK; you only ever receive a JWE.
+- Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key.
+- Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
+  payments and never sees the merchant secret.
+
+## Testing
 
 ```bash
-git tag 2.0.0
-git push origin 2.0.0
+cd sdk
+xcodebuild test -project sdk.xcodeproj -scheme sdk \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-### CocoaPods
+The tests live in `sdk/sdkTests` and run through the `sdk` Xcode project — `Package.swift`
+declares no test target, so `swift test` will not find them.
 
-1. Set `spec.version` to `2.0.0` in `GopaySDK.podspec`.
-2. Commit, tag, and push:
+## Releasing
 
-```bash
-git add GopaySDK.podspec
-git commit -m "Release 2.0.0"
-git tag 2.0.0
-git push origin main
-git push origin 2.0.0
-```
+Releases are cut by **semantic-release** on `master`: it derives the version from the commit
+messages, bumps `package.json`, rewrites `CHANGELOG.md`, and creates and pushes the git tag.
+commitlint enforces conventional commits with a `GPMOB-` reference, so the commit message is what
+picks the next version. Don't tag by hand — SPM consumers resolve the tag semantic-release made.
 
-3. Publish:
+CocoaPods is not automated. After a release, set `spec.version` in `GopaySDK.podspec` to the tag
+semantic-release produced, then publish:
 
 ```bash
-pod lib lint GopaySDK.podspec --allow-warnings
+pod spec lint GopaySDK.podspec --allow-warnings   # validates against the remote tag
 pod trunk push GopaySDK.podspec --allow-warnings
 ```
+
+Use `pod spec lint`, not `pod lib lint` — the latter only checks local sources and passes even when
+`spec.version` points at a tag that doesn't exist. The podspec currently says `2.0.0` while the
+newest tag is `1.5.0`, so it needs correcting before the next publish.
+
+---
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). `GopaySDK.podspec` declares the same.
