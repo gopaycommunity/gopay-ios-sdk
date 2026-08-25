@@ -183,7 +183,17 @@ final class CheckoutViewModel {
 
         let session = try await startNewSession()
         busyLabel = "Encrypting card…"
-        let jwe = try await GopaySDK.shared.submitCardForm()
+        let jwe: String
+        do {
+            jwe = try await GopaySDK.shared.submitCardForm()
+        } catch let error as GopaySDKError where error.message == GopaySDKErrors.noCardFormData {
+            // The SDK wiped the card data after the previous successful encryption (GPMOB-140),
+            // and the gateway accepts each JWE only once — so a retry needs the card confirmed
+            // again. Any edit in the form re-syncs its data and the next Pay succeeds.
+            busyLabel = nil
+            banner = "Please re-enter your card details and try again."
+            return
+        }
 
         busyLabel = "Authorizing…"
         let request = ChargePaymentRequest.encryptedCard(
