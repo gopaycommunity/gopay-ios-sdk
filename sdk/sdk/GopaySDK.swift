@@ -66,6 +66,9 @@ public class GopaySDK {
         self.publicKeyCache = PublicKeyCache(
             publicAPI: PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
         )
+        // Resolve the real WebView User-Agent now, off the critical path, so the first charge's
+        // browser_data doesn't pay the WKWebView construction + JS round-trip latency.
+        Task { @MainActor in GopayUserAgent.prewarm() }
     }
 
     /// Resolves the ``GopayLocaleStrings`` the payment card form uses for its labels.

@@ -17,6 +17,7 @@ struct BankTransferSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var copied: String?
+    @State private var isSharePresented = false
 
     private var local: QrLocalBankAccount? { details.recipient?.bankAccount?.local }
     private var international: QrInternationalBankAccount? { details.recipient?.bankAccount?.international }
@@ -72,6 +73,19 @@ struct BankTransferSheet: View {
             .background(CheckoutTheme.canvas)
             .navigationTitle("Bank transfer")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isSharePresented = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+            .sheet(isPresented: $isSharePresented) {
+                ShareSheet(activityItems: shareItems)
+                    .presentationDetents([.medium, .large])
+            }
             .overlay(alignment: .bottom) {
                 if let copied {
                     Text("\(copied) copied")
@@ -146,6 +160,20 @@ struct BankTransferSheet: View {
         guard let local, let number = local.accountNumber else { return nil }
         if let prefix = local.prefix, !prefix.isEmpty { return "\(prefix)-\(number)" }
         return number
+    }
+
+    /// Text + image handed to the share sheet. `UIActivityViewController` accepts heterogeneous
+    /// items directly — no `ShareLink`-style item-type gymnastics needed.
+    private var shareText: String {
+        var lines = ["Bank transfer — \(cart.formatted(details.amount))"]
+        lines.append(contentsOf: detailRows.map { "\($0.label): \($0.value)" })
+        return lines.joined(separator: "\n")
+    }
+
+    private var shareItems: [Any] {
+        var items: [Any] = [shareText]
+        if let qrImage { items.append(qrImage) }
+        return items
     }
 
     private var detailRows: [(label: String, value: String)] {

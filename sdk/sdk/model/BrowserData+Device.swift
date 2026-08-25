@@ -8,6 +8,22 @@ public extension BrowserData {
     private static let defaultAcceptHeader =
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
 
+    /// Synthesized fallback User-Agent, used only if the real WebView lookup in
+    /// ``GopayUserAgent`` fails. Reproduces the form a plain `WKWebView` reports (the
+    /// `Mobile/15E148` token without Safari's trailing `Version/… Safari/…`; the WebKit build
+    /// token is fixed across iOS releases), so even the fallback is plausible to an issuer.
+    @MainActor
+    static func syntheticUserAgent() -> String {
+        let device = UIDevice.current
+        let isPad = device.userInterfaceIdiom == .pad
+        let platform = isPad ? "iPad" : "iPhone"
+        // UA convention: "CPU iPhone OS 18_2" on iPhone, "CPU OS 18_2" on iPad.
+        let cpu = isPad ? "OS" : "iPhone OS"
+        let osVersion = device.systemVersion.replacingOccurrences(of: ".", with: "_")
+        return "Mozilla/5.0 (\(platform); CPU \(cpu) \(osVersion) like Mac OS X) "
+            + "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+    }
+
     /// Best-effort ``BrowserData`` derived from the current device.
     ///
     /// The spec requires `browser_data` on every card charge, but an Apple Pay payment doesn't
@@ -15,9 +31,13 @@ public extension BrowserData {
     /// `colorDepth` has no real device API on iOS; 24 is the universal value every mobile browser
     /// reports regardless of hardware. `javascriptEnabled` reflects that the SDK's own 3DS
     /// challenge (``GopayChargeVerificationViewController``) renders in a `WKWebView` with a
-    /// default configuration, which runs JavaScript. Reads `UIScreen`, so it is `@MainActor`.
+    /// default configuration, which runs JavaScript. `userAgent` is the real UA that WebView
+    /// reports — see ``GopayUserAgent``, which requires a JS round-trip and so makes this async.
+    ///
+    /// Every field can be overridden by constructing ``BrowserData`` directly if you collected
+    /// more accurate values elsewhere.
     @MainActor
-    static func deviceDefault() -> BrowserData {
+    static func deviceDefault() async -> BrowserData {
         let bounds = UIScreen.main.nativeBounds
         let language = Locale.preferredLanguages.first ?? Locale.current.identifier
         // JavaScript convention: minutes west of UTC (CET = -60).
@@ -28,7 +48,7 @@ public extension BrowserData {
             screenWidth: Int(bounds.width),
             screenHeight: Int(bounds.height),
             colorDepth: 24,
-            userAgent: nil,
+            userAgent: await GopayUserAgent.resolve(),
             acceptHeader: defaultAcceptHeader,
             javascriptEnabled: true
         )

@@ -54,7 +54,8 @@ enum MerchantBackendSimulator {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let basic = Data("\(DemoConfig.clientId):\(DemoConfig.clientSecret)".utf8).base64EncodedString()
+        let credentials = DemoConfig.shared.credentials
+        let basic = Data("\(credentials.clientId):\(credentials.clientSecret)".utf8).base64EncodedString()
         request.setValue("Basic \(basic)", forHTTPHeaderField: "Authorization")
         request.httpBody = Data("grant_type=client_credentials&scope=payment:write%20payment:read%20card:write%20card:read".utf8)
 
@@ -68,7 +69,7 @@ enum MerchantBackendSimulator {
     }
 
     private static func createPayment(token: String, amount: Int, currency: String) async throws -> CreatedPayment {
-        var request = URLRequest(url: url("eshops/\(DemoConfig.goid)/payments"))
+        var request = URLRequest(url: url("eshops/\(DemoConfig.shared.credentials.goid)/payments"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -101,8 +102,14 @@ enum MerchantBackendSimulator {
 
     // MARK: - Helpers
 
+    /// Reads the base URL straight from the live SDK config rather than from `DemoConfig`
+    /// directly, so this simulator can never disagree with the SDK about which gateway is active
+    /// after an environment switch. An unset/placeholder environment resolves to an empty string,
+    /// which still parses as a (relative, hostless) URL — the request then fails clearly at
+    /// `send(_:)` rather than crashing here.
     private static func url(_ path: String) -> URL {
-        URL(string: DemoConfig.baseURL + path)!
+        let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
+        return URL(string: baseURL + path)!
     }
 
     /// iOS 13-safe async wrapper around `dataTask` (`URLSession.data(for:)` is iOS 15+).

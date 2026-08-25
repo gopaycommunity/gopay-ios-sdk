@@ -10,6 +10,9 @@
 //  Every payment method funnels into the same `runCharge` tail, because 3DS and result handling
 //  are identical regardless of how the card data arrived.
 //
+//  Each tap of the pay button starts that sequence from the top with a brand-new payment — a
+//  payment is single-use, so a retry after a decline needs a new one.
+//
 
 import Foundation
 import SwiftUI
@@ -178,7 +181,7 @@ final class CheckoutViewModel {
         didAttemptSubmit = true
         guard isCardFormValid != false else { return }
 
-        let session = try await ensureSession()
+        let session = try await startNewSession()
         busyLabel = "Encrypting card…"
         let jwe = try await GopaySDK.shared.submitCardForm()
 
@@ -188,7 +191,7 @@ final class CheckoutViewModel {
             browserData: await BrowserData.deviceDefault(),
             challengePreference: .auto
         )
-        try await runCharge { try await session.charge(request) }
+        try await runCharge(session: session) { try await session.charge(request) }
     }
 
     private func payWithApplePay() async throws {
@@ -196,13 +199,13 @@ final class CheckoutViewModel {
             banner = "Apple Pay is not available on this device."
             return
         }
-        let session = try await ensureSession()
+        let session = try await startNewSession()
         busyLabel = "Waiting for Apple Pay…"
-        try await runCharge { try await session.chargeWithApplePay() }
+        try await runCharge(session: session) { try await session.chargeWithApplePay() }
     }
 
     private func payWithSavedCard() async throws {
-        let session = try await ensureSession()
+        let session = try await startNewSession()
 
         // Stands in for a card the shopper saved on a previous order. In a real integration your
         // server holds the token; here we mint one on the fly from a known test card.
@@ -217,18 +220,17 @@ final class CheckoutViewModel {
             browserData: await BrowserData.deviceDefault(),
             challengePreference: .auto
         )
-        try await runCharge { try await session.charge(request) }
+        try await runCharge(session: session) { try await session.charge(request) }
     }
 
     private func showBankTransfer() async throws {
-        let session = try await ensureSession()
+        let session = try await startNewSession()
         busyLabel = "Fetching transfer details…"
         qrDetails = try await session.getQrPaymentInfo(format: .png)
     }
 
     /// Charge, then settle. Shared by every card-based method.
-    private func runCharge(_ charge: () async throws -> ChargePaymentResponse) async throws {
-        let session = try await ensureSession()
+    private func runCharge(session: PaymentSession, _ charge: () async throws -> ChargePaymentResponse) async throws {
         let response = try await charge()
         let settled = try await settle(session: session, initial: response)
         outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
@@ -278,10 +280,16 @@ final class CheckoutViewModel {
     private static let pollInterval: Double = 1.5
     private static let maxPollAttempts = 30
 
-    /// Creates the payment on the simulated merchant backend the first time it's needed, then
-    /// opens the SDK session. Subsequent pay attempts reuse both.
-    private func ensureSession() async throws -> PaymentSession {
-        if let session { return session }
+    /// Creates a *fresh* payment on the simulated merchant backend and opens a session for it.
+    ///
+    /// Called on every pay attempt, not once per checkout. A payment is single-use: once it has
+    /// been charged the gateway won't accept another charge on the same `payment_id`, so reusing
+    /// the session would leave the shopper stuck after a decline with no way to try another
+    /// method. A real shop behaves the same way — a retry means a new payment.
+    private func startNewSession() async throws -> PaymentSession {
+        if let session { await session.close() }
+        session = nil
+
         busyLabel = "Preparing your order…"
         let created = try await MerchantBackendSimulator.createPayment(
             amount: cart.total,

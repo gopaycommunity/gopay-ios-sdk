@@ -117,6 +117,10 @@ GopaySDK.shared.initialize(
 )
 ```
 
+`GopaySDK.version` returns the SDK's own version (e.g. `"1.5.0"`) — a compiled-in constant rather
+than an Info.plist lookup, since under SPM the SDK links statically into the host app and
+`Bundle(for:)` would otherwise report the *host app's* version instead.
+
 ---
 
 ### Start a session and charge
@@ -184,6 +188,21 @@ do {
 
 `chargeWithApplePay` derives the required `browser_data` from the device automatically; pass your
 own `BrowserData` if you have more accurate values.
+
+### Browser data / User-Agent
+
+`BrowserData.deviceDefault()` is `async` because `user_agent` is read from a real, hidden
+`WKWebView` (`navigator.userAgent`) rather than synthesized — the value the issuer sees in the 3DS
+AReq then matches, byte for byte, the WebView that actually renders the challenge
+(`GopayChargeVerificationViewController`). The lookup runs once per process: the result is cached,
+concurrent callers share one in-flight resolution, and `initialize(with:)` prewarms it so the first
+charge doesn't pay the WebView-construction latency. If the lookup ever fails, it falls back to
+`BrowserData.syntheticUserAgent()` — a plausible UA built from `UIDevice` — rather than sending
+`nil`.
+
+```swift
+let browserData = await BrowserData.deviceDefault()
+```
 
 ### Charging with a card token
 
@@ -333,6 +352,17 @@ let strings = GopaySDK.shared.currentLocaleStrings(preferred: "cs")
 (`NSURLErrorUnsupportedURL`). Pass the production gateway through `.development(baseURL:)` until a
 real URL is set.
 
+`GopayEnvironment.baseURL` is `public`, so a host app can read back the URL the SDK actually
+resolved for `config.environment` instead of duplicating it elsewhere. The example app's
+`MerchantBackendSimulator` does exactly this — it derives its own request base URL from
+`GopaySDK.shared.config?.environment.baseURL` rather than from a separate constant, so a runtime
+environment switch can never leave the simulated backend and the SDK pointed at different
+gateways:
+
+```swift
+let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
+```
+
 ---
 
 ## Error handling
@@ -383,14 +413,29 @@ open example.xcodeproj
 
 Select the `example` scheme, choose a simulator, and Run (⌘R).
 
-The demo targets the alpha8 dev gateway, which resolves to a private address — **you need the
-GoPay VPN**, or every "server" call fails. Fill in `shareableKey`, `clientSecret` and `goid` in
-`DemoConfig` (`exampleApp.swift`): the committed values are placeholders, and the dev credentials
-are rotated whenever that environment is reset.
+The app opens on a launcher with two destinations and an environment badge:
 
-The screen has four sections — **1.** simulated merchant backend, **2.** payment session,
-**3.** operations (status, Apple Pay, card token, charge, charge state, 3DS, QR), and **4.** card
-form → JWE. Sections 3 and 4 appear once a session is live.
+- **Demo checkout** — a realistic e-shop checkout (`CheckoutView`/`CheckoutViewModel`) that
+  exercises every payment method — card form, Apple Pay, a saved card token, and bank transfer —
+  through one consistent flow: create a payment, charge, and drive any 3DS challenge automatically
+  as part of polling the charge to a terminal state. Each pay attempt creates a **fresh** payment,
+  since a payment is single-use and a retry after a decline needs a new one.
+- **Developer sandbox** (`ContentView`) — the original four-section console described below, for
+  poking at each `PaymentSession` method individually and reading the raw JSON response.
+- The **environment badge** at the bottom is tappable — switch between Development / Sandbox /
+  Production at runtime. Switching closes any live session and re-initializes the SDK, so nothing
+  keeps talking to the old gateway. The choice is **not persisted**; the app always starts on
+  Development.
+
+The demo's Development environment is meant to be pointed at whatever gateway you're testing
+against — its base URL and credentials are freely editable in `DemoConfig.swift`. It ships pointed
+at an internal gateway with working credentials, used primarily for contributing to this repo.
+Sandbox and Production ship with **empty credential placeholders** — selecting them before filling
+those in fails clearly at the gateway rather than silently mixing environments.
+
+The Developer sandbox has four sections — **1.** simulated merchant backend, **2.** payment
+session, **3.** operations (status, Apple Pay, card token, charge, charge state, 3DS, QR), and
+**4.** card form → JWE. Sections 3 and 4 appear once a session is live.
 
 See [`example/README.md`](example/README.md) for the full walkthrough.
 
@@ -423,8 +468,18 @@ messages, bumps `package.json`, rewrites `CHANGELOG.md`, and creates and pushes 
 commitlint enforces conventional commits with a `GPMOB-` reference, so the commit message is what
 picks the next version. Don't tag by hand — SPM consumers resolve the tag semantic-release made.
 
-CocoaPods is not automated. After a release, set `spec.version` in `GopaySDK.podspec` to the tag
-semantic-release produced, then publish:
+`@semantic-release/exec` runs [`scripts/set-version.sh`](scripts/set-version.sh) as part of that
+same release, which rewrites `spec.version` in `GopaySDK.podspec` and the `GopaySDK.version`
+constant in [`sdk/sdk/GopaySDK.swift`](sdk/sdk/GopaySDK.swift) to match — both are committed by
+`@semantic-release/git` alongside `CHANGELOG.md` and `package.json`, so a release can't leave them
+out of sync the way the podspec used to drift. Run it by hand if you ever need to (e.g. to check
+what a release would rewrite):
+
+```bash
+./scripts/set-version.sh 1.6.0
+```
+
+CocoaPods publishing itself is not automated — after a release, push the podspec:
 
 ```bash
 pod spec lint GopaySDK.podspec --allow-warnings   # validates against the remote tag
@@ -432,8 +487,7 @@ pod trunk push GopaySDK.podspec --allow-warnings
 ```
 
 Use `pod spec lint`, not `pod lib lint` — the latter only checks local sources and passes even when
-`spec.version` points at a tag that doesn't exist. The podspec currently says `2.0.0` while the
-newest tag is `1.5.0`, so it needs correcting before the next publish.
+`spec.version` points at a tag that doesn't exist.
 
 ---
 

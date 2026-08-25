@@ -13,8 +13,10 @@ public enum GopayEnvironment: Equatable {
 
     private static let sandboxBaseURL = "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
 
-    /// The base URL for the selected environment.
-    var baseURL: String {
+    /// The base URL for the selected environment. Public so host apps can display or route
+    /// around it (e.g. a demo backend simulator deriving its own base URL from the live SDK
+    /// config, so the two can never disagree about which gateway is active).
+    public var baseURL: String {
         switch self {
         case .development(let url): return url
         case .sandbox: return Self.sandboxBaseURL

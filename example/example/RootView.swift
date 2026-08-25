@@ -71,30 +71,45 @@ struct RootView: View {
     }
 }
 
-/// Which gateway both demo surfaces are pointed at, straight from the live SDK config — so it's
-/// never possible to demo against one environment while the label claims another.
+/// Which gateway both demo surfaces are pointed at, and a tap target to switch it. Reads
+/// `DemoConfig.shared` — the same object `select(_:)` updates — so it's never possible to demo
+/// against one environment while the label claims another.
 private struct EnvironmentBadge: View {
-    private var environment: GopayEnvironment? { GopaySDK.shared.config?.environment }
+    private var environment: DemoEnvironment { DemoConfig.shared.environment }
 
     var body: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(tint)
-                .frame(width: 7, height: 7)
-            Text(name)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(tint)
-            if let host {
-                Text(host)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(CheckoutTheme.inkMuted)
-                    .lineLimit(1)
-                    .truncationMode(.head)
+        Menu {
+            Picker("Environment", selection: Binding(
+                get: { environment },
+                set: { DemoConfig.shared.select($0) }
+            )) {
+                ForEach(DemoEnvironment.allCases) { env in
+                    Text(env.title).tag(env)
+                }
             }
+        } label: {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(tint)
+                    .frame(width: 7, height: 7)
+                Text(name)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(tint)
+                if let host {
+                    Text(host)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(CheckoutTheme.inkMuted)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(CheckoutTheme.inkMuted)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(tint.opacity(0.12), in: Capsule())
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .background(tint.opacity(0.12), in: Capsule())
     }
 
     private var name: String {
@@ -102,15 +117,13 @@ private struct EnvironmentBadge: View {
         case .development: "DEVELOPMENT"
         case .sandbox: "SANDBOX"
         case .production: "PRODUCTION"
-        case nil: "NOT INITIALIZED"
         }
     }
 
-    /// Only the development environment carries a caller-supplied URL worth showing; sandbox and
-    /// production resolve to fixed hosts inside the SDK.
+    /// Sandbox and production resolve to fixed hosts inside the SDK; `baseURL` is public
+    /// specifically so this can read them without duplicating the URLs here.
     private var host: String? {
-        guard case .development(let baseURL) = environment else { return nil }
-        return URL(string: baseURL)?.host
+        URL(string: environment.gopayEnvironment.baseURL)?.host
     }
 
     private var tint: Color {
@@ -118,7 +131,6 @@ private struct EnvironmentBadge: View {
         case .production: CheckoutTheme.danger
         case .sandbox: CheckoutTheme.warning
         case .development: CheckoutTheme.accent
-        case nil: CheckoutTheme.inkMuted
         }
     }
 }

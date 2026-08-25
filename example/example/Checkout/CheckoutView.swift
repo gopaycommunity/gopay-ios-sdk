@@ -95,36 +95,10 @@ struct CheckoutView: View {
             }
 
             Spacer()
-
-            localeMenu
         }
         .padding(.horizontal, CheckoutTheme.gutter)
         .padding(.vertical, 10)
         .background(CheckoutTheme.canvas)
-    }
-
-    /// Demonstrates `GopayLocales` — the card form ships with 20 built-in languages, plus any
-    /// custom locale registered at init time (`"xx"` in `exampleApp.swift`).
-    private var localeMenu: some View {
-        Menu {
-            Picker("Language", selection: $model.locale) {
-                Text("System default").tag(String?.none)
-                ForEach(GopayLocales.availableCodes(), id: \.self) { code in
-                    Text(code.uppercased()).tag(String?.some(code))
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "globe")
-                Text(model.locale?.uppercased() ?? "AUTO")
-            }
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(CheckoutTheme.ink)
-            .padding(.horizontal, 12)
-            .frame(height: 38)
-            .background(CheckoutTheme.surface, in: Capsule())
-            .overlay(Capsule().stroke(CheckoutTheme.hairline, lineWidth: 1))
-        }
     }
 
     // MARK: - Order summary
@@ -217,6 +191,10 @@ struct CheckoutView: View {
     private func expandedContent(for method: CheckoutViewModel.Method) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if method == .card {
+                HStack {
+                    Spacer()
+                    localeMenu
+                }
                 // The SDK's own component, themed to match the shop. Card data never leaves it —
                 // `submitCardForm()` hands back a JWE, not a PAN.
                 GopayCardForm(
@@ -228,6 +206,31 @@ struct CheckoutView: View {
                 .id(model.locale ?? "system")
             }
             SDKNote(text: method.sdkNote)
+        }
+    }
+
+    /// Demonstrates `GopayLocales` — the card form ships with 20 built-in languages, plus any
+    /// custom locale registered at init time (`"xx"` in `exampleApp.swift`). Lives next to the
+    /// card form rather than in the header, since it's the only thing it actually localizes.
+    private var localeMenu: some View {
+        Menu {
+            Picker("Language", selection: $model.locale) {
+                Text("System default").tag(String?.none)
+                ForEach(GopayLocales.availableCodes(), id: \.self) { code in
+                    Text(code.uppercased()).tag(String?.some(code))
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "globe")
+                Text(model.locale?.uppercased() ?? "AUTO")
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(CheckoutTheme.ink)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(CheckoutTheme.surface, in: Capsule())
+            .overlay(Capsule().stroke(CheckoutTheme.hairline, lineWidth: 1))
         }
     }
 

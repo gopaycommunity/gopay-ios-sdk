@@ -11,41 +11,14 @@ import GopaySDK
 @main
 struct exampleApp: App {
     init() {
-        // Initialize the SDK once on app start. `clientId` + `shareableKey` are safe to embed —
-        // they only authorize the public `/cards/public-key` endpoint, never charging.
-        // Register a custom locale (code "xx") the form can select alongside the built-ins, and
-        // leave `locale = nil` so the default follows the device language (falling back to cs).
-        var customLocale = GopayLocales.en
-        customLocale.panLabel = "Yer card number"
-        customLocale.expLabel = "Doom date"
-        customLocale.cvvLabel = "Secret code"
-
-        GopaySDK.shared.initialize(
-            with: GopaySDKConfig(
-                environment: .development(baseURL: DemoConfig.baseURL),
-                clientId: DemoConfig.clientId,
-                shareableKey: DemoConfig.shareableKey,
-                enableDebugLogging: true,
-                customLocales: ["xx": customLocale]
-            )
-        )
+        // Initialize the SDK once on app start, on the development environment. See DemoConfig.swift
+        // for the environment/credential bundles and the runtime switcher (RootView's badge).
+        GopaySDK.shared.initialize(with: DemoConfig.buildConfig(for: .development))
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
     }
-}
-
-/// Demo constants. Replace with your own merchant values.
-enum DemoConfig {
-    static let baseURL = "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
-    static let clientId = "SDK"
-    /// Public shareable key — safe to ship in the app.
-    static let shareableKey = "YOUR_SHAREABLE_KEY"
-    /// Merchant secret — **never ship this in a real app.** Used here only by the in-app
-    /// `MerchantBackendSimulator` to stand in for your server while demoing.
-    static let clientSecret = "YOUR_CLIENT_SECRET"
-    static let goid = "8761908826"
 }

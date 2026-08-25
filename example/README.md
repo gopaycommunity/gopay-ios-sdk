@@ -1,37 +1,16 @@
 # Gopay iOS SDK — Example App
 
-A self-contained demo of the whole Payments 4.0 flow: it fakes the merchant backend in-app, starts
-a payment session, and exercises every `PaymentSession` operation plus the card form.
+A self-contained demo of the whole Payments 4.0 flow. It fakes the merchant backend in-app, and
+shows the SDK two ways: as a realistic e-shop checkout, and as a raw call-by-call console.
 
 ## Prerequisites
 
 - Xcode 13.2+ and an iOS 13+ simulator (the project's own deployment target is higher — Xcode will
   tell you if your simulator is too old).
-- **GoPay VPN.** `DemoConfig.baseURL` points at `gw.alpha8.dev.gopay.com`, which resolves to a
-  private `10.26.x.x` address. Without the VPN every "server" button fails — after up to ~60 s,
-  since `URLSession`'s default request timeout applies and nothing overrides it.
-- Merchant credentials for the dev environment (below).
-
-## Configuration
-
-All demo values live in `DemoConfig` in
-[`exampleApp.swift`](example/exampleApp.swift): `baseURL`, `clientId`, `shareableKey`,
-`clientSecret` and `goid`. `shareableKey` and `clientSecret` ship as placeholders, so fill them in
-before running — `goid` is required too, since the simulated backend posts to
-`/eshops/{goid}/payments`.
-
-The dev credentials rotate whenever the alpha8 environment is reset. When that has happened every
-call fails with `401 UNAUTHORIZED — Invalid client_id or client_secret`, which looks like a code
-bug but isn't; check with a token request before debugging anything else:
-
-```bash
-curl -s -X POST "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/oauth2/token" \
-  -u "<client_id>:<client_secret>" \
-  -d "grant_type=client_credentials&scope=payment:write payment:read card:write card:read"
-```
-
-`clientSecret` is a **merchant** secret. It exists here only so `MerchantBackendSimulator` can
-stand in for your server — never ship it in a real app.
+- Network access to whichever gateway the Development environment points at (see
+  [Configuration](#configuration)) — the demo ships pointed at an internal gateway used for
+  contributing to this repo, reachable only from inside GoPay. If you're outside that network,
+  point `DemoConfig`'s Development entry at your own gateway.
 
 ## Running
 
@@ -43,7 +22,49 @@ open example.xcodeproj
 Pick the `example` scheme and Run (⌘R). There is no checked-in `.xcscheme`; Xcode autocreates one
 for the single `example` target. You may also need to set your own signing team.
 
-## The screen
+## The launcher
+
+The app opens on `RootView`: two destinations, and a tappable environment badge.
+
+- **Demo checkout** → `CheckoutView` — see below.
+- **Developer sandbox** → `ContentView` — the original four-section console, unchanged in spirit
+  from earlier versions of this app.
+- The **environment badge** at the bottom shows which gateway is active (`● DEVELOPMENT
+  your.gateway.example.com`) and opens a picker for Development / Sandbox / Production. Switching
+  closes any live `PaymentSession` first — otherwise it would keep talking to the old gateway,
+  since each session captures its own API client at creation — then re-initializes the SDK and
+  updates the badge. **The choice isn't persisted**: every launch starts on Development.
+
+## Demo checkout
+
+A deliberately ordinary-looking checkout (`CheckoutView` / `CheckoutViewModel`) for a fictional
+shop, with a real cart total, that exercises every payment method the SDK offers:
+
+- **Credit or debit card** — `GopayCardForm` (themed to match the shop) → `submitCardForm()` → a
+  JWE → `charge(.encryptedCard)`. The PAN never touches this app's code.
+- **Apple Pay** — `chargeWithApplePay()`. The row is hidden when `GopaySDK.canUseApplePay()` is
+  `false`.
+- **Saved card** — stands in for a card the shopper saved on a previous order: a known test card
+  is encrypted with `encryptCardData(_:)`, tokenized by `MerchantBackendSimulator` (simulating your
+  server's `POST /cards/tokens`), then charged with `charge(.cardToken)`.
+- **Bank transfer** — `getQrPaymentInfo(format: .png)` rendered as a scannable QR code plus account
+  details, with a **Share** button (`square.and.arrow.up` in the sheet's toolbar) that hands the QR
+  image and a text summary of the amount/account to `UIActivityViewController`.
+
+Tapping **Pay** always creates a **fresh payment** first (a payment is single-use, so a decline
+needs a new one to retry), then runs every card-based method through the same tail: charge, and if
+the response carries a 3DS `action.redirectUrl`, present the verification WebView and keep polling
+`getChargeState()` until the gateway reports a terminal state — 3DS is just a step in that loop,
+not a separate button. The result screen shows success, failure (with "Try another method"), or
+pending (with a manual refresh), plus a collapsible "Developer details" JSON dump of the last
+`ChargePaymentResponse`.
+
+The **language picker** for the card form's labels sits next to the form itself (inside the
+"Credit or debit card" row), not in the checkout header — it's the only thing it actually
+localizes. Twenty built-in languages plus a joke custom locale (`"xx"`, registered in
+`exampleApp.swift`) are selectable there.
+
+## Developer sandbox
 
 Four sections, top to bottom. Sections 3 and 4 only appear once a session is live.
 
@@ -65,10 +86,49 @@ a Merchant ID entitlement added in Xcode, and the merchant must have Apple Pay i
 the gateway; without that, *Get Apple Pay info* returns `NETWORK_002` / HTTP 403. Completing a real
 Apple Pay authorization also needs a physical device with a test card in Wallet.
 
+## Configuration
+
+All demo values live in [`DemoConfig.swift`](example/DemoConfig.swift), keyed by `DemoEnvironment`
+(`.development` / `.sandbox` / `.production`) rather than as flat constants — an environment is a
+whole credential bundle (base URL, `clientId`, `shareableKey`, `clientSecret`, `goid`), since each
+one genuinely needs its own. `DemoConfig.buildConfig(for:)` is the single factory both app launch
+and the environment picker go through, so a runtime switch reproduces the same custom locale,
+debug flag, etc. as a cold start.
+
+- **Development** is meant to be pointed at whatever gateway you're testing against — its base URL
+  and credentials are freely editable in `DemoConfig`. It ships pointed at an internal gateway with
+  working credentials, used primarily for contributing to this repo; replace both if you're
+  integrating the SDK elsewhere and want a Development target of your own.
+- **Sandbox** and **Production** ship with **empty placeholder credentials**. Selecting either
+  before filling them in isn't blocked — you'll just get a clear auth failure from the gateway
+  instead of a payment silently charged against the wrong environment.
+
+If the Development credentials you're using ever stop working, every call fails with
+`401 UNAUTHORIZED — Invalid client_id or client_secret`, which looks like a code bug but isn't;
+check with a token request before debugging anything else:
+
+```bash
+curl -s -X POST "<your-dev-gateway-base-url>oauth2/token" \
+  -u "<client_id>:<client_secret>" \
+  -d "grant_type=client_credentials&scope=payment:write payment:read card:write card:read"
+```
+
+`clientSecret` is a **merchant** secret. It exists here only so `MerchantBackendSimulator` can
+stand in for your server — never ship it in a real app. `MerchantBackendSimulator` itself never
+reads a base URL from `DemoConfig` directly — it reads
+`GopaySDK.shared.config?.environment.baseURL`, i.e. whatever the SDK is actually pointed at right
+now, so it can never drift out of sync with an environment switch.
+
 ## Code references
 
-- App entry and demo constants: [`exampleApp.swift`](example/exampleApp.swift)
-- The whole UI and flow: [`ContentView.swift`](example/ContentView.swift)
+- App entry: [`exampleApp.swift`](example/exampleApp.swift)
+- Launcher + environment switcher: [`RootView.swift`](example/RootView.swift)
+- Environment/credential bundles: [`DemoConfig.swift`](example/DemoConfig.swift)
+- Demo checkout: [`Checkout/CheckoutView.swift`](example/Checkout/CheckoutView.swift),
+  [`Checkout/CheckoutViewModel.swift`](example/Checkout/CheckoutViewModel.swift),
+  [`Checkout/BankTransferSheet.swift`](example/Checkout/BankTransferSheet.swift),
+  [`Checkout/CheckoutResultView.swift`](example/Checkout/CheckoutResultView.swift)
+- Developer sandbox: [`ContentView.swift`](example/ContentView.swift)
 - Simulated backend (token, create payment, card tokenization):
   [`MerchantBackendSimulator.swift`](example/MerchantBackendSimulator.swift)
 
