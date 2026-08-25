@@ -116,7 +116,13 @@ public struct GopayCardForm: View {
     
     /// Unique identifier for this form instance.
     /// Use this ID to submit a specific form when multiple forms are present.
-    public let formId: String
+    public var formId: String { explicitFormId ?? autoFormId }
+    /// Explicit ID passed by the host, if any.
+    private let explicitFormId: String?
+    /// Stable auto-generated fallback ID. `@State` so it survives the re-inits SwiftUI performs
+    /// on every parent re-render — a plain `let` would mint a fresh UUID each time, scattering
+    /// card data across orphaned storage keys that no cleanup would ever reach.
+    @State private var autoFormId = UUID().uuidString
     
     /// Internal state for card form data (never exposed).
     @State private var data: GopayCardFormData
@@ -156,7 +162,7 @@ public struct GopayCardForm: View {
         self.localeStrings = localeStrings ?? GopayLocales.resolve(locale)
         self.validation = validation
         self._isValid = isValid
-        self.formId = formId ?? UUID().uuidString
+        self.explicitFormId = formId
         self._data = State(initialValue: GopayCardFormData())
     }
 
@@ -344,6 +350,11 @@ public struct GopayCardForm: View {
             GopaySDK.shared.updateCardFormData(data, formId: formId)
             // Update validation binding if provided
             updateValidationBinding()
+        }
+        .onDisappear {
+            // Drop the SDK-held copy of the card data when the form leaves the screen;
+            // `onAppear` re-syncs it if the form comes back (PCI DSS 4.0.1, req. 3.3.1).
+            GopaySDK.shared.clearCardFormData(formId: formId)
         }
     }
     

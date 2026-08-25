@@ -50,9 +50,15 @@ public class GopaySDK {
     private let sessionRegistry = SessionRegistry()
 
     /// Internal storage for card form data keyed by form ID (never exposed to the user).
-    private var internalCardFormData: [String: GopayCardFormData] = [:]
+    /// Entries are removed after a successful ``submitCardForm(formId:)``, when the form
+    /// disappears, or via ``clearCardFormData(formId:)`` — SAD must not outlive its use
+    /// (PCI DSS 4.0.1, req. 3.3.1). `private(set)` so tests can verify the cleanup.
+    internal private(set) var internalCardFormData: [String: GopayCardFormData] = [:]
     /// Tracks the most recently active form ID.
-    private var mostRecentFormId: String?
+    internal private(set) var mostRecentFormId: String?
+    /// Guards the two properties above: keystrokes write from the main thread while
+    /// ``submitCardForm(formId:)`` reads and clears from whatever executor resumes it.
+    private let cardFormDataLock = NSLock()
 
     /// Initializes the SDK with the given configuration. Call once before any other operation.
     /// - Parameter config: The configuration to use.
@@ -213,10 +219,19 @@ public class GopaySDK {
     /// Encrypts the card data currently held by a ``GopayCardForm`` into a JWE for server-side
     /// tokenization. The sensitive PAN/CVV never leave the SDK — only the JWE is returned.
     ///
+    /// On success the form's card data is removed from memory, so a second call for the same
+    /// form throws ``GopaySDKError`` with `GopaySDKErrors.noCardFormData` until the form
+    /// re-syncs (it does so on appear and on any edit). Forward the returned JWE promptly and
+    /// use it for a single charge: the gateway accepts each JWE only once and its payload
+    /// expires 10 minutes after creation, so a retry needs the user to confirm the card again.
+    ///
     /// - Parameter formId: The form to read. When `nil`, uses the most recently active form.
     public func submitCardForm(formId: String? = nil) async throws -> String {
+        cardFormDataLock.lock()
         let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
-        guard let id = resolvedId, let data = internalCardFormData[id] else {
+        let stored = resolvedId.flatMap { internalCardFormData[$0] }
+        cardFormDataLock.unlock()
+        guard let id = resolvedId, let data = stored else {
             let error = GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.noCardFormData)
             handleError(error)
             throw error
@@ -232,7 +247,33 @@ public class GopaySDK {
             expYear: data.expirationYear,
             cvv: data.cvv
         )
-        return try await encryptCardData(cardData)
+        let jwe = try await encryptCardData(cardData)
+        // Only clear after encryption succeeded — on failure (e.g. key fetch offline) the user
+        // shouldn't have to retype the card; authorization hasn't happened yet.
+        clearCardFormData(formId: id)
+        return jwe
+    }
+
+    /// Removes card data held for a ``GopayCardForm`` from memory.
+    ///
+    /// ``submitCardForm(formId:)`` calls this automatically after returning a JWE, and
+    /// ``GopayCardForm`` calls it when the form disappears. Call it yourself when the user
+    /// abandons checkout while the form stays on screen, so the PAN/CVV don't linger in
+    /// memory longer than needed (PCI DSS 4.0.1, req. 3.3.1).
+    ///
+    /// - Parameter formId: The form to clear. When `nil`, clears every stored form.
+    public func clearCardFormData(formId: String? = nil) {
+        cardFormDataLock.lock()
+        defer { cardFormDataLock.unlock() }
+        if let id = formId {
+            internalCardFormData.removeValue(forKey: id)
+            if mostRecentFormId == id {
+                mostRecentFormId = nil
+            }
+        } else {
+            internalCardFormData.removeAll()
+            mostRecentFormId = nil
+        }
     }
 
     private func validateCardData(_ cardData: GopayCardData) throws {
@@ -275,6 +316,8 @@ public class GopaySDK {
 
     /// Internal method to update card form data (called automatically by ``GopayCardForm``).
     internal func updateCardFormData(_ data: GopayCardFormData, formId: String) {
+        cardFormDataLock.lock()
+        defer { cardFormDataLock.unlock() }
         self.internalCardFormData[formId] = data
         self.mostRecentFormId = formId
     }

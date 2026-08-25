@@ -287,6 +287,14 @@ let jwe = try await GopaySDK.shared.encryptCardData(
 `GopayCardForm` accepts a `GopayCardFormTheme` and a `formId` (when multiple forms are on screen,
 pass the same `formId` to `submitCardForm(formId:)`).
 
+The SDK clears the form's card data from memory after a successful `submitCardForm()` and when
+the form disappears — so call `submitCardForm()` while the form is on screen and forward the
+JWE promptly. The gateway accepts each JWE **once** and its payload expires 10 minutes after
+creation; to retry a failed charge, have the user confirm the card again (any edit re-syncs the
+form's data and the next `submitCardForm()` succeeds). To wipe the data early — e.g. when the
+user abandons checkout while the form is still on screen — call
+`GopaySDK.shared.clearCardFormData()`. Discard the JWE once your backend has tokenized it.
+
 ### Localizing the form
 
 Form labels and placeholders are localized. By default the form uses the **device language and
@@ -446,6 +454,10 @@ See [`example/README.md`](example/README.md) for the full walkthrough.
 - `payment_secret` and the payment-scoped JWT live in memory only — never written to disk, and
   wiped by `close()`.
 - `GopayCardForm` keeps PAN and CVV inside the SDK; you only ever receive a JWE.
+- Card data lives in memory only while the form needs it: the SDK's copy is dropped after a
+  successful `submitCardForm()`, when the form disappears, and on demand via `clearCardFormData()`
+  (PCI DSS 4.0.1, req. 3.3.1 — SAD must not be retained once no longer needed). Swift strings
+  cannot be securely overwritten, so this releases the references rather than zeroing bytes.
 - Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
   payments and never sees the merchant secret.
