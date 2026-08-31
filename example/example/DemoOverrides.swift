@@ -128,18 +128,54 @@ enum DemoOverrides {
     /// Validates and normalizes a supplied base URL, or returns `nil` — meaning the value is
     /// unusable — with a warning saying so.
     ///
-    /// Two things have to hold. The URL needs a trailing `/`, because both the SDK's network client
-    /// and `MerchantBackendSimulator` build requests by concatenating a path onto this string, and
-    /// without it you get `…/4.0oauth2/token`. And it has to be something `URL(string:)` accepts:
-    /// `MerchantBackendSimulator` force-unwraps `URL(string: baseURL + path)`, so a value with (for
-    /// example) a space in the host would trap on the first call to the simulated backend rather
-    /// than surface as a network error.
+    /// This string is never used as a URL on its own. Both the SDK's network client and
+    /// `MerchantBackendSimulator` build every request by concatenating a path onto it, so it is
+    /// validated against that, not against "is this a URL". Hence the trailing `/`, without which
+    /// you get `…/4.0oauth2/token`, and hence the checks below — each one is a value Foundation
+    /// parses happily while the concatenated request goes somewhere else entirely:
+    ///
+    /// - no host (`https://`) — the first path segment is read as the host, so the request goes to
+    ///   `https://oauth2/token`;
+    /// - empty host (`https://:8080/`);
+    /// - userinfo (`https://good.example.com@evil.example/`) — everything before the `@` is a
+    ///   username, so the request goes to `evil.example` while the value reads as the good host;
+    /// - a port outside 1...65535 (`https://host:99999/`) — `URLComponents` accepts it, the failure
+    ///   surfaces much later inside `URLSession`;
+    /// - a query or fragment (`https://host/api?x=1`) — the path is appended *after* it, so the
+    ///   query swallows it and every call 404s against a gateway that looks fine.
+    ///
+    /// The last check concatenates a representative path and confirms the host did not move. Both
+    /// sides of that comparison come from `URL`, deliberately: `URLComponents` and `URL` normalize
+    /// hosts differently — `URLComponents` keeps IPv6 brackets and decodes punycode to Unicode,
+    /// `URL` does neither — so comparing across the two rejects legitimate URLs like
+    /// `https://[::1]:8080/` for no reason.
+    ///
+    /// A rejected value is logged and takes the whole override set with it, see
+    /// ``make(rawBaseURL:clientId:shareableKey:clientSecret:goid:)``. Silently misdirecting
+    /// requests is worse to debug than not applying the override at all.
+    ///
+    /// Mirrors `normalizeDemoBaseUrl` in the Android example's `DemoLaunchOverrides`, which
+    /// validates through OkHttp's `HttpUrl` for the same reason: check the value with whatever is
+    /// going to consume it. On Android these inputs crashed the app, because OkHttp parses more
+    /// strictly than Foundation; here they are silent misdirection instead.
     static func normalizeBaseURL(_ raw: String) -> String? {
         let normalized = raw.hasSuffix("/") ? raw : raw + "/"
-        guard let scheme = URL(string: normalized)?.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
+
+        guard let components = URLComponents(string: normalized),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let componentsHost = components.host, !componentsHost.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              components.port.map({ (1...65535).contains($0) }) ?? true,
+              let base = URL(string: normalized),
+              let baseHost = base.host,
+              let probe = URL(string: normalized + "oauth2/token"),
+              probe.host == baseHost
         else {
-            print("[DemoOverrides] Ignoring \(baseURLKey) \"\(raw)\" — not a usable http(s) URL.")
+            print("[DemoOverrides] Ignoring \(baseURLKey) \"\(raw)\" — not a usable gateway base URL.")
             return nil
         }
 

@@ -171,9 +171,12 @@ resolved — so you can see at a glance which gateway is live.
 
 Three things worth knowing. A base URL gets a trailing `/` appended if you leave it off, because
 both the SDK's network client and `MerchantBackendSimulator` build requests by concatenating a path
-onto it. A value that isn't a usable `http`/`https` URL is rejected with a console warning, taking
-the rest of the set with it as described above, rather than being passed through to fail later in a
-less obvious place.
+onto it. It is then validated against that same concatenation rather than merely parsed — a missing
+host, userinfo before the host, an out-of-range port, or a query string all parse fine but send the
+request somewhere else (`https://good.example.com@evil.example/` reads as the good host and goes to
+`evil.example`; `https://host/api?x=1` appends the path *after* the query, so everything 404s
+against a gateway that looks correct); such a value is rejected with a console warning and takes the
+rest of the set with it, as described above.
 And App Transport Security still applies: a plain `http://` gateway on anything other than
 `localhost` is blocked by the OS, and the resulting failure does not mention ATS — use `https`, or
 add an ATS exception if you really need a cleartext mock.
