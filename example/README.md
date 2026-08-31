@@ -19,8 +19,15 @@ cd example
 open example.xcodeproj
 ```
 
-Pick the `example` scheme and Run (⌘R). There is no checked-in `.xcscheme`; Xcode autocreates one
-for the single `example` target. You may also need to set your own signing team.
+Pick the `example` scheme and Run (⌘R). You may also need to set your own signing team.
+
+The `example` scheme is checked in as a shared scheme, so the app also builds straight from a fresh
+clone without opening Xcode:
+
+```bash
+xcodebuild -project example/example.xcodeproj -scheme example \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' build
+```
 
 ## The launcher
 
