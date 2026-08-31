@@ -4,7 +4,8 @@
 //
 //  Which gateway environment the demo currently talks to, and the merchant credentials that go
 //  with it. Selectable from `RootView`; the app always starts on `.development` — the choice is
-//  not persisted across launches.
+//  not persisted across launches. Development's URL and credentials can be replaced at launch, see
+//  `DemoOverrides`.
 //
 
 import Foundation
@@ -36,13 +37,15 @@ enum DemoEnvironment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Merchant credentials for this environment. Sandbox and production ship as empty
-    /// placeholders — fill them in before selecting those environments. An empty `clientId` /
-    /// `shareableKey` / `clientSecret` fails clearly at the gateway rather than silently mixing
-    /// environments.
+    /// Merchant credentials for this environment. Development picks up any `GOPAY_DEMO_*` launch
+    /// override (see `DemoOverrides`); sandbox and production deliberately do not, so a switch of
+    /// the badge can never send one environment's merchant secret to another's gateway. They ship
+    /// as empty placeholders — fill them in before selecting those environments. An empty
+    /// `clientId` / `shareableKey` / `clientSecret` fails clearly at the gateway rather than
+    /// silently mixing environments.
     var credentials: DemoCredentials {
         switch self {
-        case .development: DemoConfig.developmentCredentials
+        case .development: DemoConfig.developmentCredentials.withOverrides()
         case .sandbox, .production: .placeholder
         }
     }
@@ -58,6 +61,18 @@ struct DemoCredentials {
     let goid: String
 
     static let placeholder = DemoCredentials(clientId: "", shareableKey: "", clientSecret: "", goid: "")
+
+    /// This bundle with any launch-time override applied field by field, so you can supply just the
+    /// one value you need — a `clientSecret`, say — and keep the rest. Only used for Development;
+    /// see `DemoEnvironment.credentials`.
+    func withOverrides() -> DemoCredentials {
+        DemoCredentials(
+            clientId: DemoOverrides.clientId ?? clientId,
+            shareableKey: DemoOverrides.shareableKey ?? shareableKey,
+            clientSecret: DemoOverrides.clientSecret ?? clientSecret,
+            goid: DemoOverrides.goid ?? goid
+        )
+    }
 }
 
 /// Holds the demo's currently-selected environment and builds the SDK config for it. This is the
@@ -67,9 +82,16 @@ struct DemoCredentials {
 final class DemoConfig {
     static let shared = DemoConfig()
 
-    /// Dev gateway URL — the only per-environment value that's actually app-editable. Replace with
-    /// your own merchant's development host.
-    static let developmentBaseURL = "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
+    /// Dev gateway URL — the only per-environment value that's actually app-editable. Comes from
+    /// the `GOPAY_DEMO_BASE_URL` launch override when one is supplied, so the demo can be pointed
+    /// at another gateway without a rebuild; otherwise the built-in default below.
+    static var developmentBaseURL: String {
+        DemoOverrides.baseURL ?? defaultDevelopmentBaseURL
+    }
+
+    /// Built-in development host, used when no `GOPAY_DEMO_BASE_URL` override is supplied. Replace
+    /// with your own merchant's development host.
+    static let defaultDevelopmentBaseURL = "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
 
     static let developmentCredentials = DemoCredentials(
         clientId: "your_client_id",

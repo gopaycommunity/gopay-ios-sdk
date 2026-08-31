@@ -110,6 +110,77 @@ debug flag, etc. as a cold start.
   before filling them in isn't blocked — you'll just get a clear auth failure from the gateway
   instead of a payment silently charged against the wrong environment.
 
+### Launch-time overrides
+
+The Development environment's URL and credentials can all be replaced at launch, so you can point
+the demo at a different gateway — the sandbox, a branch deployment, a mock — without editing code
+and rebuilding. See [`DemoOverrides.swift`](example/DemoOverrides.swift).
+
+| Key | Overrides |
+| --- | --- |
+| `GOPAY_DEMO_BASE_URL` | Development's base URL |
+| `GOPAY_DEMO_CLIENT_ID` | Development's `clientId` |
+| `GOPAY_DEMO_SHAREABLE_KEY` | Development's `shareableKey` |
+| `GOPAY_DEMO_CLIENT_SECRET` | Development's `clientSecret` |
+| `GOPAY_DEMO_GOID` | Development's `goid` |
+
+Each is read as an environment variable first, then as a `-KEY value` launch argument. Anything you
+don't supply keeps its compiled-in value, so a plain ⌘R with an untouched scheme behaves exactly as
+before.
+
+The five are resolved as one set: if you supply a `GOPAY_DEMO_BASE_URL` that gets **rejected**, the
+credentials you supplied alongside it are dropped too, and the demo runs on its built-in gateway
+with its own built-in credentials. A typo in the URL would otherwise send your merchant secret to
+the compiled-in development gateway, which is the environment mixing these overrides exist to
+prevent. Not supplying a URL at all is different: the credentials then apply on top of the built-in
+gateway, as before.
+
+Overrides apply to **Development only**. Sandbox and Production keep resolving through the SDK's
+own built-in hosts and their own placeholder credentials — switching the badge can never send one
+environment's merchant secret to another's gateway. To reach an arbitrary gateway, including the
+sandbox, stay on Development and give it that URL; the badge shows the host it is actually pointed
+at, so nothing is hidden.
+
+**From Xcode:** *Product ▸ Scheme ▸ Edit Scheme ▸ Run ▸ Arguments*, in either *Environment
+Variables* or *Arguments Passed On Launch*.
+
+> ⚠️ The `example` scheme is a **shared, version-controlled** scheme
+> (`example.xcodeproj/xcshareddata/xcschemes/example.xcscheme`). Anything you type into Edit Scheme
+> is written into that file, so filling a real `GOPAY_DEMO_CLIENT_SECRET` in there and committing
+> would leak exactly what these overrides exist to keep out of the repo. Either check `git status`
+> before committing, or keep your values on the command line instead.
+
+**From the command line**, against an already-built app on a booted simulator. `simctl` has no
+`--setenv` flag — it forwards variables prefixed with `SIMCTL_CHILD_`:
+
+```bash
+SIMCTL_CHILD_GOPAY_DEMO_BASE_URL="https://gw.your-gateway.example.com/gp-gw/api/4.0/" \
+  xcrun simctl launch 'iPhone 17' com.gopay.sdk
+```
+
+Launch arguments need no prefix, and can be combined:
+
+```bash
+xcrun simctl launch 'iPhone 17' com.gopay.sdk \
+  -GOPAY_DEMO_BASE_URL "https://gw.your-gateway.example.com/gp-gw/api/4.0/" \
+  -GOPAY_DEMO_GOID "8761908826"
+```
+
+The environment badge follows the override — it renders the host of whatever URL `DemoConfig`
+resolved — so you can see at a glance which gateway is live.
+
+Three things worth knowing. A base URL gets a trailing `/` appended if you leave it off, because
+both the SDK's network client and `MerchantBackendSimulator` build requests by concatenating a path
+onto it. A value that isn't a usable `http`/`https` URL is rejected with a console warning, taking
+the rest of the set with it as described above, rather than being passed through to fail later in a
+less obvious place.
+And App Transport Security still applies: a plain `http://` gateway on anything other than
+`localhost` is blocked by the OS, and the resulting failure does not mention ATS — use `https`, or
+add an ATS exception if you really need a cleartext mock.
+
+These overrides are not a secure credential store — a launch argument is visible in the process
+list. They exist so real credentials never have to be written into a tracked source file.
+
 If the Development credentials you're using ever stop working, every call fails with
 `401 UNAUTHORIZED — Invalid client_id or client_secret`, which looks like a code bug but isn't;
 check with a token request before debugging anything else:
@@ -131,6 +202,7 @@ now, so it can never drift out of sync with an environment switch.
 - App entry: [`exampleApp.swift`](example/exampleApp.swift)
 - Launcher + environment switcher: [`RootView.swift`](example/RootView.swift)
 - Environment/credential bundles: [`DemoConfig.swift`](example/DemoConfig.swift)
+- Launch-time overrides: [`DemoOverrides.swift`](example/DemoOverrides.swift)
 - Demo checkout: [`Checkout/CheckoutView.swift`](example/Checkout/CheckoutView.swift),
   [`Checkout/CheckoutViewModel.swift`](example/Checkout/CheckoutViewModel.swift),
   [`Checkout/BankTransferSheet.swift`](example/Checkout/BankTransferSheet.swift),
