@@ -158,6 +158,10 @@ enum DemoOverrides {
     /// validates through OkHttp's `HttpUrl` for the same reason: check the value with whatever is
     /// going to consume it. On Android these inputs crashed the app, because OkHttp parses more
     /// strictly than Foundation; here they are silent misdirection instead.
+    ///
+    /// Internal rather than private so unit tests can feed it arbitrary strings through
+    /// `@testable import`, the same reason ``make(rawBaseURL:clientId:shareableKey:clientSecret:goid:)``
+    /// is.
     static func normalizeBaseURL(_ raw: String) -> String? {
         let normalized = raw.hasSuffix("/") ? raw : raw + "/"
 
