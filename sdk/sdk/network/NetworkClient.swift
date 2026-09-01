@@ -21,8 +21,22 @@ public class DefaultNetworkClient: NSObject, URLSessionDelegate {
         super.init()
     }
 
+    /// Builds a request URL by concatenating `path` onto ``baseURL``, or returns `nil` when the
+    /// result is not an absolute `http(s)` URL with a host.
+    ///
+    /// The guard is there because an empty or scheme-less ``baseURL`` — possible only through
+    /// `.development(baseURL:)` — yields a *relative* URL that
+    /// `URL(string:)` accepts happily and `URLSession` then rejects as `unsupported URL (-1002)`,
+    /// far from the configuration that caused it. Callers map `nil` to
+    /// ``GopaySDKError/Code/invalidBaseURL`` (`CONFIG_006`) instead, which names the real problem.
+    /// OkHttp's `HttpUrl` on Android refuses the same inputs, so this keeps the two SDKs aligned.
     public func makeURL(path: String) -> URL? {
-        return URL(string: baseURL + path)
+        guard let url = URL(string: baseURL + path),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        return url
     }
 
     // URLSessionDelegate methods for SSL pinning or custom certificate handling can be added here.

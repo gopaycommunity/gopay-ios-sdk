@@ -66,6 +66,12 @@ public class GopaySDK {
         self.config = config
         GopayLocales.registerAll(config.customLocales)
         GopayLocales.setDefaultLocale(config.locale)
+        // Said once here, unconditionally, because the first symptom otherwise is a CONFIG_006 on
+        // an unrelated-looking call. Only `.development(baseURL:)` can be empty — `.sandbox` and
+        // `.production` carry their own hosts.
+        if config.environment.baseURL.isEmpty {
+            print("[GopaySDK] The selected environment has no base URL, so every request will fail with CONFIG_006. Pass an absolute https:// URL to .development(baseURL:).")
+        }
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
         self.asyncClient = client
         self.authAPI = AuthAPI(client: client)

@@ -103,12 +103,12 @@ Never add, rename, or repurpose a code on one platform alone.
 
 ### CONFIG_006: Invalid Base URL
 - **Case**: `invalidBaseURL`
-- **Description**: The resolved API base URL could not be turned into a valid `URL`
+- **Description**: The resolved API base URL is empty, or concatenating a path onto it does not yield an absolute `http(s)` URL with a host
 - **Common Causes**:
-  - A malformed URL passed to `.development(baseURL:)`
+  - A malformed or empty URL passed to `.development(baseURL:)`
 - **Developer Action**:
-  - Pass an absolute `https://` URL ending in `/`
-  - Note that `.production` currently resolves to an empty base URL, which slips past this check and fails later as `NSURLErrorUnsupportedURL`; use `.development(baseURL:)` for a production gateway
+  - Pass an absolute `https://` URL ending in `/`; `initialize(with:)` also logs a warning when the selected environment has no base URL
+  - `.sandbox` and `.production` carry their own hosts and cannot hit this
 
 ## Payment Errors (PAYMENT_XXX)
 

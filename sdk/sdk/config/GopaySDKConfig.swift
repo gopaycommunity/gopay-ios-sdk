@@ -8,10 +8,11 @@ public enum GopayEnvironment: Equatable {
     case development(baseURL: String)
     /// The sandbox environment.
     case sandbox
-    /// The production environment.
+    /// The production environment. Charges made through it are real.
     case production
 
     private static let sandboxBaseURL = "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
+    private static let productionBaseURL = "https://gate.gopay.com/gp-gw/api/4.0/"
 
     /// The base URL for the selected environment. Public so host apps can display or route
     /// around it (e.g. a demo backend simulator deriving its own base URL from the live SDK
@@ -20,7 +21,7 @@ public enum GopayEnvironment: Equatable {
         switch self {
         case .development(let url): return url
         case .sandbox: return Self.sandboxBaseURL
-        case .production: return ""
+        case .production: return Self.productionBaseURL
         }
     }
 }
@@ -44,6 +45,11 @@ public struct GopaySDKConfig {
     public let shareableKey: String?
 
     /// Whether to enable debug logging.
+    ///
+    /// - Note: One message ignores this flag and the ``errorCallback``: ``GopaySDK/initialize(with:)``
+    ///   always prints when the selected environment resolves to no base URL. That is a
+    ///   misconfiguration nothing downstream can recover from, and staying silent about it would
+    ///   surface later as a `CONFIG_006` on an unrelated-looking call.
     public let enableDebugLogging: Bool
 
     /// The callback to use for errors.

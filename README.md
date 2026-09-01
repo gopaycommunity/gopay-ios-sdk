@@ -354,11 +354,11 @@ let strings = GopaySDK.shared.currentLocaleStrings(preferred: "cs")
 | --- | --- | --- |
 | `.development(baseURL:)` | whatever you pass in | Use this |
 | `.sandbox` | `https://gw.sandbox.gopay.com/gp-gw/api/4.0/` | Works |
-| `.production` | *(empty)* | No URL configured |
+| `.production` | `https://gate.gopay.com/gp-gw/api/4.0/` | Live payments |
 
-`.production` resolves to an empty base URL, so calls fail with `unsupported URL`
-(`NSURLErrorUnsupportedURL`). Pass the production gateway through `.development(baseURL:)` until a
-real URL is set.
+`.sandbox` and `.production` carry their own hosts, so nothing needs configuring for them. Only
+`.development(baseURL:)` takes a URL, and it has to be an absolute `http(s)` one: an empty or
+scheme-less value is logged at `initialize(with:)` and fails every call with `CONFIG_006`.
 
 `GopayEnvironment.baseURL` is `public`, so a host app can read back the URL the SDK actually
 resolved for `config.environment` instead of duplicating it elsewhere. The example app's
@@ -391,7 +391,7 @@ Android SDK) and a message:
 | `NETWORK_003` | Gateway returned 5xx |
 | `CONFIG_001` | `initialize(with:)` was never called |
 | `CONFIG_003` | A required configuration parameter is missing |
-| `CONFIG_006` | The resolved base URL is not a valid URL |
+| `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |
 | `VALIDATION_007` | Invalid input — empty ids, or card-form validation failed |
 | `INTERNAL_001` | Unexpected internal error |
 | `INTERNAL_003` | Response could not be decoded |
