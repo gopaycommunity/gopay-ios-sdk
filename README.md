@@ -419,7 +419,9 @@ cd example
 open example.xcodeproj
 ```
 
-Select the `example` scheme, choose a simulator, and Run (⌘R).
+Select the `example` scheme, choose a simulator, and Run (⌘R). To run it against a real gateway
+without editing code, put your credentials in `.env` (template: `.env.example`) and use
+`./scripts/run-demo.sh` instead.
 
 The app opens on a launcher with two destinations and an environment badge:
 

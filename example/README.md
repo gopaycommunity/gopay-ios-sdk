@@ -21,6 +21,13 @@ open example.xcodeproj
 
 Pick the `example` scheme and Run (⌘R). You may also need to set your own signing team.
 
+Or, to run against a real gateway without touching the code or the scheme, put the credentials in
+`.env` and use the run script (see [Credentials from `.env`](#credentials-from-env)):
+
+```bash
+./scripts/run-demo.sh -d 'iPhone 17'
+```
+
 The `example` scheme is checked in as a shared scheme, so the app also builds straight from a fresh
 clone without opening Xcode:
 
@@ -109,6 +116,46 @@ debug flag, etc. as a cold start.
 - **Sandbox** and **Production** ship with **empty placeholder credentials**. Selecting either
   before filling them in isn't blocked — you'll just get a clear auth failure from the gateway
   instead of a payment silently charged against the wrong environment.
+
+### Credentials from `.env`
+
+Real gateway credentials belong in `.env` in the repo root, which is gitignored. `.env.example` is
+the committed template; copy it and fill in your own values:
+
+```
+GOPAY_DEMO_BASE_URL=https://gw.sandbox.gopay.com/gp-gw/api/4.0/
+GOPAY_DEMO_CLIENT_ID=…
+GOPAY_DEMO_SHAREABLE_KEY=…
+GOPAY_DEMO_CLIENT_SECRET=…
+GOPAY_DEMO_GOID=…
+```
+
+Switching gateway means editing those values. [`scripts/run-demo.sh`](../scripts/run-demo.sh) builds
+the app, installs it on a simulator and launches it with them:
+
+```bash
+./scripts/run-demo.sh                      # first booted simulator
+./scripts/run-demo.sh -d 'iPhone 17 Pro'   # a specific simulator, booted if needed
+./scripts/run-demo.sh --no-build           # relaunch what is already installed
+```
+
+It forwards the five values as the `SIMCTL_CHILD_GOPAY_DEMO_*` variables described below, so they
+arrive as ordinary launch-time overrides and land on **Development**. Nothing is compiled into the
+app and nothing is written into the shared scheme. The script parses `.env` rather than sourcing it,
+so a file of secrets can never run shell code, and it prints which keys were supplied without
+printing their values.
+
+Every key is optional, the same contract the overrides themselves state: a missing one is reported
+as a warning and keeps its compiled-in value. Two parsing rules are worth knowing, because a
+credential that quietly gains or loses characters shows up as an opaque `401` rather than as a
+parsing problem. A `#` starts a comment only at the start of a line, so everything after `=` is the
+value; and when a key appears twice, the first assignment wins.
+
+The same five keys work for the Android demo, and its script parses `.env` by exactly these rules,
+so one `.env` covers both platforms.
+
+The template lists both gateway hosts (see [Environments](../README.md#environments)). Charges
+against the production one are real, so keep the sandbox host in `.env` unless you mean otherwise.
 
 ### Launch-time overrides
 
@@ -206,6 +253,7 @@ now, so it can never drift out of sync with an environment switch.
 - Launcher + environment switcher: [`RootView.swift`](example/RootView.swift)
 - Environment/credential bundles: [`DemoConfig.swift`](example/DemoConfig.swift)
 - Launch-time overrides: [`DemoOverrides.swift`](example/DemoOverrides.swift)
+- Run script reading `.env`: [`scripts/run-demo.sh`](../scripts/run-demo.sh)
 - Demo checkout: [`Checkout/CheckoutView.swift`](example/Checkout/CheckoutView.swift),
   [`Checkout/CheckoutViewModel.swift`](example/Checkout/CheckoutViewModel.swift),
   [`Checkout/BankTransferSheet.swift`](example/Checkout/BankTransferSheet.swift),
