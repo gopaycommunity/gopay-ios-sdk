@@ -130,6 +130,9 @@ public struct GopayCardForm: View {
     /// Read so the theme's fonts rescale when the user changes the Dynamic Type size.
     @Environment(\.sizeCategory) private var sizeCategory
 
+    /// Read so the underline focus gradient runs from the leading edge in a right-to-left layout too.
+    @Environment(\.layoutDirection) private var layoutDirection
+
     @State private var isCardNumberFocused: Bool = false
     @State private var isExpirationFocused: Bool = false
     @State private var isCvvFocused: Bool = false
@@ -280,16 +283,67 @@ public struct GopayCardForm: View {
             .padding(.horizontal, theme.inputPaddingHorizontal)
             .frame(height: theme.inputHeight)
             .background(theme.inputBackgroundColor)
-            .overlay(
+            .overlay(inputBorder(isFocused: isFocused, hasError: hasError))
+            .cornerRadius(theme.inputBorderRadius)
+            // Drawn after the corner clip so the ring can sit outside the border.
+            .overlay(focusRing(isFocused: isFocused))
+    }
+
+    /// The border of an input, in whichever style the theme asks for.
+    @ViewBuilder
+    private func inputBorder(isFocused: Bool, hasError: Bool) -> some View {
+        switch theme.inputBorderStyle {
+        case .boxed:
+            // Inset by half the width: the stroke is centred on the path, and the container clips
+            // to the same shape, so without this the outer half is cut and the line renders at
+            // half the requested weight. Android and the web draw the whole line. The inset needs
+            // the field's size, because past a point it has to be clamped, see
+            // ``GopayCardFormTheme/boxedBorderInset(in:)``.
+            GeometryReader { proxy in
                 RoundedRectangle(cornerRadius: theme.inputBorderRadius)
+                    .inset(by: theme.boxedBorderInset(in: proxy.size))
                     .stroke(
                         theme.borderColor(isFocused: isFocused, hasError: hasError),
                         lineWidth: theme.inputBorderWidth
                     )
-            )
-            .cornerRadius(theme.inputBorderRadius)
-            // Drawn after the corner clip so the ring can sit outside the border.
-            .overlay(focusRing(isFocused: isFocused))
+            }
+        case .underline:
+            underline(isFocused: isFocused, hasError: hasError)
+        }
+    }
+
+    /// The bottom line of an underlined input. It follows the rounded bottom corners the way a CSS
+    /// `border-bottom` follows a `border-radius`. A focused field draws it as a gradient from
+    /// `focusGradientStart` to `focusGradientEnd`; the web animates that gradient, mobile does not.
+    private func underline(isFocused: Bool, hasError: Bool) -> some View {
+        let line = GopayInputUnderline(radius: theme.inputBorderRadius, lineWidth: theme.inputBorderWidth)
+        return Group {
+            if isFocused {
+                line.stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [theme.focusGradientStart, theme.focusGradientEnd]),
+                        startPoint: underlineGradientStart,
+                        endPoint: underlineGradientEnd
+                    ),
+                    lineWidth: theme.inputBorderWidth
+                )
+            } else {
+                line.stroke(
+                    theme.borderColor(isFocused: false, hasError: hasError),
+                    lineWidth: theme.inputBorderWidth
+                )
+            }
+        }
+    }
+
+    /// Where the focus gradient starts: the leading edge. A `UnitPoint` is a physical position that
+    /// SwiftUI does not mirror, so a right-to-left layout has to start it on the right by hand.
+    private var underlineGradientStart: UnitPoint {
+        layoutDirection == .rightToLeft ? .trailing : .leading
+    }
+
+    private var underlineGradientEnd: UnitPoint {
+        layoutDirection == .rightToLeft ? .leading : .trailing
     }
 
     /// The optional ring outside the border of a focused field. It is drawn as an overlay, so it

@@ -8,9 +8,11 @@ public enum GopayCardFormBorderStyle: String, Codable, Equatable {
     /// A full border around the input. The focus state paints it with
     /// ``GopayCardFormTheme/focusGradientStart``.
     case boxed
-    /// A bottom line only. The focus state paints it with a
+    /// A bottom line only, following the rounded bottom corners of the input the way a CSS
+    /// `border-bottom` follows a `border-radius`. The focus state paints it with a
     /// ``GopayCardFormTheme/focusGradientStart`` to ``GopayCardFormTheme/focusGradientEnd``
-    /// gradient.
+    /// gradient running from the leading edge. The web animates that gradient; on mobile it is
+    /// static.
     case underline
 }
 
@@ -595,6 +597,14 @@ extension GopayCardFormTheme {
         // by that difference the moment a message appears.
         let oneLine = errorUIFont(for: sizeCategory).lineHeight
         return max(requested, oneLine)
+    }
+
+    /// Inset of a boxed border's path: half the stroke, so the whole line shows inside a
+    /// container clipped to the same shape, but never more than half the field's smaller side.
+    /// Without the clamp a width past the field's height insets the rectangle out of existence
+    /// and every point of the path comes out non-finite, so the border disappears altogether.
+    func boxedBorderInset(in size: CGSize) -> CGFloat {
+        min(inputBorderWidth / 2, min(size.width, size.height) / 2)
     }
 
     /// Border color of an input in the given state. A focused field shows focus even while its
