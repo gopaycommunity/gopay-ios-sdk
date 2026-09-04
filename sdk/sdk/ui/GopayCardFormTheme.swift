@@ -1,72 +1,629 @@
 import SwiftUI
+import UIKit
+
+/// How ``GopayCardForm`` draws the border of its inputs.
+///
+/// Mirrors the `inputBorderStyle` key of the web cc-v4 card form theme.
+public enum GopayCardFormBorderStyle: String, Codable, Equatable {
+    /// A full border around the input. The focus state paints it with
+    /// ``GopayCardFormTheme/focusGradientStart``.
+    case boxed
+    /// A bottom line only. The focus state paints it with a
+    /// ``GopayCardFormTheme/focusGradientStart`` to ``GopayCardFormTheme/focusGradientEnd``
+    /// gradient.
+    case underline
+}
 
 /// Theme configuration for the payment card form.
 ///
-/// Use this to customize the appearance of the card form UI.
-public struct GopayCardFormTheme {
-    /// Text color for labels and text fields.
-    public var textColor: Color
-    /// Background color for text fields.
-    public var backgroundColor: Color
-    /// Border color for text fields.
-    public var borderColor: Color
-    /// Border color when a field is focused.
-    public var focusedBorderColor: Color
-    /// Text color for inline validation error messages.
-    public var errorColor: Color
-    /// Border width for text fields.
-    public var borderWidth: CGFloat
-    /// Corner radius for text fields.
-    public var cornerRadius: CGFloat
-    /// Font for text fields.
-    public var font: Font
-    /// Font for labels.
-    public var labelFont: Font
-    /// Spacing between form elements.
-    public var spacing: CGFloat
-    /// Padding inside text fields.
-    public var textFieldPadding: CGFloat
-    
-    /// Creates a custom theme.
-    /// - Parameters:
-    ///   - textColor: Text color for labels and text fields.
-    ///   - backgroundColor: Background color for text fields.
-    ///   - borderColor: Border color for text fields.
-    ///   - focusedBorderColor: Border color when a field is focused.
-    ///   - errorColor: Text color for inline validation error messages.
-    ///   - borderWidth: Border width for text fields.
-    ///   - cornerRadius: Corner radius for text fields.
-    ///   - font: Font for text fields.
-    ///   - labelFont: Font for labels.
-    ///   - spacing: Spacing between form elements.
-    ///   - textFieldPadding: Padding inside text fields.
+/// The parameters are atomic and carry the names of the web card form theme (cc-v4), so the same
+/// theme can be described once and applied on the web, on iOS and on Android. The web-only keys
+/// (`submit*`, `errorHidden`) are not part of this type; see the parity table in the README.
+///
+/// Every parameter is optional. **The default shape is the web card form's**: the underline border,
+/// square corners, the same paddings, type sizes, spacings and reserved error line, so a form
+/// nobody themed is laid out the same on all three channels and a theme document only has to carry
+/// what it actually changes. **Colors are the exception and follow the platform**, so the form
+/// stays readable in dark mode; the focus gradient is the web's, because the system has no
+/// equivalent for it. A host that wants the web's exact palette sets those colors in its theme.
+///
+/// The type is `Codable` with colors bridged to hex strings (`"#RGB"`, `"#RGBA"`, `"#RRGGBB"`,
+/// `"#RRGGBBAA"` or `"transparent"`), so a JSON theme travels between channels. Decoding is deliberately tolerant:
+/// unknown keys are ignored, and a key whose value cannot be used (a value of the wrong type, an
+/// unusable color, a negative length, an unknown ``inputBorderStyle``) is dropped on its own while
+/// the rest of the document applies, so a full web theme decodes without error. Font weights also
+/// accept the CSS keywords `bold` and `normal`. Every dropped key is reported through the SDK debug
+/// log, so an integrator learns about it without the theme failing. Encoding an adaptive `Color`
+/// resolves it against the current trait collection, so a decoded theme is no longer light/dark
+/// adaptive, and encoding needs iOS 14 because SwiftUI cannot read a `Color` back on iOS 13.
+public struct GopayCardFormTheme: Equatable {
+
+    // MARK: - Typography
+
+    /// Name of a font registered with the app, applied to every text in the form. `nil` uses the
+    /// system font. Unlike the web this is a single font name, not a CSS stack.
+    public var fontFamily: String?
+
+    // MARK: - Labels
+
+    /// Color of the field labels.
+    public var labelColor: Color
+    /// Font size of the field labels, in points.
+    public var labelFontSize: CGFloat
+    /// Font weight of the field labels, on the CSS scale 100...900.
+    public var labelFontWeight: Int
+    /// Line height of the field labels, in points. `nil` uses the font's own metrics.
+    public var labelLineHeight: CGFloat?
+    /// Whether the field labels are uppercased.
+    public var labelUppercase: Bool
+    /// Letter spacing of the field labels, in points. `nil` means none.
+    public var labelLetterSpacing: CGFloat?
+    /// Hides the labels. They take no vertical space but still name their field for VoiceOver.
+    public var labelHidden: Bool
+
+    // MARK: - Input text
+
+    /// Color of the text typed into the inputs.
+    public var inputTextColor: Color
+    /// Font size of the input text, in points.
+    public var inputFontSize: CGFloat
+    /// Font weight of the input text, on the CSS scale 100...900. `nil` means regular.
+    public var inputFontWeight: Int?
+    /// Accepted for portability of a web theme and ignored. On the web it pins the input height
+    /// across browser engines; on iOS the height follows the font, the padding and
+    /// ``inputHeight``.
+    public var inputLineHeight: CGFloat?
+    /// Letter spacing of the input text, in points. `nil` means none.
+    public var inputLetterSpacing: CGFloat?
+    /// Fixed height of the inputs, in points. Takes precedence over the vertical padding.
+    /// `nil` derives the height from the font and the padding.
+    public var inputHeight: CGFloat?
+    /// Color of the placeholder text. `nil` uses the system placeholder color.
+    public var placeholderColor: Color?
+
+    // MARK: - Input border
+
+    /// Whether the inputs are drawn with a full border or with a bottom line only.
+    public var inputBorderStyle: GopayCardFormBorderStyle
+    /// Border color of an unfocused, valid input.
+    public var inputBorderColor: Color
+    /// Border width, in points.
+    public var inputBorderWidth: CGFloat
+    /// Background color of the inputs.
+    public var inputBackgroundColor: Color
+    /// Vertical padding inside the inputs, in points.
+    public var inputPaddingVertical: CGFloat
+    /// Horizontal padding inside the inputs, in points.
+    public var inputPaddingHorizontal: CGFloat
+    /// Corner radius of the inputs, in points.
+    public var inputBorderRadius: CGFloat
+    /// Collapses the borders of adjacent boxed inputs into one shared line, so the fields read as
+    /// a single block. Ignored by the underline style.
+    public var inputBorderCollapse: Bool
+
+    // MARK: - Focus ring
+
+    /// Width of a ring drawn outside the border of a focused input, in points. Needs
+    /// ``focusRingColor`` as well; `nil` draws no ring.
+    public var focusRingWidth: CGFloat?
+    /// Color of the focus ring. Needs ``focusRingWidth`` as well; `nil` draws no ring.
+    public var focusRingColor: Color?
+
+    // MARK: - Focus gradient
+
+    /// Focus color of a boxed border, and the leading color of an underline focus gradient.
+    public var focusGradientStart: Color
+    /// Trailing color of an underline focus gradient. The boxed style ignores it, as the web does.
+    public var focusGradientEnd: Color
+
+    // MARK: - Validation errors
+
+    /// Border color of an input holding invalid content.
+    public var inputErrorBorderColor: Color
+    /// Color of the inline error text below an input.
+    public var errorTextColor: Color
+    /// Font size of the inline error text, in points.
+    public var errorFontSize: CGFloat
+    /// Minimum vertical space reserved for the inline error line, in points, so the layout does
+    /// not shift when a message appears. A value below one rendered line of the error font is
+    /// raised to that line; `0` reserves nothing.
+    public var errorMinHeight: CGFloat
+    /// Distance from an input to its error line, in points. `nil` uses ``fieldSpacing``.
+    public var errorSpacing: CGFloat?
+
+    // MARK: - Layout
+
+    /// Gap between the field groups, in points: between the card number row and the
+    /// expiration + CVV row, and between the expiration and the CVV.
+    public var groupSpacing: CGFloat
+    /// Gap between a label and its input, in points.
+    public var fieldSpacing: CGFloat
+    /// Padding around the whole form, in points. `16` as on the web; set it to `0` when the host
+    /// lays the form out itself.
+    public var formPadding: CGFloat
+    /// Background color of the form container.
+    public var formBackgroundColor: Color
+
+    /// Creates a custom theme. Every length, size and style parameter defaults to the web card
+    /// form's value; the colors follow the system palette instead, apart from the focus gradient,
+    /// which is the web's.
     public init(
-        textColor: Color = .primary,
-        backgroundColor: Color = Color(.systemBackground),
-        borderColor: Color = Color(.separator),
-        focusedBorderColor: Color = .blue,
-        errorColor: Color = .red,
-        borderWidth: CGFloat = 1.0,
-        cornerRadius: CGFloat = 8.0,
-        font: Font = .body,
-        labelFont: Font = .caption,
-        spacing: CGFloat = 12.0,
-        textFieldPadding: CGFloat = 12.0
+        fontFamily: String? = nil,
+        labelColor: Color = .primary,
+        labelFontSize: CGFloat = 11,
+        labelFontWeight: Int = 600,
+        labelLineHeight: CGFloat? = nil,
+        labelUppercase: Bool = true,
+        labelLetterSpacing: CGFloat? = nil,
+        labelHidden: Bool = false,
+        inputTextColor: Color = .primary,
+        inputFontSize: CGFloat = 14,
+        inputFontWeight: Int? = nil,
+        inputLineHeight: CGFloat? = nil,
+        inputLetterSpacing: CGFloat? = nil,
+        inputHeight: CGFloat? = nil,
+        placeholderColor: Color? = nil,
+        inputBorderStyle: GopayCardFormBorderStyle = .underline,
+        inputBorderColor: Color = Color(.separator),
+        inputBorderWidth: CGFloat = 1,
+        inputBackgroundColor: Color = .clear,
+        inputPaddingVertical: CGFloat = 6,
+        inputPaddingHorizontal: CGFloat = 0,
+        inputBorderRadius: CGFloat = 0,
+        inputBorderCollapse: Bool = false,
+        focusRingWidth: CGFloat? = nil,
+        focusRingColor: Color? = nil,
+        focusGradientStart: Color = Color(red: 25 / 255, green: 199 / 255, blue: 214 / 255),
+        focusGradientEnd: Color = Color(red: 24 / 255, green: 153 / 255, blue: 214 / 255),
+        inputErrorBorderColor: Color = .red,
+        errorTextColor: Color = .red,
+        errorFontSize: CGFloat = 11,
+        errorMinHeight: CGFloat = 14,
+        errorSpacing: CGFloat? = nil,
+        groupSpacing: CGFloat = 16,
+        fieldSpacing: CGFloat = 4,
+        formPadding: CGFloat = 16,
+        formBackgroundColor: Color = .clear
     ) {
-        self.textColor = textColor
-        self.backgroundColor = backgroundColor
-        self.borderColor = borderColor
-        self.focusedBorderColor = focusedBorderColor
-        self.errorColor = errorColor
-        self.borderWidth = borderWidth
-        self.cornerRadius = cornerRadius
-        self.font = font
-        self.labelFont = labelFont
-        self.spacing = spacing
-        self.textFieldPadding = textFieldPadding
+        self.fontFamily = fontFamily
+        self.labelColor = labelColor
+        self.labelFontSize = labelFontSize
+        self.labelFontWeight = labelFontWeight
+        self.labelLineHeight = labelLineHeight
+        self.labelUppercase = labelUppercase
+        self.labelLetterSpacing = labelLetterSpacing
+        self.labelHidden = labelHidden
+        self.inputTextColor = inputTextColor
+        self.inputFontSize = inputFontSize
+        self.inputFontWeight = inputFontWeight
+        self.inputLineHeight = inputLineHeight
+        self.inputLetterSpacing = inputLetterSpacing
+        self.inputHeight = inputHeight
+        self.placeholderColor = placeholderColor
+        self.inputBorderStyle = inputBorderStyle
+        self.inputBorderColor = inputBorderColor
+        self.inputBorderWidth = inputBorderWidth
+        self.inputBackgroundColor = inputBackgroundColor
+        self.inputPaddingVertical = inputPaddingVertical
+        self.inputPaddingHorizontal = inputPaddingHorizontal
+        self.inputBorderRadius = inputBorderRadius
+        self.inputBorderCollapse = inputBorderCollapse
+        self.focusRingWidth = focusRingWidth
+        self.focusRingColor = focusRingColor
+        self.focusGradientStart = focusGradientStart
+        self.focusGradientEnd = focusGradientEnd
+        self.inputErrorBorderColor = inputErrorBorderColor
+        self.errorTextColor = errorTextColor
+        self.errorFontSize = errorFontSize
+        self.errorMinHeight = errorMinHeight
+        self.errorSpacing = errorSpacing
+        self.groupSpacing = groupSpacing
+        self.fieldSpacing = fieldSpacing
+        self.formPadding = formPadding
+        self.formBackgroundColor = formBackgroundColor
     }
-    
-    /// Default theme with system colors.
+
+    /// Default theme: the web card form's layout with system colors.
     public static let standard = GopayCardFormTheme()
+
+    /// Ceiling for any length read from a JSON theme document, in points.
+    ///
+    /// Well past any real design value, but low enough that the geometry the lengths feed stays
+    /// finite: an unbounded border width degenerates the collapsed outline, and an unbounded
+    /// height overflows the layout. A document is read defensively and must never be able to
+    /// fail the form, so the decoder drops anything beyond this rather than passing it on.
+    static let lengthLimit: CGFloat = 10_000
 }
 
+// MARK: - Font weights
+
+extension GopayCardFormTheme {
+    /// Maps a CSS font weight (100...900) to the closest `UIFont.Weight`. Values in between are
+    /// rounded to the nearest hundred, values outside the range are clamped. Every rendered font
+    /// goes through here; the SwiftUI `Font` values are built from the resolved `UIFont`.
+    static func uiFontWeight(_ cssWeight: Int) -> UIFont.Weight {
+        switch Self.normalizedWeight(cssWeight) {
+        case 100: return .ultraLight
+        case 200: return .thin
+        case 300: return .light
+        case 400: return .regular
+        case 500: return .medium
+        case 600: return .semibold
+        case 700: return .bold
+        case 800: return .heavy
+        default: return .black
+        }
+    }
+
+    private static func normalizedWeight(_ cssWeight: Int) -> Int {
+        let clamped = min(max(cssWeight, 100), 900)
+        return Int((Double(clamped) / 100).rounded()) * 100
+    }
+}
+
+// MARK: - Codable
+
+extension GopayCardFormTheme: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case fontFamily
+        case labelColor, labelFontSize, labelFontWeight, labelLineHeight
+        case labelUppercase, labelLetterSpacing, labelHidden
+        case inputTextColor, inputFontSize, inputFontWeight, inputLineHeight
+        case inputLetterSpacing, inputHeight, placeholderColor
+        case inputBorderStyle, inputBorderColor, inputBorderWidth, inputBackgroundColor
+        case inputPaddingVertical, inputPaddingHorizontal, inputBorderRadius, inputBorderCollapse
+        case focusRingWidth, focusRingColor, focusGradientStart, focusGradientEnd
+        case inputErrorBorderColor, errorTextColor, errorFontSize, errorMinHeight, errorSpacing
+        case groupSpacing, fieldSpacing, formPadding, formBackgroundColor
+    }
+
+    /// Decodes a theme, keeping the default of every key the payload omits and ignoring keys the
+    /// SDK does not know (the web-only `submit*` and `errorHidden` among them).
+    ///
+    /// A key whose value cannot be used is dropped on its own, the way a TypeScript compiler warns
+    /// about one property and still builds: the rest of the document applies, and the dropped key
+    /// is reported through the SDK debug log (`GopaySDKConfig.enableDebugLogging`).
+    public init(from decoder: Decoder) throws {
+        let keys = GopayTolerantThemeKeys(container: try decoder.container(keyedBy: CodingKeys.self))
+        // Every key the document omits keeps the base theme's value. Plain decoding has no base,
+        // so it falls back to the SDK defaults; ``applying(_:)`` puts the caller's theme here.
+        let fallback = decoder.userInfo[.gopayThemeBase] as? GopayCardFormTheme ?? GopayCardFormTheme()
+
+        self.init(
+            fontFamily: keys.value(String.self, .fontFamily) ?? fallback.fontFamily,
+            labelColor: keys.color(.labelColor) ?? fallback.labelColor,
+            labelFontSize: keys.length(.labelFontSize) ?? fallback.labelFontSize,
+            labelFontWeight: keys.fontWeight(.labelFontWeight) ?? fallback.labelFontWeight,
+            labelLineHeight: keys.length(.labelLineHeight) ?? fallback.labelLineHeight,
+            labelUppercase: keys.value(Bool.self, .labelUppercase) ?? fallback.labelUppercase,
+            labelLetterSpacing: keys.signedLength(.labelLetterSpacing) ?? fallback.labelLetterSpacing,
+            labelHidden: keys.value(Bool.self, .labelHidden) ?? fallback.labelHidden,
+            inputTextColor: keys.color(.inputTextColor) ?? fallback.inputTextColor,
+            inputFontSize: keys.length(.inputFontSize) ?? fallback.inputFontSize,
+            inputFontWeight: keys.fontWeight(.inputFontWeight) ?? fallback.inputFontWeight,
+            inputLineHeight: keys.length(.inputLineHeight) ?? fallback.inputLineHeight,
+            inputLetterSpacing: keys.signedLength(.inputLetterSpacing) ?? fallback.inputLetterSpacing,
+            inputHeight: keys.length(.inputHeight) ?? fallback.inputHeight,
+            placeholderColor: keys.color(.placeholderColor) ?? fallback.placeholderColor,
+            inputBorderStyle: keys.borderStyle(.inputBorderStyle) ?? fallback.inputBorderStyle,
+            inputBorderColor: keys.color(.inputBorderColor) ?? fallback.inputBorderColor,
+            inputBorderWidth: keys.length(.inputBorderWidth) ?? fallback.inputBorderWidth,
+            inputBackgroundColor: keys.color(.inputBackgroundColor) ?? fallback.inputBackgroundColor,
+            inputPaddingVertical: keys.length(.inputPaddingVertical) ?? fallback.inputPaddingVertical,
+            inputPaddingHorizontal: keys.length(.inputPaddingHorizontal) ?? fallback.inputPaddingHorizontal,
+            inputBorderRadius: keys.length(.inputBorderRadius) ?? fallback.inputBorderRadius,
+            inputBorderCollapse: keys.value(Bool.self, .inputBorderCollapse) ?? fallback.inputBorderCollapse,
+            focusRingWidth: keys.length(.focusRingWidth) ?? fallback.focusRingWidth,
+            focusRingColor: keys.color(.focusRingColor) ?? fallback.focusRingColor,
+            focusGradientStart: keys.color(.focusGradientStart) ?? fallback.focusGradientStart,
+            focusGradientEnd: keys.color(.focusGradientEnd) ?? fallback.focusGradientEnd,
+            inputErrorBorderColor: keys.color(.inputErrorBorderColor) ?? fallback.inputErrorBorderColor,
+            errorTextColor: keys.color(.errorTextColor) ?? fallback.errorTextColor,
+            errorFontSize: keys.length(.errorFontSize) ?? fallback.errorFontSize,
+            errorMinHeight: keys.length(.errorMinHeight) ?? fallback.errorMinHeight,
+            errorSpacing: keys.length(.errorSpacing) ?? fallback.errorSpacing,
+            groupSpacing: keys.length(.groupSpacing) ?? fallback.groupSpacing,
+            fieldSpacing: keys.length(.fieldSpacing) ?? fallback.fieldSpacing,
+            formPadding: keys.length(.formPadding) ?? fallback.formPadding,
+            formBackgroundColor: keys.color(.formBackgroundColor) ?? fallback.formBackgroundColor
+        )
+    }
+
+    /// Reads the keys of a JSON theme one at a time. Every reader returns `nil` for a key that is
+    /// absent or `null`, and for a value it cannot use, which it reports as a dropped key.
+    private struct GopayTolerantThemeKeys {
+        let container: KeyedDecodingContainer<CodingKeys>
+
+        /// A value of exactly the expected type; anything else is dropped.
+        func value<T: Decodable>(_ type: T.Type, _ key: CodingKeys) -> T? {
+            guard isSet(key) else { return nil }
+            guard let value = try? container.decode(T.self, forKey: key) else {
+                drop(key, "expected \(Self.name(of: T.self))")
+                return nil
+            }
+            return value
+        }
+
+        /// A hex or `transparent` color string.
+        func color(_ key: CodingKeys) -> Color? {
+            guard let hex = value(String.self, key) else { return nil }
+            guard let color = Color(gopayHex: hex) else {
+                drop(key, "\"\(hex)\" is not a #RGB, #RGBA, #RRGGBB, #RRGGBBAA or transparent color")
+                return nil
+            }
+            return color
+        }
+
+        /// A finite, non-negative number of points.
+        func length(_ key: CodingKeys) -> CGFloat? {
+            guard let value = signedLength(key) else { return nil }
+            guard value >= 0 else {
+                drop(key, "a length cannot be negative")
+                return nil
+            }
+            return value
+        }
+
+        /// A finite number of points that may legitimately be negative, such as tighter letter
+        /// spacing. Capped at ``GopayCardFormTheme/lengthLimit`` in both directions: beyond that
+        /// the value is not a design decision any more, and the geometry it feeds degenerates.
+        func signedLength(_ key: CodingKeys) -> CGFloat? {
+            guard let value = value(CGFloat.self, key) else { return nil }
+            guard value.isFinite else {
+                drop(key, "a length must be a finite number")
+                return nil
+            }
+            guard abs(value) <= GopayCardFormTheme.lengthLimit else {
+                drop(key, "a length must be within \u{00b1}\(Int(GopayCardFormTheme.lengthLimit)) points")
+                return nil
+            }
+            return value
+        }
+
+        /// A CSS font weight: a number on the 100...900 scale, or the keywords `bold` (700) and
+        /// `normal` (400) the web accepts too.
+        func fontWeight(_ key: CodingKeys) -> Int? {
+            guard isSet(key) else { return nil }
+            if let number = try? container.decode(Double.self, forKey: key), number.isFinite {
+                // Clamped before the conversion, which traps on huge values, and to the CSS range
+                // the property documents, so the stored value is never one the docs disallow.
+                return Int(min(max(number.rounded(), 100), 900))
+            }
+            if let keyword = try? container.decode(String.self, forKey: key) {
+                switch keyword.trimmingCharacters(in: .whitespaces).lowercased() {
+                case "bold": return 700
+                case "normal": return 400
+                default: break
+                }
+            }
+            drop(key, "expected a number or the keyword \"bold\" or \"normal\"")
+            return nil
+        }
+
+        /// The border style, matched case-insensitively.
+        func borderStyle(_ key: CodingKeys) -> GopayCardFormBorderStyle? {
+            guard let raw = value(String.self, key) else { return nil }
+            guard let style = GopayCardFormBorderStyle(rawValue: raw.lowercased()) else {
+                drop(key, "\"\(raw)\" is not a border style, expected boxed or underline")
+                return nil
+            }
+            return style
+        }
+
+        /// Whether the key carries a value at all. A `null` counts as omitted, not as an error.
+        private func isSet(_ key: CodingKeys) -> Bool {
+            container.contains(key) && (try? container.decodeNil(forKey: key)) == false
+        }
+
+        private func drop(_ key: CodingKeys, _ reason: String) {
+            GopayCardFormTheme.reportDroppedKey("\"\(key.stringValue)\" ignored, \(reason)")
+        }
+
+        private static func name(of type: Any.Type) -> String {
+            switch type {
+            case is Bool.Type: return "true or false"
+            case is String.Type: return "a string"
+            default: return "a number"
+            }
+        }
+    }
+
+    /// Reports a JSON theme key the decoder dropped. Goes to the SDK debug log; tests observe it
+    /// by swapping the handler.
+    static var reportDroppedKey: (String) -> Void = { message in
+        GopaySDK.shared.logWarning("GopayCardFormTheme \(message)")
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(fontFamily, forKey: .fontFamily)
+        try container.encode(labelColor.gopayHex, forKey: .labelColor)
+        try container.encode(labelFontSize, forKey: .labelFontSize)
+        try container.encode(labelFontWeight, forKey: .labelFontWeight)
+        try container.encodeIfPresent(labelLineHeight, forKey: .labelLineHeight)
+        try container.encode(labelUppercase, forKey: .labelUppercase)
+        try container.encodeIfPresent(labelLetterSpacing, forKey: .labelLetterSpacing)
+        try container.encode(labelHidden, forKey: .labelHidden)
+        try container.encode(inputTextColor.gopayHex, forKey: .inputTextColor)
+        try container.encode(inputFontSize, forKey: .inputFontSize)
+        try container.encodeIfPresent(inputFontWeight, forKey: .inputFontWeight)
+        try container.encodeIfPresent(inputLineHeight, forKey: .inputLineHeight)
+        try container.encodeIfPresent(inputLetterSpacing, forKey: .inputLetterSpacing)
+        try container.encodeIfPresent(inputHeight, forKey: .inputHeight)
+        try container.encodeIfPresent(placeholderColor?.gopayHex, forKey: .placeholderColor)
+        try container.encode(inputBorderStyle, forKey: .inputBorderStyle)
+        try container.encode(inputBorderColor.gopayHex, forKey: .inputBorderColor)
+        try container.encode(inputBorderWidth, forKey: .inputBorderWidth)
+        try container.encode(inputBackgroundColor.gopayHex, forKey: .inputBackgroundColor)
+        try container.encode(inputPaddingVertical, forKey: .inputPaddingVertical)
+        try container.encode(inputPaddingHorizontal, forKey: .inputPaddingHorizontal)
+        try container.encode(inputBorderRadius, forKey: .inputBorderRadius)
+        try container.encode(inputBorderCollapse, forKey: .inputBorderCollapse)
+        try container.encodeIfPresent(focusRingWidth, forKey: .focusRingWidth)
+        try container.encodeIfPresent(focusRingColor?.gopayHex, forKey: .focusRingColor)
+        try container.encode(focusGradientStart.gopayHex, forKey: .focusGradientStart)
+        try container.encode(focusGradientEnd.gopayHex, forKey: .focusGradientEnd)
+        try container.encode(inputErrorBorderColor.gopayHex, forKey: .inputErrorBorderColor)
+        try container.encode(errorTextColor.gopayHex, forKey: .errorTextColor)
+        try container.encode(errorFontSize, forKey: .errorFontSize)
+        try container.encode(errorMinHeight, forKey: .errorMinHeight)
+        try container.encodeIfPresent(errorSpacing, forKey: .errorSpacing)
+        try container.encode(groupSpacing, forKey: .groupSpacing)
+        try container.encode(fieldSpacing, forKey: .fieldSpacing)
+        try container.encode(formPadding, forKey: .formPadding)
+        try container.encode(formBackgroundColor.gopayHex, forKey: .formBackgroundColor)
+    }
+}
+
+extension CodingUserInfoKey {
+    /// Carries the theme a document is applied over, so the tolerant decoder can fall back to it
+    /// instead of the SDK defaults. See ``GopayCardFormTheme/applying(_:)-(Data)``.
+    static let gopayThemeBase = CodingUserInfoKey(rawValue: "cz.gopay.sdk.themeBase")!
+}
+
+public extension GopayCardFormTheme {
+    /// Applies a JSON theme document over this theme and returns the result.
+    ///
+    /// Every key the document does not set keeps this theme's value, so a partial document can
+    /// restyle one thing without resetting a branded theme to the SDK defaults. A document that
+    /// cannot be read at all leaves this theme untouched, and an unusable key drops on its own,
+    /// so reading a document never fails the form. Mirrors the Android
+    /// `PaymentCardFormThemeJson.parse(document).toTheme(base)`.
+    func applying(_ document: Data) -> GopayCardFormTheme {
+        let decoder = JSONDecoder()
+        decoder.userInfo[.gopayThemeBase] = self
+        guard let merged = try? decoder.decode(GopayCardFormTheme.self, from: document) else {
+            GopaySDK.shared.logWarning("Theme document could not be read, the base theme is kept")
+            return self
+        }
+        return merged
+    }
+
+    /// String convenience for ``applying(_:)-(Data)``.
+    func applying(_ document: String) -> GopayCardFormTheme {
+        applying(Data(document.utf8))
+    }
+}
+
+// MARK: - Hex bridge
+
+extension Color {
+
+    /// The color resolved to components for encoding, or `nil` on iOS 13, where SwiftUI exposes
+    /// neither `UIColor(Color)` nor `Color.cgColor` and a color simply cannot be read back.
+    private var encodableUIColor: UIColor? {
+        guard #available(iOS 14.0, *) else { return nil }
+        return UIColor(self)
+    }
+
+    /// Parses `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"` and `"transparent"`. The leading
+    /// `#` is required, as in CSS and as on Android, so one document reads the same everywhere.
+    init?(gopayHex hex: String) {
+        let value = hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value == "transparent" {
+            self = .clear
+            return
+        }
+        guard value.hasPrefix("#") else { return nil }
+        let digits = String(value.dropFirst())
+        guard digits.allSatisfy({ $0.isHexDigit }), let packed = UInt64(digits, radix: 16) else {
+            return nil
+        }
+
+        let red: Double, green: Double, blue: Double, alpha: Double
+        switch digits.count {
+        case 3:
+            red = Double((packed >> 8) & 0xF) / 15
+            green = Double((packed >> 4) & 0xF) / 15
+            blue = Double(packed & 0xF) / 15
+            alpha = 1
+        case 4:
+            red = Double((packed >> 12) & 0xF) / 15
+            green = Double((packed >> 8) & 0xF) / 15
+            blue = Double((packed >> 4) & 0xF) / 15
+            alpha = Double(packed & 0xF) / 15
+        case 6:
+            red = Double((packed >> 16) & 0xFF) / 255
+            green = Double((packed >> 8) & 0xFF) / 255
+            blue = Double(packed & 0xFF) / 255
+            alpha = 1
+        case 8:
+            red = Double((packed >> 24) & 0xFF) / 255
+            green = Double((packed >> 16) & 0xFF) / 255
+            blue = Double((packed >> 8) & 0xFF) / 255
+            alpha = Double(packed & 0xFF) / 255
+        default:
+            return nil
+        }
+        self.init(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
+    }
+
+    /// The color as `"#RRGGBB"`, or `"#RRGGBBAA"` when it is translucent and `"transparent"` when
+    /// it is fully clear. An adaptive color resolves against the current trait collection.
+    ///
+    /// Reading a `Color` back needs iOS 14, so on iOS 13 every color encodes as `"transparent"`.
+    /// Decoding a theme works on every supported version.
+    var gopayHex: String {
+        guard let color = encodableUIColor else { return "transparent" }
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        if alpha <= 0 { return "transparent" }
+
+        let channel: (CGFloat) -> Int = { Int((min(max($0, 0), 1) * 255).rounded()) }
+        let rgb = String(format: "#%02X%02X%02X", channel(red), channel(green), channel(blue))
+        guard alpha < 1 else { return rgb }
+        return rgb + String(format: "%02X", channel(alpha))
+    }
+}
+
+// MARK: - Resolved fonts
+
+extension GopayCardFormTheme {
+    /// The label font, scaled for the given Dynamic Type category the way the caption text style
+    /// scales. The form reads the category from the environment so the scaling stays live.
+    func labelUIFont(for sizeCategory: ContentSizeCategory) -> UIFont {
+        scaledFont(
+            size: labelFontSize,
+            weight: Self.uiFontWeight(labelFontWeight),
+            textStyle: .caption1,
+            sizeCategory: sizeCategory
+        )
+    }
+
+    /// SwiftUI counterpart of ``labelUIFont(for:)``.
+    func labelFont(for sizeCategory: ContentSizeCategory) -> Font {
+        Font(labelUIFont(for: sizeCategory) as CTFont)
+    }
+
+    private func scaledFont(
+        size: CGFloat,
+        weight: UIFont.Weight,
+        textStyle: UIFont.TextStyle,
+        sizeCategory: ContentSizeCategory
+    ) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        let traits = UITraitCollection(preferredContentSizeCategory: sizeCategory.uiContentSizeCategory)
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: base, compatibleWith: traits)
+    }
+}
+
+extension ContentSizeCategory {
+    /// UIKit counterpart, so `UIFontMetrics` can scale against the SwiftUI environment value.
+    var uiContentSizeCategory: UIContentSizeCategory {
+        switch self {
+        case .extraSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .extraLarge: return .extraLarge
+        case .extraExtraLarge: return .extraExtraLarge
+        case .extraExtraExtraLarge: return .extraExtraExtraLarge
+        case .accessibilityMedium: return .accessibilityMedium
+        case .accessibilityLarge: return .accessibilityLarge
+        case .accessibilityExtraLarge: return .accessibilityExtraLarge
+        case .accessibilityExtraExtraLarge: return .accessibilityExtraExtraLarge
+        case .accessibilityExtraExtraExtraLarge: return .accessibilityExtraExtraExtraLarge
+        @unknown default: return .large
+        }
+    }
+}

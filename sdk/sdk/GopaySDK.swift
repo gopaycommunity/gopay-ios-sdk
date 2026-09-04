@@ -335,4 +335,13 @@ public class GopaySDK {
             print("[GopaySDK] Error: \(error)")
         }
     }
+
+    /// Logs something the integrator should know about that is not an error, such as a JSON theme
+    /// key the SDK dropped. Printed with the same gate as ``handleError(_:)``: only while
+    /// `GopaySDKConfig.enableDebugLogging` is on.
+    func logWarning(_ message: String) {
+        if config?.enableDebugLogging == true {
+            print("[GopaySDK] Warning: \(message)")
+        }
+    }
 }

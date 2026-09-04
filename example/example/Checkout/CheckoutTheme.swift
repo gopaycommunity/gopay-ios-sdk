@@ -45,17 +45,23 @@ enum CheckoutTheme {
     /// than the SDK defaults.
     static var cardForm: GopayCardFormTheme {
         GopayCardFormTheme(
-            textColor: ink,
-            backgroundColor: surfaceSunken,
-            borderColor: hairline,
-            focusedBorderColor: accent,
-            errorColor: danger,
-            borderWidth: 1,
-            cornerRadius: controlRadius,
-            font: .system(size: 16, weight: .medium, design: .rounded),
-            labelFont: .system(size: 12, weight: .semibold),
-            spacing: 14,
-            textFieldPadding: 14
+            labelColor: inkMuted,
+            labelFontSize: 12,
+            labelFontWeight: 600,
+            inputTextColor: ink,
+            inputFontSize: 16,
+            inputFontWeight: 500,
+            inputBorderColor: hairline,
+            inputBorderWidth: 1,
+            inputBackgroundColor: surfaceSunken,
+            inputPaddingVertical: 14,
+            inputPaddingHorizontal: 14,
+            inputBorderRadius: controlRadius,
+            focusGradientStart: accent,
+            focusGradientEnd: accent,
+            inputErrorBorderColor: danger,
+            errorTextColor: danger,
+            groupSpacing: 14
         )
     }
 

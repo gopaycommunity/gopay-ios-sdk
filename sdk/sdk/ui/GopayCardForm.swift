@@ -127,6 +127,9 @@ public struct GopayCardForm: View {
     /// Internal state for card form data (never exposed).
     @State private var data: GopayCardFormData
     
+    /// Read so the theme's fonts rescale when the user changes the Dynamic Type size.
+    @Environment(\.sizeCategory) private var sizeCategory
+
     @State private var isCardNumberFocused: Bool = false
     @State private var isExpirationFocused: Bool = false
     @State private var isCvvFocused: Bool = false
@@ -186,165 +189,167 @@ public struct GopayCardForm: View {
         )
     }
 
+    // MARK: - Themed building blocks
+
+    /// Field label styled with the theme's label typography.
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(theme.labelFont(for: sizeCategory))
+            .foregroundColor(theme.labelColor)
+    }
+
     /// Inline error label styled with the theme's error color.
     @ViewBuilder
     private func errorLabel(_ message: String?) -> some View {
         if let message = message {
             Text(message)
-                .font(theme.labelFont)
-                .foregroundColor(theme.errorColor)
+                .font(theme.labelFont(for: sizeCategory))
+                .foregroundColor(theme.errorTextColor)
         }
     }
-    
-    public var body: some View {
-        VStack(spacing: theme.spacing) {
-            // Card number input (first row)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(localeStrings.panLabel)
-                    .font(theme.labelFont)
-                    .foregroundColor(theme.textColor)
 
-                FormattedTextField(
-                    placeholder: localeStrings.panPlaceholder,
-                    digits: Binding(
-                        get: { data.cardNumber },
-                        set: { newDigits in
-                            data.cardNumber = newDigits
-                            cardNumberEdited = true
-                            GopaySDK.shared.updateCardFormData(data, formId: formId)
-                            updateValidationBinding()
-                            if newDigits.count == 16 {
-                                isCardNumberFocused = false
-                                isExpirationFocused = true
+    /// Wraps an input in the theme's padding, background and border.
+    private func inputContainer<Content: View>(
+        isFocused: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .padding(.vertical, theme.inputPaddingVertical)
+            .padding(.horizontal, theme.inputPaddingHorizontal)
+            .background(theme.inputBackgroundColor)
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.inputBorderRadius)
+                    .stroke(borderColor(isFocused: isFocused), lineWidth: theme.inputBorderWidth)
+            )
+            .cornerRadius(theme.inputBorderRadius)
+    }
+
+    /// Border color for the current state of a field.
+    private func borderColor(isFocused: Bool) -> Color {
+        isFocused ? theme.focusGradientStart : theme.inputBorderColor
+    }
+
+    public var body: some View {
+        VStack(spacing: theme.groupSpacing) {
+            // Card number input (first row)
+            VStack(alignment: .leading, spacing: theme.fieldSpacing) {
+                fieldLabel(localeStrings.panLabel)
+
+                inputContainer(isFocused: isCardNumberFocused) {
+                    FormattedTextField(
+                        placeholder: localeStrings.panPlaceholder,
+                        digits: Binding(
+                            get: { data.cardNumber },
+                            set: { newDigits in
+                                data.cardNumber = newDigits
+                                cardNumberEdited = true
+                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                updateValidationBinding()
+                                if newDigits.count == 16 {
+                                    isCardNumberFocused = false
+                                    isExpirationFocused = true
+                                }
+                            }
+                        ),
+                        formatter: .cardNumber,
+                        textColor: UIColor.from(theme.inputTextColor),
+                        textContentType: .creditCardNumber,
+                        isFocused: isCardNumberFocused,
+                        onFocusChange: { isFocused in
+                            isCardNumberFocused = isFocused
+                            if isFocused {
+                                isExpirationFocused = false
+                                isCvvFocused = false
                             }
                         }
-                    ),
-                    formatter: .cardNumber,
-                    textColor: UIColor.from(theme.textColor),
-                    textContentType: .creditCardNumber,
-                    isFocused: isCardNumberFocused,
-                    onFocusChange: { isFocused in
-                        isCardNumberFocused = isFocused
-                        if isFocused {
-                            isExpirationFocused = false
-                            isCvvFocused = false
-                        }
-                    }
-                )
-                .padding(theme.textFieldPadding)
-                .background(theme.backgroundColor)
-                .overlay(
-                    RoundedRectangle(cornerRadius: theme.cornerRadius)
-                        .stroke(
-                            isCardNumberFocused ? theme.focusedBorderColor : theme.borderColor,
-                            lineWidth: theme.borderWidth
-                        )
-                )
-                .cornerRadius(theme.cornerRadius)
+                    )
+                }
 
                 errorLabel(errors.cardNumber)
             }
 
             // Expiration and CVV inputs (second row)
-            HStack(spacing: theme.spacing) {
+            HStack(spacing: theme.groupSpacing) {
                 // Expiration input (single field with automatic slash)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(localeStrings.expLabel)
-                        .font(theme.labelFont)
-                        .foregroundColor(theme.textColor)
+                VStack(alignment: .leading, spacing: theme.fieldSpacing) {
+                    fieldLabel(localeStrings.expLabel)
 
-                    FormattedTextField(
-                        placeholder: localeStrings.expPlaceholder,
-                        digits: Binding(
-                            get: { data.expirationMonth + data.expirationYear },
-                            set: { newDigits in
-                                data.expirationMonth = String(newDigits.prefix(2))
-                                data.expirationYear = newDigits.count > 2 ? String(newDigits.dropFirst(2)) : ""
-                                expirationEdited = true
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                updateValidationBinding()
-                                if newDigits.count == 4 {
-                                    isExpirationFocused = false
-                                    isCvvFocused = true
+                    inputContainer(isFocused: isExpirationFocused) {
+                        FormattedTextField(
+                            placeholder: localeStrings.expPlaceholder,
+                            digits: Binding(
+                                get: { data.expirationMonth + data.expirationYear },
+                                set: { newDigits in
+                                    data.expirationMonth = String(newDigits.prefix(2))
+                                    data.expirationYear = newDigits.count > 2 ? String(newDigits.dropFirst(2)) : ""
+                                    expirationEdited = true
+                                    GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                    updateValidationBinding()
+                                    if newDigits.count == 4 {
+                                        isExpirationFocused = false
+                                        isCvvFocused = true
+                                    }
+                                }
+                            ),
+                            formatter: .expiration,
+                            textColor: UIColor.from(theme.inputTextColor),
+                            isFocused: isExpirationFocused,
+                            onFocusChange: { isFocused in
+                                isExpirationFocused = isFocused
+                                if isFocused {
+                                    isCardNumberFocused = false
+                                    isCvvFocused = false
+                                } else if data.expirationMonth.count == 1,
+                                          let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
+                                    // Pad a single-digit month with a leading zero once the field loses focus.
+                                    data.expirationMonth = String(format: "%02d", month)
+                                    GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                    updateValidationBinding()
                                 }
                             }
-                        ),
-                        formatter: .expiration,
-                        textColor: UIColor.from(theme.textColor),
-                        isFocused: isExpirationFocused,
-                        onFocusChange: { isFocused in
-                            isExpirationFocused = isFocused
-                            if isFocused {
-                                isCardNumberFocused = false
-                                isCvvFocused = false
-                            } else if data.expirationMonth.count == 1,
-                                      let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
-                                // Pad a single-digit month with a leading zero once the field loses focus.
-                                data.expirationMonth = String(format: "%02d", month)
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                updateValidationBinding()
-                            }
-                        }
-                    )
-                    .padding(theme.textFieldPadding)
-                    .background(theme.backgroundColor)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: theme.cornerRadius)
-                            .stroke(
-                                isExpirationFocused ? theme.focusedBorderColor : theme.borderColor,
-                                lineWidth: theme.borderWidth
-                            )
-                    )
-                    .cornerRadius(theme.cornerRadius)
+                        )
+                    }
                     .frame(maxWidth: .infinity)
 
                     errorLabel(errors.expiration)
                 }
 
                 // CVV input
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(localeStrings.cvvLabel)
-                        .font(theme.labelFont)
-                        .foregroundColor(theme.textColor)
+                VStack(alignment: .leading, spacing: theme.fieldSpacing) {
+                    fieldLabel(localeStrings.cvvLabel)
 
-                    FormattedTextField(
-                        placeholder: localeStrings.cvvPlaceholder,
-                        digits: Binding(
-                            get: { data.cvv },
-                            set: { newDigits in
-                                data.cvv = newDigits
-                                cvvEdited = true
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                updateValidationBinding()
+                    inputContainer(isFocused: isCvvFocused) {
+                        FormattedTextField(
+                            placeholder: localeStrings.cvvPlaceholder,
+                            digits: Binding(
+                                get: { data.cvv },
+                                set: { newDigits in
+                                    data.cvv = newDigits
+                                    cvvEdited = true
+                                    GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                    updateValidationBinding()
+                                }
+                            ),
+                            formatter: .cvv,
+                            textColor: UIColor.from(theme.inputTextColor),
+                            isSecure: true,
+                            isFocused: isCvvFocused,
+                            onFocusChange: { isFocused in
+                                isCvvFocused = isFocused
+                                if isFocused {
+                                    isCardNumberFocused = false
+                                    isExpirationFocused = false
+                                }
                             }
-                        ),
-                        formatter: .cvv,
-                        textColor: UIColor.from(theme.textColor),
-                        isSecure: true,
-                        isFocused: isCvvFocused,
-                        onFocusChange: { isFocused in
-                            isCvvFocused = isFocused
-                            if isFocused {
-                                isCardNumberFocused = false
-                                isExpirationFocused = false
-                            }
-                        }
-                    )
-                    .padding(theme.textFieldPadding)
-                    .background(theme.backgroundColor)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: theme.cornerRadius)
-                            .stroke(
-                                isCvvFocused ? theme.focusedBorderColor : theme.borderColor,
-                                lineWidth: theme.borderWidth
-                            )
-                    )
-                    .cornerRadius(theme.cornerRadius)
+                        )
+                    }
 
                     errorLabel(errors.cvv)
                 }
             }
         }
+        .padding(theme.formPadding)
+        .background(theme.formBackgroundColor)
         .onAppear {
             // Initial sync when form appears
             GopaySDK.shared.updateCardFormData(data, formId: formId)
@@ -378,11 +383,12 @@ struct GopayCardForm_Previews: PreviewProvider {
             // Custom theme example
             GopayCardForm(
                 theme: GopayCardFormTheme(
-                    textColor: .blue,
-                    backgroundColor: Color(.systemGray6),
-                    borderColor: .gray,
-                    focusedBorderColor: .blue,
-                    cornerRadius: 12.0
+                    labelColor: .blue,
+                    inputTextColor: .blue,
+                    inputBorderColor: .gray,
+                    inputBackgroundColor: Color(.systemGray6),
+                    inputBorderRadius: 12.0,
+                    focusGradientStart: .blue
                 )
             )
             .padding()
