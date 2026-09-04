@@ -226,22 +226,55 @@ public struct GopayCardForm: View {
         theme.labelHidden ? text : nil
     }
 
-    /// Inline error label styled with the theme's error color.
+    /// The slot below an input. It holds the inline error and, when the theme reserves height for
+    /// it, keeps that height even while there is no message, so the layout does not jump.
     @ViewBuilder
-    private func errorLabel(_ message: String?) -> some View {
-        if let message = message {
-            Text(message)
-                .font(theme.labelFont(for: sizeCategory))
-                .foregroundColor(theme.errorTextColor)
+    private func errorSlot(_ message: String?) -> some View {
+        if message != nil || theme.errorMinHeight > 0 {
+            Group {
+                if let message = message {
+                    Text(message)
+                        .font(theme.errorFont(for: sizeCategory))
+                        .foregroundColor(theme.errorTextColor)
+                } else {
+                    Color.clear.frame(width: 0, height: 0)
+                }
+            }
+            .frame(
+                minHeight: theme.reservedErrorHeight(for: sizeCategory),
+                alignment: .topLeading
+            )
+            .padding(.top, theme.resolvedErrorSpacing)
+        }
+    }
+
+    /// One themed field: its label, the input in its border, and the error slot below.
+    private func field<Content: View>(
+        label: String,
+        error: String?,
+        isFocused: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            fieldLabel(label)
+
+            inputContainer(isFocused: isFocused, hasError: error != nil, content: content)
+                .padding(.top, theme.labelHidden ? 0 : theme.fieldSpacing)
+
+            errorSlot(error)
         }
     }
 
     /// Wraps an input in the theme's padding, background and border.
     private func inputContainer<Content: View>(
         isFocused: Bool,
+        hasError: Bool,
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
+            // The text field is flexible in both directions; keep its intrinsic height so a taller
+            // sibling column (label or error text) never stretches it.
+            .fixedSize(horizontal: false, vertical: true)
             // A fixed input height takes precedence over the vertical padding, as it does on the web.
             .padding(.vertical, theme.inputHeight == nil ? theme.inputPaddingVertical : 0)
             .padding(.horizontal, theme.inputPaddingHorizontal)
@@ -249,23 +282,36 @@ public struct GopayCardForm: View {
             .background(theme.inputBackgroundColor)
             .overlay(
                 RoundedRectangle(cornerRadius: theme.inputBorderRadius)
-                    .stroke(borderColor(isFocused: isFocused), lineWidth: theme.inputBorderWidth)
+                    .stroke(
+                        theme.borderColor(isFocused: isFocused, hasError: hasError),
+                        lineWidth: theme.inputBorderWidth
+                    )
             )
             .cornerRadius(theme.inputBorderRadius)
+            // Drawn after the corner clip so the ring can sit outside the border.
+            .overlay(focusRing(isFocused: isFocused))
     }
 
-    /// Border color for the current state of a field.
-    private func borderColor(isFocused: Bool) -> Color {
-        isFocused ? theme.focusGradientStart : theme.inputBorderColor
+    /// The optional ring outside the border of a focused field. It is drawn as an overlay, so it
+    /// never moves the surrounding layout.
+    @ViewBuilder
+    private func focusRing(isFocused: Bool) -> some View {
+        if isFocused, let width = theme.focusRingWidth, let color = theme.focusRingColor, width > 0 {
+            let inset = width / 2
+            RoundedRectangle(cornerRadius: theme.inputBorderRadius + inset)
+                .stroke(color, lineWidth: width)
+                .padding(-inset)
+        }
     }
 
     public var body: some View {
         VStack(spacing: theme.groupSpacing) {
             // Card number input (first row)
-            VStack(alignment: .leading, spacing: theme.fieldSpacing) {
-                fieldLabel(localeStrings.panLabel)
-
-                inputContainer(isFocused: isCardNumberFocused) {
+            field(
+                label: localeStrings.panLabel,
+                error: errors.cardNumber,
+                isFocused: isCardNumberFocused
+            ) {
                     FormattedTextField(
                         placeholder: localeStrings.panPlaceholder,
                         digits: Binding(
@@ -297,18 +343,18 @@ public struct GopayCardForm: View {
                             }
                         }
                     )
-                }
-
-                errorLabel(errors.cardNumber)
             }
 
             // Expiration and CVV inputs (second row)
-            HStack(spacing: theme.groupSpacing) {
+            // Top-aligned so an error line under one field does not push or stretch its neighbour,
+            // the way the web row behaves.
+            HStack(alignment: .top, spacing: theme.groupSpacing) {
                 // Expiration input (single field with automatic slash)
-                VStack(alignment: .leading, spacing: theme.fieldSpacing) {
-                    fieldLabel(localeStrings.expLabel)
-
-                    inputContainer(isFocused: isExpirationFocused) {
+                field(
+                    label: localeStrings.expLabel,
+                    error: errors.expiration,
+                    isFocused: isExpirationFocused
+                ) {
                         FormattedTextField(
                             placeholder: localeStrings.expPlaceholder,
                             digits: Binding(
@@ -346,17 +392,15 @@ public struct GopayCardForm: View {
                                 }
                             }
                         )
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    errorLabel(errors.expiration)
                 }
+                .frame(maxWidth: .infinity)
 
                 // CVV input
-                VStack(alignment: .leading, spacing: theme.fieldSpacing) {
-                    fieldLabel(localeStrings.cvvLabel)
-
-                    inputContainer(isFocused: isCvvFocused) {
+                field(
+                    label: localeStrings.cvvLabel,
+                    error: errors.cvv,
+                    isFocused: isCvvFocused
+                ) {
                         FormattedTextField(
                             placeholder: localeStrings.cvvPlaceholder,
                             digits: Binding(
@@ -384,9 +428,6 @@ public struct GopayCardForm: View {
                                 }
                             }
                         )
-                    }
-
-                    errorLabel(errors.cvv)
                 }
             }
         }

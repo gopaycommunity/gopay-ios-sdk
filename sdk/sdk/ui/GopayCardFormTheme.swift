@@ -579,6 +579,35 @@ extension Color {
     }
 }
 
+// MARK: - Resolved state
+
+extension GopayCardFormTheme {
+    /// Height reserved below an input so the form does not jump when an error appears.
+    ///
+    /// ``errorMinHeight`` is what the theme asked for, but a reserve shorter than one line of the
+    /// error font would not hold the message it exists for, so the taller of the two wins. Both
+    /// scale with the reader's text size.
+    func reservedErrorHeight(for sizeCategory: ContentSizeCategory) -> CGFloat {
+        guard errorMinHeight > 0 else { return 0 }
+        let requested = scaledCaptionLength(errorMinHeight, for: sizeCategory)
+        // The height of a rendered line, not the font's point size: a line box is about a fifth
+        // taller than the size that names it, and reserving the smaller number lets the form jump
+        // by that difference the moment a message appears.
+        let oneLine = errorUIFont(for: sizeCategory).lineHeight
+        return max(requested, oneLine)
+    }
+
+    /// Border color of an input in the given state. A focused field shows focus even while its
+    /// content is invalid; both mobile SDKs and the web form use that precedence.
+    func borderColor(isFocused: Bool, hasError: Bool) -> Color {
+        if isFocused { return focusGradientStart }
+        return hasError ? inputErrorBorderColor : inputBorderColor
+    }
+
+    /// Distance from an input to its error line, falling back to ``fieldSpacing``.
+    var resolvedErrorSpacing: CGFloat { errorSpacing ?? fieldSpacing }
+}
+
 // MARK: - Resolved fonts
 
 extension GopayCardFormTheme {
@@ -596,6 +625,16 @@ extension GopayCardFormTheme {
     /// SwiftUI counterpart of ``labelUIFont(for:)``.
     func labelFont(for sizeCategory: ContentSizeCategory) -> Font {
         Font(labelUIFont(for: sizeCategory) as CTFont)
+    }
+
+    /// The inline error font: the themed error size in the theme's font family.
+    func errorUIFont(for sizeCategory: ContentSizeCategory) -> UIFont {
+        scaledFont(size: errorFontSize, weight: .regular, textStyle: .caption1, sizeCategory: sizeCategory)
+    }
+
+    /// SwiftUI counterpart of ``errorUIFont(for:)``.
+    func errorFont(for sizeCategory: ContentSizeCategory) -> Font {
+        Font(errorUIFont(for: sizeCategory) as CTFont)
     }
 
     /// The input font. `UITextField` rescales it for Dynamic Type on its own, so it is built from

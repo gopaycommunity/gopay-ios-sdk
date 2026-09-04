@@ -87,6 +87,41 @@ struct GopayCardFormThemeTests {
         #expect(GopayCardFormTheme.uiFontWeight(5000) == .black)
     }
 
+    // MARK: - Border state
+
+    @Test func borderColor_restingFieldUsesTheBorderColor() {
+        var theme = GopayCardFormTheme()
+        theme.inputBorderColor = .gray
+
+        #expect(theme.borderColor(isFocused: false, hasError: false) == .gray)
+    }
+
+    @Test func borderColor_invalidUnfocusedFieldUsesTheErrorColor() {
+        var theme = GopayCardFormTheme()
+        theme.inputErrorBorderColor = .orange
+
+        #expect(theme.borderColor(isFocused: false, hasError: true) == .orange)
+    }
+
+    @Test func borderColor_focusWinsOverError() {
+        var theme = GopayCardFormTheme()
+        theme.focusGradientStart = .green
+        theme.inputErrorBorderColor = .orange
+
+        #expect(theme.borderColor(isFocused: true, hasError: true) == .green)
+        #expect(theme.borderColor(isFocused: true, hasError: false) == .green)
+    }
+
+    @Test func errorSpacing_fallsBackToFieldSpacing() {
+        var theme = GopayCardFormTheme()
+        theme.fieldSpacing = 6
+
+        #expect(theme.resolvedErrorSpacing == 6)
+
+        theme.errorSpacing = 3
+        #expect(theme.resolvedErrorSpacing == 3)
+    }
+
     // MARK: - Resolved fonts
 
     @Test func inputFont_followsTheThemedSizeAndWeight() {
@@ -137,6 +172,13 @@ struct GopayCardFormThemeTests {
         theme.fontFamily = "Georgia"
 
         #expect(theme.inputUIFont.familyName == "Georgia")
+    }
+
+    @Test func errorFont_usesTheThemedErrorSize() {
+        var theme = GopayCardFormTheme()
+        theme.errorFontSize = 11
+
+        #expect(theme.errorUIFont(for: .large).pointSize == 11)
     }
 
     @Test func scaledCaptionLength_isTheIdentityAtTheDefaultCategory() {
@@ -388,6 +430,21 @@ struct GopayCardFormThemeTests {
         )
         #expect(huge.labelFontWeight == 900)
         #expect(huge.inputFontWeight == 100)
+    }
+
+    @Test func errorReserve_holdsAtLeastOneLineOfTheErrorFont() {
+        var theme = GopayCardFormTheme()
+        theme.errorFontSize = 20
+        theme.errorMinHeight = 4
+        // A whole rendered line, not the point size that names it, or the message still pushes
+        // the form down when it appears.
+        #expect(theme.reservedErrorHeight(for: .large) >= theme.errorUIFont(for: .large).lineHeight)
+
+        theme.errorMinHeight = 40
+        #expect(theme.reservedErrorHeight(for: .large) >= 40)
+
+        theme.errorMinHeight = 0
+        #expect(theme.reservedErrorHeight(for: .large) == 0, "no reserve means no slot")
     }
 
     @Test func applying_keepsTheBaseForEveryKeyTheDocumentOmits() {
