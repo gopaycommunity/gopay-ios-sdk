@@ -10,6 +10,7 @@
 import Testing
 import Foundation
 import SwiftUI
+import UIKit
 @testable import sdk
 
 // Serialized because two tests swap the shared dropped-key handler while they decode.
@@ -84,6 +85,62 @@ struct GopayCardFormThemeTests {
         #expect(GopayCardFormTheme.uiFontWeight(0) == .ultraLight)
         #expect(GopayCardFormTheme.uiFontWeight(-100) == .ultraLight)
         #expect(GopayCardFormTheme.uiFontWeight(5000) == .black)
+    }
+
+    // MARK: - Resolved fonts
+
+    @Test func inputFont_followsTheThemedSizeAndWeight() {
+        var theme = GopayCardFormTheme()
+        theme.inputFontSize = 14
+        theme.inputFontWeight = 600
+
+        let font = theme.inputUIFont
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
+
+        #expect(font.pointSize == 14)
+        #expect(traits?[.weight] as? CGFloat == UIFont.Weight.semibold.rawValue)
+    }
+
+    @Test func inputFont_defaultUsesTheWebSize() {
+        #expect(GopayCardFormTheme.standard.inputUIFont.pointSize == 14)
+    }
+
+    @Test func labelFont_defaultUsesTheWebSize() {
+        let font = GopayCardFormTheme.standard.labelUIFont(for: .large)
+        #expect(font.pointSize == 11)
+    }
+
+    @Test func fontFamily_picksTheBoldFaceForHeavyWeightsAndTheRegularOneOtherwise() {
+        var theme = GopayCardFormTheme()
+        theme.fontFamily = "Georgia"
+
+        theme.labelFontWeight = 800
+        let bold = theme.labelUIFont(for: .large)
+        #expect(bold.familyName == "Georgia")
+        #expect(bold.fontDescriptor.symbolicTraits.contains(.traitBold))
+
+        theme.labelFontWeight = 400
+        let regular = theme.labelUIFont(for: .large)
+        #expect(regular.familyName == "Georgia")
+        #expect(!regular.fontDescriptor.symbolicTraits.contains(.traitBold))
+    }
+
+    @Test func fontFamily_fallsBackToTheSystemFontWhenTheAppHasNotRegisteredIt() {
+        var theme = GopayCardFormTheme()
+        theme.fontFamily = "NoSuchFontIsRegistered"
+
+        #expect(theme.inputUIFont.familyName == UIFont.systemFont(ofSize: 17).familyName)
+    }
+
+    @Test func fontFamily_usesARegisteredFont() {
+        var theme = GopayCardFormTheme()
+        theme.fontFamily = "Georgia"
+
+        #expect(theme.inputUIFont.familyName == "Georgia")
+    }
+
+    @Test func scaledCaptionLength_isTheIdentityAtTheDefaultCategory() {
+        #expect(GopayCardFormTheme.standard.scaledCaptionLength(14, for: .large) == 14)
     }
 
     // MARK: - Hex bridge

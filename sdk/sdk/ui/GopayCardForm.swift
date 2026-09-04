@@ -191,11 +191,39 @@ public struct GopayCardForm: View {
 
     // MARK: - Themed building blocks
 
-    /// Field label styled with the theme's label typography.
+    /// Field label styled with the theme's label typography. Renders nothing when the theme hides
+    /// the labels; the field then announces the text to VoiceOver instead.
+    @ViewBuilder
     private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(theme.labelFont(for: sizeCategory))
-            .foregroundColor(theme.labelColor)
+        if !theme.labelHidden {
+            labelText(text)
+                .font(theme.labelFont(for: sizeCategory))
+                .foregroundColor(theme.labelColor)
+                .lineSpacing(labelExtraLineSpacing)
+                .frame(minHeight: theme.labelLineHeight.map { theme.scaledCaptionLength($0, for: sizeCategory) })
+        }
+    }
+
+    /// The label string with the theme's casing and letter spacing applied.
+    private func labelText(_ text: String) -> Text {
+        // Uppercased against the current locale, so Turkish keeps its dotted capital I.
+        let label = Text(theme.labelUppercase ? text.uppercased(with: .current) : text)
+        if #available(iOS 16.0, *), let letterSpacing = theme.labelLetterSpacing {
+            return label.tracking(letterSpacing)
+        }
+        return label
+    }
+
+    /// How much a themed label line height adds on top of the font's own metrics.
+    private var labelExtraLineSpacing: CGFloat {
+        guard let lineHeight = theme.labelLineHeight else { return 0 }
+        let scaled = theme.scaledCaptionLength(lineHeight, for: sizeCategory)
+        return max(0, scaled - theme.labelUIFont(for: sizeCategory).lineHeight)
+    }
+
+    /// The name a field announces to VoiceOver when the theme draws no visible label.
+    private func hiddenLabel(_ text: String) -> String? {
+        theme.labelHidden ? text : nil
     }
 
     /// Inline error label styled with the theme's error color.
@@ -214,8 +242,10 @@ public struct GopayCardForm: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         content()
-            .padding(.vertical, theme.inputPaddingVertical)
+            // A fixed input height takes precedence over the vertical padding, as it does on the web.
+            .padding(.vertical, theme.inputHeight == nil ? theme.inputPaddingVertical : 0)
             .padding(.horizontal, theme.inputPaddingHorizontal)
+            .frame(height: theme.inputHeight)
             .background(theme.inputBackgroundColor)
             .overlay(
                 RoundedRectangle(cornerRadius: theme.inputBorderRadius)
@@ -252,7 +282,11 @@ public struct GopayCardForm: View {
                             }
                         ),
                         formatter: .cardNumber,
+                        font: theme.inputUIFont,
                         textColor: UIColor.from(theme.inputTextColor),
+                        placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
+                        letterSpacing: theme.inputLetterSpacing,
+                        accessibilityLabel: hiddenLabel(localeStrings.panLabel),
                         textContentType: .creditCardNumber,
                         isFocused: isCardNumberFocused,
                         onFocusChange: { isFocused in
@@ -292,7 +326,11 @@ public struct GopayCardForm: View {
                                 }
                             ),
                             formatter: .expiration,
+                            font: theme.inputUIFont,
                             textColor: UIColor.from(theme.inputTextColor),
+                            placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
+                            letterSpacing: theme.inputLetterSpacing,
+                            accessibilityLabel: hiddenLabel(localeStrings.expLabel),
                             isFocused: isExpirationFocused,
                             onFocusChange: { isFocused in
                                 isExpirationFocused = isFocused
@@ -331,7 +369,11 @@ public struct GopayCardForm: View {
                                 }
                             ),
                             formatter: .cvv,
+                            font: theme.inputUIFont,
                             textColor: UIColor.from(theme.inputTextColor),
+                            placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
+                            letterSpacing: theme.inputLetterSpacing,
+                            accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),
                             isSecure: true,
                             isFocused: isCvvFocused,
                             onFocusChange: { isFocused in

@@ -40,8 +40,9 @@ public struct GopayCardFormTheme: Equatable {
 
     // MARK: - Typography
 
-    /// Name of a font registered with the app, applied to every text in the form. `nil` uses the
-    /// system font. Unlike the web this is a single font name, not a CSS stack.
+    /// Name of a font registered with the app, applied to every text in the form. `nil`, or a name
+    /// the app has not registered, uses the system font. Unlike the web this is a single font
+    /// name, not a CSS stack.
     public var fontFamily: String?
 
     // MARK: - Labels
@@ -54,9 +55,11 @@ public struct GopayCardFormTheme: Equatable {
     public var labelFontWeight: Int
     /// Line height of the field labels, in points. `nil` uses the font's own metrics.
     public var labelLineHeight: CGFloat?
-    /// Whether the field labels are uppercased.
+    /// Whether the field labels are uppercased. The casing follows the current locale, so a
+    /// Turkish label capitalizes `i` as `İ`.
     public var labelUppercase: Bool
-    /// Letter spacing of the field labels, in points. `nil` means none.
+    /// Letter spacing of the field labels, in points. `nil` means none. Needs iOS 16, below that
+    /// the labels are drawn without it.
     public var labelLetterSpacing: CGFloat?
     /// Hides the labels. They take no vertical space but still name their field for VoiceOver.
     public var labelHidden: Bool
@@ -595,15 +598,50 @@ extension GopayCardFormTheme {
         Font(labelUIFont(for: sizeCategory) as CTFont)
     }
 
+    /// The input font. `UITextField` rescales it for Dynamic Type on its own, so it is built from
+    /// the metrics of the body text style without a category of its own.
+    var inputUIFont: UIFont {
+        let weight = inputFontWeight.map(Self.uiFontWeight) ?? .regular
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: baseFont(size: inputFontSize, weight: weight))
+    }
+
+    /// Scales a length the way the caption text style scales, so a themed line height or reserved
+    /// height keeps up with Dynamic Type.
+    func scaledCaptionLength(_ length: CGFloat, for sizeCategory: ContentSizeCategory) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: sizeCategory.uiContentSizeCategory)
+        return UIFontMetrics(forTextStyle: .caption1).scaledValue(for: length, compatibleWith: traits)
+    }
+
     private func scaledFont(
         size: CGFloat,
         weight: UIFont.Weight,
         textStyle: UIFont.TextStyle,
         sizeCategory: ContentSizeCategory
     ) -> UIFont {
-        let base = UIFont.systemFont(ofSize: size, weight: weight)
         let traits = UITraitCollection(preferredContentSizeCategory: sizeCategory.uiContentSizeCategory)
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: base, compatibleWith: traits)
+        return UIFontMetrics(forTextStyle: textStyle)
+            .scaledFont(for: baseFont(size: size, weight: weight), compatibleWith: traits)
+    }
+
+    /// The unscaled font for a size and weight: ``fontFamily`` when the app has that font
+    /// registered, the system font otherwise. The family is matched by name and the bold face is
+    /// requested for weights from semibold up, because a named face carries its own weight and
+    /// CoreText does not synthesize a heavier one from it; a family without a bold face keeps its
+    /// nearest one.
+    private func baseFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        guard let fontFamily = fontFamily, let named = UIFont(name: fontFamily, size: size) else {
+            return .systemFont(ofSize: size, weight: weight)
+        }
+        let family = UIFontDescriptor(fontAttributes: [.family: named.familyName])
+        var symbolic = family.symbolicTraits
+        if weight.rawValue >= UIFont.Weight.semibold.rawValue {
+            symbolic.insert(.traitBold)
+        } else {
+            symbolic.remove(.traitBold)
+        }
+        let descriptor = (family.withSymbolicTraits(symbolic) ?? family)
+            .addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: weight]])
+        return UIFont(descriptor: descriptor, size: size)
     }
 }
 
