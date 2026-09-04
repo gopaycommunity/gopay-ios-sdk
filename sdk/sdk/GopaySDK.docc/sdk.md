@@ -6,7 +6,8 @@ This SDK allows you to integrate Gopay payments into your iOS app.
 
 ## Topics
 
-- <doc:Getting-Started-with-GopaySDK>
+- <doc:getting-started>
+- <doc:theming>
 - <doc:GopaySDK>
 - <doc:GopaySDKConfig>
 - <doc:GopayEnvironment>

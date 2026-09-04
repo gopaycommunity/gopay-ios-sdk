@@ -295,6 +295,189 @@ form's data and the next `submitCardForm()` succeeds). To wipe the data early �
 user abandons checkout while the form is still on screen — call
 `GopaySDK.shared.clearCardFormData()`. Discard the JWE once your backend has tokenized it.
 
+### Theming the form
+
+`GopayCardFormTheme` carries the parameter names of the GoPay web card form (cc-v4), so one design
+decision can be written down once and applied on the web, on iOS and on Android. Every parameter is
+optional and defaults to the web form's value, colors excepted: those follow the system palette so
+the form keeps working in dark mode.
+
+```swift
+GopayCardForm(
+    theme: GopayCardFormTheme(
+        labelUppercase: true,
+        inputBorderStyle: .underline,
+        focusGradientStart: Color(red: 0.10, green: 0.78, blue: 0.84),
+        focusGradientEnd: Color(red: 0.09, green: 0.60, blue: 0.84),
+        errorMinHeight: 14
+    ),
+    validation: .live,
+    isValid: $isCardValid
+)
+```
+
+These 36 parameters are the same on Android, name for name and type for type, so a theme decided
+once holds on both. The Android SDK adds two of its own on top, `helperTextColor` and
+`helperFontSize`, for a helper line the web form and this SDK do not render.
+
+The theme is `Codable`, with colors written as `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"` or
+`"transparent"` (the leading `#` is required, as in CSS), so a
+JSON theme travels between channels. Decoding is deliberately tolerant: keys the SDK does not know
+(the web-only ones below among them) are ignored, and a key whose value cannot be used is dropped on
+its own while the rest of the document still applies. That covers a value of the wrong type, a color
+it cannot parse, a negative length and an unknown `inputBorderStyle`; the font weights also accept
+the CSS keywords `bold` (700) and `normal` (400). A length that is negative, or large enough to
+break the layout, drops the same way. Every dropped key is reported as a warning in the debug log
+(`[GopaySDK] Warning: ...`, once the SDK is initialized with `enableDebugLogging`), the way a
+TypeScript compiler warns about one property and still builds, so an integrator learns about a typo
+without the theme failing.
+
+```swift
+// A whole theme from a document, with the SDK defaults for every key it omits.
+let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: json)
+
+// Or over a theme you already have: keys the document omits keep your values, and a document
+// that cannot be read at all leaves your theme untouched, so this never throws.
+let branded = myTheme.applying(json)
+```
+
+Note that decoding produces plain colors: an adaptive `Color` written into a theme in Swift keeps
+following light and dark mode, one restored from hex does not. Encoding needs iOS 14, because
+SwiftUI cannot read a `Color` back on iOS 13 and every color there comes out as `"transparent"`.
+Decoding works on every supported version.
+
+#### Parity with the web theme
+
+All 44 keys of the web card form theme, and what each one does here. The parameters mirror
+Android name for name and type for type, with one exception: `fontFamily` is a string here and
+resolves at render, while Android takes a typed `FontFamily` and needs the host to supply a
+resolver before a font named in a JSON document takes effect.
+
+| Web key | iOS parameter | iOS default | Web default |
+| --- | --- | --- | --- |
+| `fontFamily` | `fontFamily` | `nil` (system font) | `system-ui` |
+| `labelColor` | `labelColor` | `.primary` | `#4b5e68` |
+| `labelFontSize` | `labelFontSize` | `11` | `11` |
+| `labelFontWeight` | `labelFontWeight` | `600` | `600` |
+| `labelLineHeight` | `labelLineHeight` | `nil` (font metrics) | unset |
+| `labelUppercase` | `labelUppercase` | `true` | `true` |
+| `labelLetterSpacing` | `labelLetterSpacing` | `nil` (none) | unset (`0.06em`) |
+| `labelHidden` | `labelHidden` | `false` | `false` |
+| `inputTextColor` | `inputTextColor` | `.primary` | `#4b5e68` |
+| `inputFontSize` | `inputFontSize` | `14` | `14` |
+| `inputFontWeight` | `inputFontWeight` | `nil` (regular) | unset |
+| `inputLineHeight` | `inputLineHeight` | accepted, ignored | unset |
+| `inputLetterSpacing` | `inputLetterSpacing` | `nil` (none) | unset |
+| `inputHeight` | `inputHeight` | `nil` (font + padding) | unset |
+| `placeholderColor` | `placeholderColor` | `nil` (system) | browser default |
+| `inputBorderStyle` | `inputBorderStyle` | `.underline` | `underline` |
+| `inputBorderColor` | `inputBorderColor` | `Color(.separator)` | `#698492` |
+| `inputBorderWidth` | `inputBorderWidth` | `1` | `1` |
+| `inputBackgroundColor` | `inputBackgroundColor` | `.clear` | `transparent` |
+| `inputPaddingVertical` | `inputPaddingVertical` | `6` | `6` |
+| `inputPaddingHorizontal` | `inputPaddingHorizontal` | `0` | `0` |
+| `inputBorderRadius` | `inputBorderRadius` | `0` | `0` |
+| `inputBorderCollapse` | `inputBorderCollapse` | `false` | `false` |
+| `focusRingWidth` | `focusRingWidth` | `nil` (no ring) | unset |
+| `focusRingColor` | `focusRingColor` | `nil` (no ring) | unset |
+| `focusGradientStart` | `focusGradientStart` | `#19C7D6` | `#19C7D6` |
+| `focusGradientEnd` | `focusGradientEnd` | `#1899D6` | `#1899D6` |
+| `inputErrorBorderColor` | `inputErrorBorderColor` | `.red` | `#ea3c55` |
+| `errorTextColor` | `errorTextColor` | `.red` | `#cc0000` |
+| `errorFontSize` | `errorFontSize` | `11` | `11` |
+| `errorMinHeight` | `errorMinHeight` | `14` | `14` |
+| `errorSpacing` | `errorSpacing` | `nil` (`fieldSpacing`) | unset (`fieldSpacing`) |
+| `errorHidden` | — | web-only | `false` |
+| `groupSpacing` | `groupSpacing` | `16` | `16` |
+| `fieldSpacing` | `fieldSpacing` | `4` | `4` |
+| `formPadding` | `formPadding` | `16` | `16` |
+| `formBackgroundColor` | `formBackgroundColor` | `.clear` | `transparent` |
+| `submitBackgroundColor` | — | web-only | `#1899d6` |
+| `submitHoverBackgroundColor` | — | web-only | `#1482ba` |
+| `submitDisabledBackgroundColor` | — | web-only | `#a8b6bd` |
+| `submitTextColor` | — | web-only | `#ffffff` |
+| `submitDisabledTextColor` | — | web-only | `#ffffff` |
+| `submitBorderRadius` | — | web-only | `4` |
+| `submitFontSize` | — | web-only | `14` |
+
+The eight web-only keys have no counterpart here for a reason:
+
+- The seven `submit*` keys style a button this SDK never draws. Submission is yours: you own the
+  button and call `submitCardForm()`. That is the same arrangement as the web form's
+  `submitMode: 'external'`, where the iframe hides its own button too.
+- `errorHidden` is already a first-class parameter of the form, not of the theme: the default
+  `validation: .hidden` renders no inline errors and hands you the state through the `isValid`
+  binding. Web `errorHidden: true` is the iOS default.
+
+The defaults are the web form's, so an untouched form is laid out the same on all three channels and
+a theme only has to carry what it actually changes. **Colors are the exception**: they stay on the
+system palette, so the form follows light and dark mode instead of rendering the web's fixed greys
+on a dark background. The focus gradient is the one place where a color is taken from the web,
+because the system has no equivalent for it. Pass the web's hex values to match it exactly.
+
+A few deviations are behavioral rather than default values:
+
+- `labelFontWeight` and `inputFontWeight` are rounded to the nearest hundred, because `Font.Weight`
+  has nine steps. A weight of 450 renders as 500 here; Android passes it through to a variable font.
+- `labelLetterSpacing` needs iOS 16, and it is not derived from the font size the way the web
+  derives its `0.06em`.
+- The focus gradient of an underlined input is static, without the web's animation. The underline
+  follows the rounded bottom corners of the input, as a CSS `border-bottom` does under a
+  `border-radius`; with the default `inputBorderRadius` of 0 the line is straight, raise the radius
+  and it curves up at both ends. A browser tapers that curve to a point, this line keeps its full
+  width around the corner.
+- `inputHeight` is a fixed height and does not grow with Dynamic Type. The text inside still scales
+  and will clip once it outgrows the field, the same as on the web. Leave it unset to let the field
+  follow the font and the padding.
+
+#### The focus and error states
+
+Both mobile SDKs now describe a field's border the same way:
+
+- resting: `inputBorderColor`
+- focused: `focusGradientStart` as a solid boxed border, or a `focusGradientStart` to
+  `focusGradientEnd` gradient under an underlined input, plus the optional ring from
+  `focusRingWidth` and `focusRingColor`
+- invalid: `inputErrorBorderColor`, on an unfocused field only — focus wins over error
+
+The error border only appears while the form draws inline errors at all, so with the default
+`validation: .hidden` nothing about the border changes.
+
+Collapsing applies to the boxed style; on the default underline it has no effect.
+
+Inside a block collapsed by `inputBorderCollapse`, a focused or invalid field recolors the lines it
+shares with its neighbours as well, so each seam still shows one line, in the state color. Lines are
+shared only where two fields actually touch: `groupSpacing`, a visible label above the bottom row,
+a slot reserved by `errorMinHeight` and an inline error shown under the card number all open a gap,
+and the fields on both sides of a gap draw a full frame for as long as it is there.
+
+#### Migrating a 1.x theme
+
+Version 2.0 renamed every parameter and split the composite ones. There are no aliases: a 1.x theme
+stops compiling, and the table below says what to write instead. Do that mechanically and the theme
+compiles again, but the form does not look the same: the 2.0 defaults are the web form's, so
+everything a 1.x theme left at its default changes with it. The border becomes an underline, the
+corner radius 0, the input padding 6 and 0, the spacing 16 and the labels 11pt uppercase. Set those
+parameters explicitly to keep the old appearance.
+
+| 1.x | 2.0 |
+| --- | --- |
+| `textColor` | `labelColor` and `inputTextColor` |
+| `backgroundColor` | `inputBackgroundColor` |
+| `borderColor` | `inputBorderColor` |
+| `focusedBorderColor` | `focusGradientStart` |
+| `errorColor` | `errorTextColor` |
+| `borderWidth` | `inputBorderWidth` |
+| `cornerRadius` | `inputBorderRadius` |
+| `labelFont` | `labelFontSize` and `labelFontWeight` (and `fontFamily`) |
+| `font` | removed — it never reached the inputs; `fontFamily`, `inputFontSize` and `inputFontWeight` style them now |
+| `spacing` | `groupSpacing` |
+| `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
+
+Two behaviors change for integrations that render inline errors: an invalid field now takes
+`inputErrorBorderColor` on its border, and a focused field keeps showing focus even while its
+content is invalid. Integrations on the default `validation: .hidden` see neither.
+
 ### Localizing the form
 
 Form labels and placeholders are localized. By default the form uses the **device language and
