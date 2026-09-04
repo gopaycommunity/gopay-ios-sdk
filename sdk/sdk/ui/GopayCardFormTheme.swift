@@ -103,7 +103,17 @@ public struct GopayCardFormTheme: Equatable {
     /// Corner radius of the inputs, in points.
     public var inputBorderRadius: CGFloat
     /// Collapses the borders of adjacent boxed inputs into one shared line, so the fields read as
-    /// a single block. Ignored by the underline style.
+    /// a single block: ``inputBorderRadius`` then rounds only the outer corners of the block.
+    /// Ignored by the underline style, which has no shared edges to merge.
+    ///
+    /// For one seamless block, pair it with `groupSpacing: 0`, `fieldSpacing: 0`,
+    /// `labelHidden: true` and `errorMinHeight: 0`, the same recipe the web form documents.
+    ///
+    /// Only the lines between fields that actually touch are shared. Anything that opens a gap —
+    /// ``groupSpacing``, a visible label above the bottom row, a slot reserved by
+    /// ``errorMinHeight`` — makes those fields draw a full frame again, so a field never floats
+    /// with a side missing. An inline error message that appears while the user types opens the
+    /// same gap for as long as it is on screen.
     public var inputBorderCollapse: Bool
 
     // MARK: - Focus ring
@@ -614,8 +624,37 @@ extension GopayCardFormTheme {
         return hasError ? inputErrorBorderColor : inputBorderColor
     }
 
+    /// The ring to draw outside a focused input, or `nil` when the theme asks for none.
+    ///
+    /// Both halves are required and the width has to be positive, so a theme that sets only the
+    /// colour, or a zero width, draws nothing rather than an invisible or hairline ring.
+    var resolvedFocusRing: (width: CGFloat, color: Color)? {
+        guard let width = focusRingWidth, let color = focusRingColor, width > 0 else { return nil }
+        return (width, color)
+    }
+
     /// Distance from an input to its error line, falling back to ``fieldSpacing``.
     var resolvedErrorSpacing: CGFloat { errorSpacing ?? fieldSpacing }
+
+    /// Whether the slot below an input is on screen for `message`: it is while a message shows,
+    /// and while ``errorMinHeight`` reserves room for one.
+    func rendersErrorSlot(for message: String?) -> Bool {
+        message?.isEmpty == false || errorMinHeight > 0
+    }
+
+    /// Whether a collapsed block's two rows actually meet, which is the only case where the line
+    /// between them may be drawn once instead of twice. Any ``groupSpacing``, a label above the
+    /// bottom row and the slot below the card number all push them apart; `cardNumberError` is the
+    /// message currently shown in that slot, so a live error opens the gap while it is on screen.
+    func collapsedRowsTouch(cardNumberError: String?) -> Bool {
+        groupSpacing == 0 && labelHidden && !rendersErrorSlot(for: cardNumberError)
+    }
+
+    /// Whether the expiration and the CVV sit flush against each other, which is the only case
+    /// where the line between them may be drawn once instead of twice.
+    var collapsedBottomRowTouches: Bool {
+        groupSpacing == 0
+    }
 }
 
 // MARK: - Resolved fonts
