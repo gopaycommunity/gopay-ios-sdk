@@ -54,7 +54,7 @@ enum MerchantBackendSimulator {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let credentials = DemoConfig.shared.credentials
+        let credentials = DemoConfig.credentials
         let basic = Data("\(credentials.clientId):\(credentials.clientSecret)".utf8).base64EncodedString()
         request.setValue("Basic \(basic)", forHTTPHeaderField: "Authorization")
         request.httpBody = Data("grant_type=client_credentials&scope=payment:write%20payment:read%20card:write%20card:read".utf8)
@@ -69,7 +69,7 @@ enum MerchantBackendSimulator {
     }
 
     private static func createPayment(token: String, amount: Int, currency: String) async throws -> CreatedPayment {
-        var request = URLRequest(url: url("eshops/\(DemoConfig.shared.credentials.goid)/payments"))
+        var request = URLRequest(url: url("eshops/\(DemoConfig.credentials.goid)/payments"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -104,9 +104,8 @@ enum MerchantBackendSimulator {
 
     /// Reads the base URL straight from the live SDK config rather than from `DemoConfig`
     /// directly, so this simulator can never disagree with the SDK about which gateway is active
-    /// after an environment switch. An unset/placeholder environment resolves to an empty string,
-    /// which still parses as a (relative, hostless) URL — the request then fails clearly at
-    /// `send(_:)` rather than crashing here.
+    /// after an environment switch. Every environment resolves to a host, so the only way to get
+    /// a failure here is empty credentials, which fail at the gateway in `ensureOK(_:_:action:)`.
     private static func url(_ path: String) -> URL {
         let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
         return URL(string: baseURL + path)!

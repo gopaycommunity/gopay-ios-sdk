@@ -415,13 +415,12 @@ the iOS surface throws the subset listed there.
 ## Example app
 
 ```bash
-cd example
-open example.xcodeproj
+cp example/Config/Local.xcconfig.example example/Config/Local.xcconfig
+open example/example.xcodeproj
 ```
 
-Select the `example` scheme, choose a simulator, and Run (⌘R). To run it against a real gateway
-without editing code, put your credentials in `.env` (template: `.env.example`) and use
-`./scripts/run-demo.sh` instead.
+Fill in `example/Config/Local.xcconfig`, then select the `example` scheme, choose a simulator, and
+Run (⌘R).
 
 The app opens on a launcher with two destinations and an environment badge:
 
@@ -432,16 +431,13 @@ The app opens on a launcher with two destinations and an environment badge:
   since a payment is single-use and a retry after a decline needs a new one.
 - **Developer sandbox** (`ContentView`) — the original four-section console described below, for
   poking at each `PaymentSession` method individually and reading the raw JSON response.
-- The **environment badge** at the bottom is tappable — switch between Development / Sandbox /
-  Production at runtime. Switching closes any live session and re-initializes the SDK, so nothing
-  keeps talking to the old gateway. The choice is **not persisted**; the app always starts on
-  Development.
+- The **environment badge** at the bottom is tappable — switch between Sandbox / Production at
+  runtime (Development too, when `GOPAY_DEMO_BASE_URL` is set). Switching closes any live session
+  and re-initializes the SDK, so nothing keeps talking to the old gateway. The choice is **not
+  persisted**.
 
-The demo's Development environment is meant to be pointed at whatever gateway you're testing
-against — its base URL and credentials are freely editable in `DemoConfig.swift`. It ships pointed
-at an internal gateway with working credentials, used primarily for contributing to this repo.
-Sandbox and Production ship with **empty credential placeholders** — selecting them before filling
-those in fails clearly at the gateway rather than silently mixing environments.
+`GOPAY_DEMO_BASE_URL` in `Local.xcconfig` picks the gateway: empty uses the SDK's sandbox host, a
+URL selects Development and points it there. The other four keys are the merchant credentials.
 
 The Developer sandbox has four sections — **1.** simulated merchant backend, **2.** payment
 session, **3.** operations (status, Apple Pay, card token, charge, charge state, 3DS, QR), and

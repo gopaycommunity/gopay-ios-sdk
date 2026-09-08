@@ -1,0 +1,16 @@
+// Copy this file to Local.xcconfig and fill in your GoPay values.
+//
+// Write URLs as `https:/$()/host/...` (`//` starts a comment in an xcconfig).
+//
+// Gateways:
+//   sandbox      https:/$()/gw.sandbox.gopay.com/gp-gw/api/4.0/
+//   production   https:/$()/gate.gopay.com/gp-gw/api/4.0/
+//
+// Leave GOPAY_DEMO_BASE_URL empty for the SDK's sandbox host.
+
+GOPAY_DEMO_BASE_URL =
+GOPAY_DEMO_CLIENT_ID =
+GOPAY_DEMO_SHAREABLE_KEY =
+// Merchant secret, used only by the in-app backend simulator.
+GOPAY_DEMO_CLIENT_SECRET =
+GOPAY_DEMO_GOID =

@@ -2,10 +2,8 @@
 //  DemoConfig.swift
 //  example
 //
-//  Which gateway environment the demo currently talks to, and the merchant credentials that go
-//  with it. Selectable from `RootView`; the app always starts on `.development` — the choice is
-//  not persisted across launches. Development's URL and credentials can be replaced at launch, see
-//  `DemoOverrides`.
+//  Which gateway the demo talks to, and the merchant credentials that go with it. Both come from
+//  `Config/Demo.xcconfig` (see `Config/Local.xcconfig.example`) through the app's Info.plist.
 //
 
 import Foundation
@@ -28,26 +26,18 @@ enum DemoEnvironment: String, CaseIterable, Identifiable {
 
     /// The `GopayEnvironment` case this maps to. Sandbox and production reuse the SDK's own
     /// built-in hosts (``GopayEnvironment/sandbox``, ``GopayEnvironment/production``) rather than
-    /// duplicating a URL here, so the demo can never drift from what the SDK itself resolves.
+    /// duplicating a URL here.
     var gopayEnvironment: GopayEnvironment {
         switch self {
-        case .development: .development(baseURL: DemoConfig.developmentBaseURL)
+        case .development: .development(baseURL: DemoConfig.baseURL)
         case .sandbox: .sandbox
         case .production: .production
         }
     }
 
-    /// Merchant credentials for this environment. Development picks up any `GOPAY_DEMO_*` launch
-    /// override (see `DemoOverrides`); sandbox and production deliberately do not, so a switch of
-    /// the badge can never send one environment's merchant secret to another's gateway. They ship
-    /// as empty placeholders — fill them in before selecting those environments. An empty
-    /// `clientId` / `shareableKey` / `clientSecret` fails clearly at the gateway rather than
-    /// silently mixing environments.
-    var credentials: DemoCredentials {
-        switch self {
-        case .development: DemoConfig.developmentCredentials.withOverrides()
-        case .sandbox, .production: .placeholder
-        }
+    /// What the environment picker offers. Development needs `GOPAY_DEMO_BASE_URL`.
+    static func selectable(for baseURL: String) -> [DemoEnvironment] {
+        baseURL.isEmpty ? [.sandbox, .production] : allCases
     }
 }
 
@@ -59,20 +49,6 @@ struct DemoCredentials {
     let shareableKey: String
     let clientSecret: String
     let goid: String
-
-    static let placeholder = DemoCredentials(clientId: "", shareableKey: "", clientSecret: "", goid: "")
-
-    /// This bundle with any launch-time override applied field by field, so you can supply just the
-    /// one value you need — a `clientSecret`, say — and keep the rest. Only used for Development;
-    /// see `DemoEnvironment.credentials`.
-    func withOverrides() -> DemoCredentials {
-        DemoCredentials(
-            clientId: DemoOverrides.clientId ?? clientId,
-            shareableKey: DemoOverrides.shareableKey ?? shareableKey,
-            clientSecret: DemoOverrides.clientSecret ?? clientSecret,
-            goid: DemoOverrides.goid ?? goid
-        )
-    }
 }
 
 /// Holds the demo's currently-selected environment and builds the SDK config for it. This is the
@@ -82,39 +58,45 @@ struct DemoCredentials {
 final class DemoConfig {
     static let shared = DemoConfig()
 
-    /// Dev gateway URL — the only per-environment value that's actually app-editable. Comes from
-    /// the `GOPAY_DEMO_BASE_URL` launch override when one is supplied, so the demo can be pointed
-    /// at another gateway without a rebuild; otherwise the built-in default below.
-    static var developmentBaseURL: String {
-        DemoOverrides.baseURL ?? defaultDevelopmentBaseURL
+    /// Gateway from `GOPAY_DEMO_BASE_URL`. Empty means the SDK's own sandbox host.
+    static let baseURL = normalizedBaseURL(infoValue("GOPAY_DEMO_BASE_URL"))
+
+    /// Trims the configured value, appends the trailing `/` the SDK concatenates paths onto, and
+    /// refuses anything that is neither empty nor an `http(s)` URL. Android rejects the same
+    /// values while building; here the value is only visible at runtime, so this is where it fails.
+    static func normalizedBaseURL(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let scheme = trimmed.lowercased()
+        guard scheme.hasPrefix("http://") || scheme.hasPrefix("https://") else {
+            preconditionFailure("GOPAY_DEMO_BASE_URL must be empty or an http(s) URL, got '\(trimmed)'")
+        }
+
+        return trimmed.hasSuffix("/") ? trimmed : trimmed + "/"
     }
 
-    /// Built-in development host, used when no `GOPAY_DEMO_BASE_URL` override is supplied. Replace
-    /// with your own merchant's development host.
-    static let defaultDevelopmentBaseURL = "https://gw.alpha8.dev.gopay.com/gp-gw/api/4.0/"
-
-    static let developmentCredentials = DemoCredentials(
-        clientId: "your_client_id",
-        // Public shareable key — safe to ship in the app.
-        shareableKey: "your_sharable_key",
-        // Merchant secret — **never ship this in a real app.** Used here only by the in-app
-        // `MerchantBackendSimulator` to stand in for your server while demoing.
-        clientSecret: "your_client_secret",
-        goid: "8761908826"
+    static let credentials = DemoCredentials(
+        clientId: infoValue("GOPAY_DEMO_CLIENT_ID"),
+        shareableKey: infoValue("GOPAY_DEMO_SHAREABLE_KEY"),
+        clientSecret: infoValue("GOPAY_DEMO_CLIENT_SECRET"),
+        goid: infoValue("GOPAY_DEMO_GOID")
     )
 
-    private(set) var environment: DemoEnvironment = .development
+    /// `.development` with a configured base URL, `.sandbox` without one.
+    static func environment(for baseURL: String) -> DemoEnvironment {
+        baseURL.isEmpty ? .sandbox : .development
+    }
+
+    private(set) var environment: DemoEnvironment = DemoConfig.environment(for: DemoConfig.baseURL)
 
     private init() {
         // Empty — enforces the singleton via `shared`; there is no per-instance state to initialize.
     }
 
-    var credentials: DemoCredentials { environment.credentials }
-
     /// Closes any live payment session — otherwise it would keep talking to the old gateway, since
     /// each `PaymentSession` captures its own API client at creation — then re-initializes the SDK
-    /// against the new environment and updates the published selection. Only reachable from
-    /// `RootView`, which never holds a session itself.
+    /// against the new environment and updates the published selection.
     @MainActor
     func select(_ newEnvironment: DemoEnvironment) {
         guard newEnvironment != environment else { return }
@@ -135,7 +117,6 @@ final class DemoConfig {
         customLocale.expLabel = "Doom date"
         customLocale.cvvLabel = "Secret code"
 
-        let credentials = environment.credentials
         return GopaySDKConfig(
             environment: environment.gopayEnvironment,
             clientId: credentials.clientId,
@@ -143,5 +124,10 @@ final class DemoConfig {
             enableDebugLogging: true,
             customLocales: ["xx": customLocale]
         )
+    }
+
+    private static func infoValue(_ key: String) -> String {
+        let value = Bundle.main.object(forInfoDictionaryKey: key) as? String
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }

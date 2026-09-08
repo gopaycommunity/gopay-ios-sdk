@@ -83,7 +83,7 @@ private struct EnvironmentBadge: View {
                 get: { environment },
                 set: { DemoConfig.shared.select($0) }
             )) {
-                ForEach(DemoEnvironment.allCases) { env in
+                ForEach(DemoEnvironment.selectable(for: DemoConfig.baseURL)) { env in
                     Text(env.title).tag(env)
                 }
             }

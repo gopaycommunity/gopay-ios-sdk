@@ -57,5 +57,6 @@ Thumbs.db
 .DS_Store
 .env
 .env.local
+example/Config/Local.xcconfig
 
 Payments.yaml
