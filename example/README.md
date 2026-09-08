@@ -59,8 +59,9 @@ The app opens on `RootView`: two destinations, and a tappable environment badge.
 - **Developer sandbox** → `ContentView` — the four-section console.
 - The **environment badge** at the bottom shows the active gateway (`● SANDBOX
   gw.sandbox.gopay.com`) and opens a picker. Switching closes any live `PaymentSession` and
-  re-initializes the SDK. The choice isn't persisted. Development appears in the picker only when
-  `GOPAY_DEMO_BASE_URL` is set.
+  re-initializes the SDK. The choice isn't persisted. A `GOPAY_DEMO_BASE_URL` equal to the SDK's
+  sandbox or production host selects that environment; Development appears in the picker only for
+  any other URL.
 
 ## Demo checkout
 
@@ -93,7 +94,8 @@ selectable there.
 Four sections, top to bottom. Sections 3 and 4 only appear once a session is live.
 
 1. **Merchant backend (simulated)** — *Create payment on "server"* acquires a merchant token and
-   creates a payment, filling in `payment_id` and `payment_secret`.
+   creates a 1 CZK payment (`amount: 100`, minor units), filling in `payment_id` and
+   `payment_secret`.
 2. **Payment session** — *Start session* exchanges that pair for a payment-scoped JWT.
    *Close session* wipes the secret and token.
 3. **Operations** — *Get status*, *Get Apple Pay info*, *Charge with Apple Pay*,

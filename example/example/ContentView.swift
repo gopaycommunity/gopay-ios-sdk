@@ -59,12 +59,13 @@ struct ContentView: View {
             Text("In production your server does this with merchant credentials and returns the pair below.")
                 .font(.footnote).foregroundColor(.secondary)
             button("Create payment on \"server\"", system: "server.rack") {
-                let created = try await MerchantBackendSimulator.createPayment(amount: 1000, currency: "CZK")
+                // `amount` is in minor units: 100 = 1 CZK.
+                let created = try await MerchantBackendSimulator.createPayment(amount: 100, currency: "CZK")
                 await MainActor.run {
                     paymentId = created.paymentId
                     paymentSecret = created.paymentSecret
                 }
-                log("// merchant backend created a payment\npayment_id: \(created.paymentId)\npayment_secret: \(created.paymentSecret)")
+                log("// merchant backend created a payment (1 CZK)\npayment_id: \(created.paymentId)\npayment_secret: \(created.paymentSecret)")
             }
             labeledField("payment_id", text: $paymentId)
             labeledField("payment_secret", text: $paymentSecret)

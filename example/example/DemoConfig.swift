@@ -35,9 +35,10 @@ enum DemoEnvironment: String, CaseIterable, Identifiable {
         }
     }
 
-    /// What the environment picker offers. Development needs `GOPAY_DEMO_BASE_URL`.
+    /// What the environment picker offers. Development appears only when `GOPAY_DEMO_BASE_URL`
+    /// names a custom gateway; a URL equal to the SDK's sandbox or production host is not custom.
     static func selectable(for baseURL: String) -> [DemoEnvironment] {
-        baseURL.isEmpty ? [.sandbox, .production] : allCases
+        DemoConfig.environment(for: baseURL) == .development ? allCases : [.sandbox, .production]
     }
 }
 
@@ -83,9 +84,15 @@ final class DemoConfig {
         goid: infoValue("GOPAY_DEMO_GOID")
     )
 
-    /// `.development` with a configured base URL, `.sandbox` without one.
+    /// Which environment a normalized `GOPAY_DEMO_BASE_URL` selects: empty means the SDK's own
+    /// sandbox, a URL equal to one of the SDK's built-in hosts names that environment (so the
+    /// badge reads SANDBOX or PRODUCTION, not DEVELOPMENT), and anything else is a custom gateway.
     static func environment(for baseURL: String) -> DemoEnvironment {
-        baseURL.isEmpty ? .sandbox : .development
+        switch baseURL {
+        case "", GopayEnvironment.sandbox.baseURL: .sandbox
+        case GopayEnvironment.production.baseURL: .production
+        default: .development
+        }
     }
 
     private(set) var environment: DemoEnvironment = DemoConfig.environment(for: DemoConfig.baseURL)
