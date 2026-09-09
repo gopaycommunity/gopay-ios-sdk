@@ -19,7 +19,9 @@ definitions:
               script:
                   - git fetch origin master --tags
                   - git checkout master
-                  - git remote add github https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/gopaycommunity/gopay-ios-sdk.git || true
+                  # Authenticates via the repository SSH key configured in Pipelines settings,
+                  # registered as a write-enabled deploy key on the GitHub mirror
+                  - git remote add github git@github.com:gopaycommunity/gopay-ios-sdk.git || true
                   - git fetch github
                   - git push github master --force-with-lease
                   - git push github --tags
