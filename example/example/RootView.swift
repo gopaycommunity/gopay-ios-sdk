@@ -71,45 +71,33 @@ struct RootView: View {
     }
 }
 
-/// Which gateway both demo surfaces are pointed at, and a tap target to switch it. Reads
-/// `DemoConfig.shared` — the same object `select(_:)` updates — so it's never possible to demo
-/// against one environment while the label claims another.
+/// Which gateway both demo surfaces are pointed at. Read-only: the environment comes from
+/// `GOPAY_DEMO_BASE_URL` and is fixed for the life of the process, so the label can never claim
+/// one gateway while the SDK talks to another.
 private struct EnvironmentBadge: View {
     private var environment: DemoEnvironment { DemoConfig.shared.environment }
 
     var body: some View {
-        Menu {
-            Picker("Environment", selection: Binding(
-                get: { environment },
-                set: { DemoConfig.shared.select($0) }
-            )) {
-                ForEach(DemoEnvironment.selectable(for: DemoConfig.baseURL)) { env in
-                    Text(env.title).tag(env)
-                }
-            }
-        } label: {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(tint)
-                    .frame(width: 7, height: 7)
-                Text(name)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(tint)
-                if let host {
-                    Text(host)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(CheckoutTheme.inkMuted)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .bold))
+        HStack(spacing: 7) {
+            Circle()
+                .fill(tint)
+                .frame(width: 7, height: 7)
+            Text(name)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(tint)
+            if let host {
+                Text(host)
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(CheckoutTheme.inkMuted)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(tint.opacity(0.12), in: Capsule())
         }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(tint.opacity(0.12), in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Gateway: \(name)\(host.map { ", \($0)" } ?? "")")
     }
 
     private var name: String {

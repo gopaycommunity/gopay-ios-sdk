@@ -40,22 +40,4 @@ struct DemoConfigTests {
     @Test func customBaseURL_selectsDevelopment() {
         #expect(DemoConfig.environment(for: "https://host/api/4.0/") == .development)
     }
-
-    // MARK: - Picker contents
-
-    @Test func picker_withoutABaseURL_omitsDevelopment() {
-        #expect(DemoEnvironment.selectable(for: "") == [.sandbox, .production])
-    }
-
-    @Test func picker_withABuiltInBaseURL_omitsDevelopment() {
-        #expect(DemoEnvironment.selectable(for: "https://gw.sandbox.gopay.com/gp-gw/api/4.0/")
-            == [.sandbox, .production])
-        #expect(DemoEnvironment.selectable(for: "https://gate.gopay.com/gp-gw/api/4.0/")
-            == [.sandbox, .production])
-    }
-
-    @Test func picker_withACustomBaseURL_offersDevelopment() {
-        #expect(DemoEnvironment.selectable(for: "https://host/api/4.0/")
-            == [.development, .sandbox, .production])
-    }
 }

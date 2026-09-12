@@ -103,9 +103,9 @@ enum MerchantBackendSimulator {
     // MARK: - Helpers
 
     /// Reads the base URL straight from the live SDK config rather than from `DemoConfig`
-    /// directly, so this simulator can never disagree with the SDK about which gateway is active
-    /// after an environment switch. Every environment resolves to a host, so the only way to get
-    /// a failure here is empty credentials, which fail at the gateway in `ensureOK(_:_:action:)`.
+    /// directly, so this simulator can never disagree with the SDK about which gateway is active.
+    /// Every environment resolves to a host, so the only way to get a failure here is empty
+    /// credentials, which fail at the gateway in `ensureOK(_:_:action:)`.
     private static func url(_ path: String) -> URL {
         let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
         return URL(string: baseURL + path)!

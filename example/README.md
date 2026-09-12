@@ -53,15 +53,15 @@ A value runs to the end of the line; a missing trailing `/` is added.
 
 ## The launcher
 
-The app opens on `RootView`: two destinations, and a tappable environment badge.
+The app opens on `RootView`: two destinations, and an environment badge.
 
 - **Demo checkout** → `CheckoutView` — see below.
 - **Developer sandbox** → `ContentView` — the four-section console.
 - The **environment badge** at the bottom shows the active gateway (`● SANDBOX
-  gw.sandbox.gopay.com`) and opens a picker. Switching closes any live `PaymentSession` and
-  re-initializes the SDK. The choice isn't persisted. A `GOPAY_DEMO_BASE_URL` equal to the SDK's
-  sandbox or production host selects that environment; Development appears in the picker only for
-  any other URL.
+  gw.sandbox.gopay.com`). It is a read-only indicator: the environment comes from
+  `GOPAY_DEMO_BASE_URL` and is fixed for the whole run, so point the demo somewhere else by
+  editing `Local.xcconfig` and launching again. A value equal to the SDK's sandbox or production
+  host reads as that environment; any other URL reads as Development.
 
 ## Demo checkout
 
@@ -113,7 +113,7 @@ physical device with a test card in Wallet.
 ## Code references
 
 - App entry: [`exampleApp.swift`](example/exampleApp.swift)
-- Launcher + environment switcher: [`RootView.swift`](example/RootView.swift)
+- Launcher + environment badge: [`RootView.swift`](example/RootView.swift)
 - Gateway and credentials: [`DemoConfig.swift`](example/DemoConfig.swift),
   [`Config/Demo.xcconfig`](Config/Demo.xcconfig)
 - Demo checkout: [`Checkout/CheckoutView.swift`](example/Checkout/CheckoutView.swift),

@@ -9,20 +9,10 @@
 import Foundation
 import GopaySDK
 
-enum DemoEnvironment: String, CaseIterable, Identifiable {
+enum DemoEnvironment: String {
     case development
     case sandbox
     case production
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .development: "Development"
-        case .sandbox: "Sandbox"
-        case .production: "Production"
-        }
-    }
 
     /// The `GopayEnvironment` case this maps to. Sandbox and production reuse the SDK's own
     /// built-in hosts (``GopayEnvironment/sandbox``, ``GopayEnvironment/production``) rather than
@@ -33,12 +23,6 @@ enum DemoEnvironment: String, CaseIterable, Identifiable {
         case .sandbox: .sandbox
         case .production: .production
         }
-    }
-
-    /// What the environment picker offers. Development appears only when `GOPAY_DEMO_BASE_URL`
-    /// names a custom gateway; a URL equal to the SDK's sandbox or production host is not custom.
-    static func selectable(for baseURL: String) -> [DemoEnvironment] {
-        DemoConfig.environment(for: baseURL) == .development ? allCases : [.sandbox, .production]
     }
 }
 
@@ -52,10 +36,9 @@ struct DemoCredentials {
     let goid: String
 }
 
-/// Holds the demo's currently-selected environment and builds the SDK config for it. This is the
-/// single path both `exampleApp` (at launch) and the environment picker (at runtime) go through,
-/// so a switch can never leave the SDK and the picker disagreeing about what's active.
-@Observable
+/// Holds the environment the demo runs against and builds the SDK config for it. The environment
+/// is decided once, by `GOPAY_DEMO_BASE_URL`, and never changes while the app runs: point the
+/// demo somewhere else by editing `Local.xcconfig` and launching again.
 final class DemoConfig {
     static let shared = DemoConfig()
 
@@ -84,7 +67,7 @@ final class DemoConfig {
         goid: infoValue("GOPAY_DEMO_GOID")
     )
 
-    /// Which environment a normalized `GOPAY_DEMO_BASE_URL` selects: empty means the SDK's own
+    /// Which environment a normalized `GOPAY_DEMO_BASE_URL` names: empty means the SDK's own
     /// sandbox, a URL equal to one of the SDK's built-in hosts names that environment (so the
     /// badge reads SANDBOX or PRODUCTION, not DEVELOPMENT), and anything else is a custom gateway.
     static func environment(for baseURL: String) -> DemoEnvironment {
@@ -95,27 +78,14 @@ final class DemoConfig {
         }
     }
 
-    private(set) var environment: DemoEnvironment = DemoConfig.environment(for: DemoConfig.baseURL)
+    let environment: DemoEnvironment = DemoConfig.environment(for: DemoConfig.baseURL)
 
     private init() {
         // Empty — enforces the singleton via `shared`; there is no per-instance state to initialize.
     }
 
-    /// Closes any live payment session — otherwise it would keep talking to the old gateway, since
-    /// each `PaymentSession` captures its own API client at creation — then re-initializes the SDK
-    /// against the new environment and updates the published selection.
-    @MainActor
-    func select(_ newEnvironment: DemoEnvironment) {
-        guard newEnvironment != environment else { return }
-        Task {
-            await GopaySDK.shared.closeAllPaymentSessions()
-            GopaySDK.shared.initialize(with: Self.buildConfig(for: newEnvironment))
-            environment = newEnvironment
-        }
-    }
-
-    /// Builds the SDK config for `environment`, reproducing every setting from app launch exactly
-    /// (custom locale, debug logging, …) so a runtime switch behaves identically to a cold start.
+    /// Builds the SDK config for `environment`: the custom locale, debug logging and the rest of
+    /// what the app registers at launch.
     static func buildConfig(for environment: DemoEnvironment) -> GopaySDKConfig {
         // Register a custom locale (code "xx") the form can select alongside the built-ins, and
         // leave `locale = nil` so the default follows the device language (falling back to cs).

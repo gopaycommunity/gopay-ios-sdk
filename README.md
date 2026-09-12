@@ -363,9 +363,8 @@ scheme-less value is logged at `initialize(with:)` and fails every call with `CO
 `GopayEnvironment.baseURL` is `public`, so a host app can read back the URL the SDK actually
 resolved for `config.environment` instead of duplicating it elsewhere. The example app's
 `MerchantBackendSimulator` does exactly this — it derives its own request base URL from
-`GopaySDK.shared.config?.environment.baseURL` rather than from a separate constant, so a runtime
-environment switch can never leave the simulated backend and the SDK pointed at different
-gateways:
+`GopaySDK.shared.config?.environment.baseURL` rather than from a separate constant, so the
+simulated backend and the SDK can never end up pointed at different gateways:
 
 ```swift
 let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
@@ -431,10 +430,9 @@ The app opens on a launcher with two destinations and an environment badge:
   since a payment is single-use and a retry after a decline needs a new one.
 - **Developer sandbox** (`ContentView`) — the original four-section console described below, for
   poking at each `PaymentSession` method individually and reading the raw JSON response.
-- The **environment badge** at the bottom is tappable — switch between Sandbox / Production at
-  runtime (Development too, when `GOPAY_DEMO_BASE_URL` is set). Switching closes any live session
-  and re-initializes the SDK, so nothing keeps talking to the old gateway. The choice is **not
-  persisted**.
+- The **environment badge** at the bottom names the gateway both surfaces talk to. It is a
+  read-only indicator: `GOPAY_DEMO_BASE_URL` decides the environment at launch and it stays put
+  for the whole run, so the label can never disagree with what the SDK is actually using.
 
 `GOPAY_DEMO_BASE_URL` in `Local.xcconfig` picks the gateway: empty uses the SDK's sandbox host, a
 URL selects Development and points it there. The other four keys are the merchant credentials.
