@@ -101,8 +101,15 @@ Four sections, top to bottom. Sections 3 and 4 only appear once a session is liv
 3. **Operations** — *Get status*, *Get Apple Pay info*, *Charge with Apple Pay*,
    *Get test card token (server)*, *Charge a payment*, *Get charge state*,
    *Handle 3DS verification*, *Get QR payment info*.
-4. **Card form → JWE** — a locale picker, `GopayCardForm`, *Encrypt card → JWE*, and
-   *Charge with encrypted card (JWE)*.
+4. **Card form → JWE** — a **Theme** picker, a locale picker, `GopayCardForm`,
+   *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*.
+
+The **Theme** picker applies one of the JSON theme documents in
+[`ThemeShowcase.json`](example/ThemeShowcase.json), the way a host would apply a theme its own
+backend sent down. The documents use the web card form's parameter names, and the Android demo
+ships the same file, so one document can be compared across iOS, Android and the web. `Dark` and
+`Red` are the two presets the web card form ships with, written out key for key; `Default` is an
+empty document and renders the SDK defaults.
 
 Every result, or a `GopaySDKError` with its code, is logged into the **Response** box at the bottom.
 

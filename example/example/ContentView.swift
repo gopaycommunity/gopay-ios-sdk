@@ -28,6 +28,7 @@ struct ContentView: View {
     @State private var didAttemptSubmit = false
     // nil follows the SDK/device default locale (which falls back to Czech).
     @State private var selectedLocale: String?
+    @State private var themeName = ThemeShowcase.shared.names.first ?? "Default"
 
     @State private var responseText = "Ready."
     @State private var busyLabel: String?
@@ -135,20 +136,54 @@ struct ContentView: View {
         }
     }
 
-    private var cardFormSection: some View {
-        section("4. Card form → JWE") {
-            // Locale selector — switch the language of the form labels/placeholders live.
+    /// Themes the form from a JSON document, the way a host would apply one its backend sent.
+    /// The same documents ship with the Android demo, so a parameter can be compared side by side.
+    private var themeMenu: some View {
+        HStack {
+            Text("Theme:")
+            Picker("Theme", selection: $themeName) {
+                ForEach(ThemeShowcase.shared.names, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            Spacer()
+        }
+    }
+
+    /// Switches the language of the labels and placeholders live.
+    private var localeMenu: some View {
+        HStack {
+            Text("Locale:")
             Picker("Locale", selection: $selectedLocale) {
                 Text("System default").tag(String?.none)
                 ForEach(GopayLocales.availableCodes(), id: \.self) { code in
                     Text(code).tag(String?.some(code))
                 }
             }
+            .labelsHidden()
             .pickerStyle(.menu)
+            Spacer()
+        }
+    }
 
-            // Re-create the form when the locale changes so it picks up the new strings.
+    private var cardFormSection: some View {
+        section("4. Card form → JWE") {
+            // Theme first, then locale, in the same order as the Android demo.
+            themeMenu
+            localeMenu
+
+            // Re-create the form when the locale changes so it picks up the new strings. The theme
+            // is deliberately not part of the identity: it is a plain property the SDK reapplies,
+            // so switching it restyles the form live and the typed card stays where it is.
             // `.onSubmit` shows the localized error messages only after the user taps submit.
-            GopayCardForm(locale: selectedLocale, validation: .onSubmit(attempted: $didAttemptSubmit), isValid: $isFormValid)
+            GopayCardForm(
+                theme: ThemeShowcase.shared.theme(named: themeName),
+                locale: selectedLocale,
+                validation: .onSubmit(attempted: $didAttemptSubmit),
+                isValid: $isFormValid
+            )
                 .id(selectedLocale ?? "system")
                 .padding()
                 .background(Color(.secondarySystemBackground))

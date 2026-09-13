@@ -1,0 +1,54 @@
+{
+  "order": [
+    "Default",
+    "Dark",
+    "Red"
+  ],
+  "themes": {
+    "Default": {},
+    "Dark": {
+      "labelColor": "#94a3b8",
+      "labelFontSize": 11,
+      "labelFontWeight": 600,
+      "labelUppercase": true,
+      "inputTextColor": "#e2e8f0",
+      "inputFontSize": 14,
+      "inputBorderColor": "#334155",
+      "inputBorderWidth": 1,
+      "inputBackgroundColor": "transparent",
+      "inputPaddingVertical": 6,
+      "inputBorderRadius": 0,
+      "focusGradientStart": "#19c7d6",
+      "focusGradientEnd": "#1899d6",
+      "inputErrorBorderColor": "#ea3c55",
+      "errorTextColor": "#f87171",
+      "errorFontSize": 11,
+      "groupSpacing": 16,
+      "fieldSpacing": 4,
+      "formPadding": 16,
+      "formBackgroundColor": "#1a1f2e"
+    },
+    "Red": {
+      "labelColor": "#c8102e",
+      "labelFontSize": 11,
+      "labelFontWeight": 600,
+      "labelUppercase": true,
+      "inputTextColor": "#4b5e68",
+      "inputFontSize": 14,
+      "inputBorderColor": "#c8102e",
+      "inputBorderWidth": 1,
+      "inputBackgroundColor": "transparent",
+      "inputPaddingVertical": 6,
+      "inputBorderRadius": 0,
+      "focusGradientStart": "#e8103e",
+      "focusGradientEnd": "#c8102e",
+      "inputErrorBorderColor": "#ea3c55",
+      "errorTextColor": "#cc0000",
+      "errorFontSize": 11,
+      "groupSpacing": 16,
+      "fieldSpacing": 4,
+      "formPadding": 16,
+      "formBackgroundColor": "transparent"
+    }
+  }
+}
