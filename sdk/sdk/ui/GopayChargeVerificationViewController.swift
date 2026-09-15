@@ -26,18 +26,90 @@ enum GopayVerificationFailureMapper {
         )
     }
 
+    /// WebKit's own domain. Not exposed to Swift, so the string and the code are spelled out.
+    private static let webKitErrorDomain = "WebKitErrorDomain"
+    /// `WebKitErrorFrameLoadInterruptedByPolicyChange`: the navigation was cancelled by a policy
+    /// decision, which is exactly what this controller does to intercept a navigation.
+    private static let webKitFrameLoadInterrupted = 102
+
     /// The error for a WebKit load failure, or `nil` when it must not be reported at all.
-    static func failure(forLoadError error: Error) -> GopaySDKError? {
+    ///
+    /// - Parameter unsupportedSchemeIsExpected: whether a scheme WKWebView cannot load is
+    ///   explained by something that already happened — a hand-off this controller attempted, or a
+    ///   challenge that has started rendering and can send the user anywhere it likes. On the
+    ///   first load nothing explains it: the redirect URL itself is unloadable and reporting it is
+    ///   the only thing standing between the caller and a wait that never ends.
+    static func failure(forLoadError error: Error, unsupportedSchemeIsExpected: Bool) -> GopaySDKError? {
         let nsError = error as NSError
+        // Everything this controller cancels from a policy decision — the return URL, a 4xx
+        // response, a hand-off to a banking app — comes back here as WebKitErrorDomain 102, not as
+        // NSURLErrorCancelled. Without this the hand-off, which deliberately reports nothing,
+        // would be reported as a dead challenge instead.
+        if nsError.domain == webKitErrorDomain, nsError.code == webKitFrameLoadInterrupted { return nil }
         // A load stopped through the URL loading system, e.g. a navigation replaced by the next
         // one in a redirect chain. Never the first outcome, so reporting it would only overwrite
         // the real one.
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled { return nil }
+        // A scheme nobody can open reaches here instead of the external hand-off. Killing the
+        // verification over it would be the same regression as handling it in the failure path —
+        // but only once a hand-off or the challenge itself can account for it. Suppressed
+        // unconditionally it would swallow the very first load, so a redirect URL the WebView
+        // cannot load would leave the caller waiting for an outcome that never comes.
+        if unsupportedSchemeIsExpected,
+           nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorUnsupportedURL { return nil }
         return GopaySDKError(
             .paymentVerificationUnreachable,
             message: "The 3DS verification page could not be loaded",
             underlying: error
         )
+    }
+}
+
+/// Decides which navigations leave the verification WebView for another app.
+///
+/// Pure and kept out of the controller for the same reason as ``GopayVerificationFailureMapper``:
+/// it is a decision the whole hand-off rests on, and driving a live WKWebView to reach it is not
+/// a way to pin it.
+enum GopayVerificationNavigationPolicy {
+
+    /// Schemes a WKWebView can load itself. Everything else belongs to another app. The Android
+    /// SDK keeps the same seven.
+    static let webSchemes: Set<String> = [
+        "http", "https", "about", "data", "blob", "file", "javascript"
+    ]
+
+    /// Whether this navigation has to be handed to another app.
+    ///
+    /// - Parameters:
+    ///   - url: The URL the navigation is going to.
+    ///   - isMainFrameNavigation: Whether the navigation concerns the main frame — either as its
+    ///     target, or, for a new window, as the frame that asked for it. An iframe inside the ACS
+    ///     page must not be able to throw the user out of the app on its own.
+    static func handsOffToAnotherApp(_ url: URL, isMainFrameNavigation: Bool) -> Bool {
+        guard isMainFrameNavigation, let scheme = url.scheme?.lowercased() else { return false }
+        return !webSchemes.contains(scheme)
+    }
+
+    /// Schemes a 3DS redirect URL may arrive with. The gateway hands out `https`; `http` is here
+    /// for a local test rig.
+    static let redirectSchemes: Set<String> = ["http", "https"]
+
+    /// The error for a redirect URL the verification WebView cannot load, or `nil` when it can.
+    ///
+    /// Checked on the way in, because nothing downstream would catch it: the navigation decision
+    /// only sees URLs the page navigates to, never the one the WebView is told to load, so a
+    /// `bankid://` or scheme-less redirect URL would reach no hand-off and no policy, only a load
+    /// failure the hand-off suppression is there to swallow. The Android SDK validates the same
+    /// thing at the same place and for the same reason.
+    static func loadFailure(forRedirect url: URL) -> GopaySDKError? {
+        guard let scheme = url.scheme?.lowercased(), redirectSchemes.contains(scheme) else {
+            let named = url.scheme.map { "\($0):" } ?? "no scheme at all"
+            return GopaySDKError(
+                .paymentVerificationUnreachable,
+                message: "The 3DS redirect URL is not a web address the verification WebView can load: \(named)"
+            )
+        }
+        return nil
     }
 }
 
@@ -66,6 +138,13 @@ final class GopayChargeVerificationViewController: UIViewController {
     /// through. Past this point a failure is reported as a cancellation so the host reads the
     /// charge state, which is what the documentation tells it to do.
     private var hasCommittedNavigation = false
+
+    /// True once a navigation has been handed to another app.
+    ///
+    /// Together with ``hasCommittedNavigation`` it says whether an unsupported scheme reaching the
+    /// failure path is accounted for. Before either, the only URL the WebView has been given is
+    /// the redirect URL itself.
+    private var hasAttemptedHandOff = false
 
     /// An outcome that arrived before the controller finished being presented.
     ///
@@ -179,6 +258,49 @@ final class GopayChargeVerificationViewController: UIViewController {
         ])
     }
 
+    // MARK: - External schemes
+
+    /// Hands a non-web URL to the system, leaving the WebView where it is.
+    ///
+    /// European ACS routinely push the main frame into a banking app (`intent://`, `bankid://`,
+    /// `csob://`, sometimes `tel:`). WKWebView cannot load those, so the navigation used to end up
+    /// in the failure path and, since failures became an outcome, killed the verification outright
+    /// while everything was in fact working. The user has to reach their bank, so the URL goes to
+    /// the system.
+    ///
+    /// `open` is called without asking `canOpenURL` first, which is the whole reason this works:
+    /// since iOS 9 `canOpenURL` answers `false` for any custom scheme the *host* app has not
+    /// listed in its `LSApplicationQueriesSchemes`, and an SDK cannot declare that key on the
+    /// host's behalf. `open` needs no such whitelist and reports back whether anything took the
+    /// URL.
+    private func openExternally(_ url: URL) {
+        hasAttemptedHandOff = true
+        UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+            guard !opened else { return }
+            self?.handOffFailed(url)
+        }
+    }
+
+    /// Nothing on the device answered the hand-off: the banking app is not installed, or the ACS
+    /// sent a scheme this device knows nothing about.
+    ///
+    /// Only the scheme is logged. The URL itself belongs to the challenge and can carry a token.
+    private func handOffFailed(_ url: URL) {
+        let scheme = url.scheme ?? "a non-web scheme"
+        GopaySDK.shared.logWarning(
+            "The 3DS challenge asked to open \(scheme): and no app on this device took it"
+        )
+        // Reported as unreachable only while the challenge has not started rendering, the same
+        // line the load failures are drawn on. Once the page is up it stays usable, and ending
+        // the verification over a hand-off nobody answered would take away a challenge the user
+        // can still complete by other means.
+        guard !hasCommittedNavigation else { return }
+        report(.failed(GopaySDKError(
+            .paymentVerificationUnreachable,
+            message: "The 3DS challenge could not be handed to another app: nothing on this device opens \(scheme):"
+        )))
+    }
+
     // MARK: - Actions
 
     @objc private func cancelTapped() {
@@ -215,6 +337,17 @@ extension GopayChargeVerificationViewController: WKNavigationDelegate {
            url.absoluteString.hasPrefix(returnURLString) {
             decisionHandler(.cancel)
             report(.completed)
+            return
+        }
+        // A hand-off to a banking app is a step of the challenge, not a failure of it. A new
+        // window has no target frame, so the frame that asked for it decides instead; either way
+        // an iframe inside the ACS page cannot send the user off to another app.
+        let isMainFrameNavigation = navigationAction.targetFrame?.isMainFrame
+            ?? navigationAction.sourceFrame.isMainFrame
+        if let url = navigationAction.request.url,
+           GopayVerificationNavigationPolicy.handsOffToAnotherApp(url, isMainFrameNavigation: isMainFrameNavigation) {
+            decisionHandler(.cancel)
+            openExternally(url)
             return
         }
         decisionHandler(.allow)
@@ -267,7 +400,10 @@ extension GopayChargeVerificationViewController: WKNavigationDelegate {
     }
 
     private func reportLoadFailure(_ error: Error) {
-        guard let failure = GopayVerificationFailureMapper.failure(forLoadError: error) else { return }
+        guard let failure = GopayVerificationFailureMapper.failure(
+            forLoadError: error,
+            unsupportedSchemeIsExpected: hasAttemptedHandOff || hasCommittedNavigation
+        ) else { return }
         reportFailure(failure)
     }
 

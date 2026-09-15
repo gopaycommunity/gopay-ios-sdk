@@ -18,7 +18,9 @@ public extension PaymentSession {
     /// gateway announces a 3DS action for part of the charges and then never produces the data
     /// behind the link, which is the case this reports. The Android SDK reports the same code.
     /// A screen the system refuses to present, which is what an immediate retry runs into while
-    /// the previous one is still animating away, is reported the same way and can be retried.
+    /// the previous one is still animating away, is reported the same way and can be retried, and
+    /// so is a `redirectURL` that is not an `http(s)` address — that one throws before anything is
+    /// presented at all.
     ///
     /// This applies only while the challenge has not started rendering. Once it has, the user may
     /// already have answered it, so a later failure surfaces as `CancellationError` like a
@@ -29,6 +31,13 @@ public extension PaymentSession {
     ///   - presenting: The view controller to present from. When `nil`, the SDK finds the topmost
     ///     view controller automatically.
     func handle3dsVerification(redirectURL: URL, presenting: UIViewController? = nil) async throws {
+        // Rejected before anything is registered or presented. A redirect URL the WebView cannot
+        // load never reaches the navigation decision — that only sees where the page navigates
+        // next — so the hand-off suppression downstream would swallow its load failure and the
+        // caller would wait for an outcome that cannot come, with the in-progress guard held.
+        if let unloadable = GopayVerificationNavigationPolicy.loadFailure(forRedirect: redirectURL) {
+            throw unloadable
+        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
                 self.startVerificationFlow(

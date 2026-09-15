@@ -253,13 +253,16 @@ suspends. It has three ends, not two:
   payment has to be created with that return URL for the ACS to come back to it.
 - **Dismissed** — the user closed the screen, which surfaces as `CancellationError`.
 - **Unreachable** — the challenge never reached the user, so there was nothing for them to
-  answer: the page never drew, for instance because the redirect URL has already been retired,
-  or the screen could not be presented because the previous one was still animating away. It
-  throws `GopaySDKError` with `paymentVerificationUnreachable` (`PAYMENT_010`); when the page
-  answered with an error status, `httpStatus` carries it. Charging again is the right answer to
-  a dead redirect URL, and a refused presentation can be retried as soon as the screen is free.
-  This is the case that used to arrive as a dismissal, so hosts ticked the verification off as
-  handled and let the payment lapse.
+  answer: the page never drew, for instance because the redirect URL has already been retired or
+  is not an `http(s)` address, the screen could not be presented because the previous one was
+  still animating away, or the challenge asked to hand off to a banking app and nothing on the
+  device opened it. It throws `GopaySDKError` with `paymentVerificationUnreachable`
+  (`PAYMENT_010`); when the page answered with an error status, `httpStatus` carries it.
+  Charging again is the right answer to a dead redirect URL, a refused presentation can be
+  retried as soon as the screen is free, and a hand-off nobody took usually means the banking
+  app is not installed, so offer the user another way to authorize. This is the case that used
+  to arrive as a dismissal, so hosts ticked the verification off as handled and let the payment
+  lapse.
 
 Anything that breaks *after* the challenge has drawn ends as a dismissal instead, because by then
 only `getChargeState()` can say whether the issuer authorised the payment. Only one verification
@@ -621,7 +624,7 @@ Android SDK) and a message:
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
-| `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead, or the screen would not present (that cause is iOS-only) |
+| `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
 | `NETWORK_002` | Gateway returned 4xx |
 | `NETWORK_003` | Gateway returned 5xx |
 | `CONFIG_001` | `initialize(with:)` was never called |

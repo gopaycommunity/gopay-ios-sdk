@@ -337,11 +337,9 @@ public class GopaySDK {
     }
 
     /// Logs something the integrator should know about that is not an error, such as a response
-    /// field the decoder had to substitute. Printed with the same gate as ``handleError(_:)``:
-    /// only while `GopaySDKConfig.enableDebugLogging` is on.
-    ///
-    /// The one caller is the charge decoder, which reports a missing `return_url` through
-    /// ``ChargePaymentResponse/reportMissingField``.
+    /// field the decoder had to substitute, a hand-off no app answered or a failure the SDK
+    /// degraded to a cancellation. Printed with the same gate as ``handleError(_:)``: only while
+    /// `GopaySDKConfig.enableDebugLogging` is on, and never through `errorCallback`.
     func logWarning(_ message: String) {
         if config?.enableDebugLogging == true {
             print("[GopaySDK] Warning: \(message)")

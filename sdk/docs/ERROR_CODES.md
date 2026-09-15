@@ -133,13 +133,16 @@ Never add, rename, or repurpose a code on one platform alone.
 - **Description**: The 3DS challenge never reached the user, so there was nothing for them to answer
 - **Common Causes**:
   - The redirect URL has been retired by the gateway, e.g. the charge it belonged to is long finished
+  - The redirect URL is not an `http(s)` address, so the WebView could never have loaded it
   - No connectivity while the challenge was opening
   - The verification screen could not be presented, e.g. a previous one was still animating away
+  - The challenge asked to hand off to a banking app and nothing on the device opened it
 - **Developer Action**:
   - Read the charge state and report the payment as unverified rather than as abandoned
   - Do not treat it as a user dismissal, which arrives as a cancellation instead
   - Charge again to obtain a fresh redirect URL
   - A presentation that was refused can be retried as soon as the screen is free
+  - A hand-off nobody took usually means the banking app is not installed; offer the user another way to authorize
 - **Note**: when the page answered with an error status, `httpStatus` carries it. The refused
   presentation is an iOS-only cause: UIKit will not present while the previous screen is still
   animating away, and the Android activity has no such window. The Android SDK reports the same

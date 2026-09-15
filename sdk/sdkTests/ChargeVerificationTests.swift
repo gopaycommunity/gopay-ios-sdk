@@ -42,21 +42,131 @@ struct ChargeVerificationFailureMapperTests {
 
     // MARK: - Load errors
 
+    /// Everything the controller cancels from a policy decision comes back as WebKitErrorDomain
+    /// 102. The hand-off to a banking app deliberately reports nothing, so without this it would
+    /// be reported as a dead challenge instead.
+    @Test func loadError_policyCancelledNavigationIsSuppressed() {
+        let interrupted = NSError(domain: "WebKitErrorDomain", code: 102)
+        #expect(GopayVerificationFailureMapper.failure(
+            forLoadError: interrupted, unsupportedSchemeIsExpected: true
+        ) == nil)
+    }
+
     /// A load stopped through the URL loading system, e.g. a navigation replaced by the next one
     /// in a redirect chain. Never the first outcome, so reporting it would overwrite the real one.
     @Test func loadError_cancelledNavigationIsSuppressed() {
         let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
-        #expect(GopayVerificationFailureMapper.failure(forLoadError: cancelled) == nil)
+        #expect(GopayVerificationFailureMapper.failure(
+            forLoadError: cancelled, unsupportedSchemeIsExpected: false
+        ) == nil)
     }
 
+    /// The suppression is keyed on the domain too: code 102 elsewhere is a real failure.
+    @Test func loadError_sameCodeInAnotherDomainIsStillReported() throws {
+        let other = NSError(domain: NSURLErrorDomain, code: 102)
+        let failure = try #require(GopayVerificationFailureMapper.failure(
+            forLoadError: other, unsupportedSchemeIsExpected: true
+        ))
+        #expect(failure.code == .paymentVerificationUnreachable)
+    }
+
+    /// A scheme nobody can open, once a hand-off has been attempted, is a hand-off that did not
+    /// happen rather than a dead challenge.
+    @Test func loadError_unsupportedSchemeAfterAHandOffIsSuppressed() {
+        let unsupported = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)
+        #expect(GopayVerificationFailureMapper.failure(
+            forLoadError: unsupported, unsupportedSchemeIsExpected: true
+        ) == nil)
+    }
+
+    /// Before any hand-off there is only one URL the WebView was given, so the same error means
+    /// the redirect URL itself is unloadable. Suppressing it here is what would leave the caller
+    /// waiting forever.
+    @Test func loadError_unsupportedSchemeOnTheFirstLoadIsUnreachable() throws {
+        let unsupported = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)
+        let failure = try #require(GopayVerificationFailureMapper.failure(
+            forLoadError: unsupported, unsupportedSchemeIsExpected: false
+        ))
+        #expect(failure.code == .paymentVerificationUnreachable)
+    }
 
     @Test func loadError_deadHostIsUnreachable() throws {
         let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
-        let failure = try #require(GopayVerificationFailureMapper.failure(forLoadError: offline))
+        let failure = try #require(GopayVerificationFailureMapper.failure(
+            forLoadError: offline, unsupportedSchemeIsExpected: false
+        ))
 
         #expect(failure.code == .paymentVerificationUnreachable)
         #expect(failure.httpStatus == nil)
         #expect((failure.underlying as NSError?)?.code == NSURLErrorCannotFindHost)
+    }
+}
+
+struct ChargeVerificationNavigationPolicyTests {
+
+    private func handsOff(_ string: String, isMainFrameNavigation: Bool = true) -> Bool {
+        GopayVerificationNavigationPolicy.handsOffToAnotherApp(
+            URL(string: string)!,
+            isMainFrameNavigation: isMainFrameNavigation
+        )
+    }
+
+    /// The challenge itself stays in the WebView.
+    @Test func aWebURLStaysInTheWebView() {
+        #expect(handsOff("https://3ds.example/step") == false)
+        #expect(handsOff("http://3ds.example/step") == false)
+        #expect(handsOff("about:blank") == false)
+        #expect(handsOff("data:text/html,<p>hi</p>") == false)
+    }
+
+    /// The schemes European ACS actually push the main frame into.
+    @Test func aBankingSchemeGoesToTheSystem() {
+        #expect(handsOff("bankid://auth?token=x"))
+        #expect(handsOff("intent://pay#Intent;scheme=csob;end"))
+        #expect(handsOff("tel:+420800111222"))
+    }
+
+    /// A scheme is a scheme however the ACS spells it.
+    @Test func theSchemeIsMatchedWithoutCase() {
+        #expect(handsOff("HTTPS://3ds.example/step") == false)
+        #expect(handsOff("BankID://auth"))
+    }
+
+    /// An iframe inside the ACS page must not be able to throw the user out of the app.
+    @Test func aSubframeNavigationIsNotHandedOff() {
+        #expect(handsOff("bankid://auth", isMainFrameNavigation: false) == false)
+    }
+
+    // MARK: - Redirect URL on the way in
+
+    private func redirectFailure(_ string: String) -> GopaySDKError? {
+        GopayVerificationNavigationPolicy.loadFailure(forRedirect: URL(string: string)!)
+    }
+
+    @Test func aWebRedirectIsAccepted() {
+        #expect(redirectFailure("https://3ds.example/step") == nil)
+        #expect(redirectFailure("http://localhost:8080/step") == nil)
+        #expect(redirectFailure("HTTPS://3ds.example/step") == nil)
+    }
+
+    /// The hole the hand-off suppression would otherwise open: this URL never reaches a navigation
+    /// decision, so without the check on the way in its load failure is swallowed and the caller
+    /// waits for an outcome that cannot come.
+    @Test func aNonWebRedirectIsRejectedBeforeAnythingIsPresented() throws {
+        let failure = try #require(redirectFailure("bankid://auth?token=x"))
+        #expect(failure.code == .paymentVerificationUnreachable)
+    }
+
+    @Test func aRedirectWithNoSchemeIsRejected() throws {
+        let failure = try #require(redirectFailure("3ds.example/step"))
+        #expect(failure.code == .paymentVerificationUnreachable)
+    }
+
+    /// A scheme the WebView could technically load is still not a 3DS redirect.
+    @Test func aNonHttpWebSchemeIsRejectedAsARedirect() {
+        #expect(redirectFailure("about:blank") != nil)
+        #expect(redirectFailure("file:///etc/passwd") != nil)
+        #expect(redirectFailure("javascript:alert(1)") != nil)
     }
 }
 
