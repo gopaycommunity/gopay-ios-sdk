@@ -340,9 +340,8 @@ public class GopaySDK {
     /// field the decoder had to substitute. Printed with the same gate as ``handleError(_:)``:
     /// only while `GopaySDKConfig.enableDebugLogging` is on.
     ///
-    /// Nothing on this branch calls it. It is kept for the 3DS work that builds on top of this
-    /// one, where the charge decoder reports a substituted response field through it; deleting it
-    /// here as dead code breaks that branch's build.
+    /// The one caller is the charge decoder, which reports a missing `return_url` through
+    /// ``ChargePaymentResponse/reportMissingField``.
     func logWarning(_ message: String) {
         if config?.enableDebugLogging == true {
             print("[GopaySDK] Warning: \(message)")

@@ -330,11 +330,25 @@ public struct ChargeAction: Codable {
 ///
 /// Per the spec only `id`, `state`, and `return_url` are required; instrument details and the
 /// follow-up action are absent in early states, and `fail_reason` is only present when
-/// `state == failed`.
+/// `state == failed`. In practice `return_url` is missing too, hence its optionality below.
 public struct ChargePaymentResponse: Codable {
     public let id: String
     public let state: ChargeState
-    public let returnUrl: String
+
+    /// Where the gateway sends the browser once verification finishes, when it tells us at all.
+    ///
+    /// Optional because the deployed gateway omits it: the charge block nested in
+    /// `GET /payments/{payment_id}` arrives as just `{id, state, href}`, and the charge endpoints
+    /// can leave it out too. The type says so rather than substituting an empty string, which
+    /// silently broke the obvious use: `url.hasPrefix(charge.returnUrl)` matches every URL against
+    /// `""`, so the first navigation of a challenge page reads as a finished verification, and
+    /// `URL(string: "")` is `nil`. For the same reason a blank `return_url` from the gateway
+    /// decodes as `nil` rather than as the string that breaks that check.
+    ///
+    /// If you run your own WebView, treat `nil` as "the gateway did not say" and use
+    /// ``GopaySDK/chargeReturnURL``, which
+    /// ``PaymentSession/handle3dsVerification(redirectURL:presenting:)`` watches for.
+    public let returnUrl: String?
     public let paymentInstrument: PaymentInstrumentData?
     public let action: ChargeAction?
     public let failReason: String?
@@ -346,5 +360,47 @@ public struct ChargePaymentResponse: Codable {
         case paymentInstrument = "payment_instrument"
         case action
         case failReason = "fail_reason"
+    }
+
+    /// Decodes the charge, tolerating a missing `return_url`.
+    ///
+    /// The spec marks `return_url` required, but the charge block nested in `GET /payments/{id}`
+    /// arrives as just `{id, state, href}`. Failing the whole decode over it would take the
+    /// payment state with it, so the field decodes to `nil` and the omission is reported through
+    /// ``reportMissingField``. A blank value is treated as missing too, since an empty string is
+    /// exactly what `url.hasPrefix` cannot be trusted with. The Android SDK tolerates both the
+    /// same way.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        state = try container.decode(ChargeState.self, forKey: .state)
+        paymentInstrument = try container.decodeIfPresent(PaymentInstrumentData.self, forKey: .paymentInstrument)
+        action = try container.decodeIfPresent(ChargeAction.self, forKey: .action)
+        failReason = try container.decodeIfPresent(String.self, forKey: .failReason)
+
+        let rawReturnUrl = try container.decodeIfPresent(String.self, forKey: .returnUrl)
+        let isBlank = rawReturnUrl?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        returnUrl = isBlank ? nil : rawReturnUrl
+        // Only the charge endpoints are worth a warning. The charge block nested in
+        // `GET /payments/{id}` never carries the field, so reporting it there would fire on
+        // every single status read. An empty coding path means this is the response body itself
+        // rather than a value inside another one.
+        if returnUrl == nil, decoder.codingPath.isEmpty {
+            ChargePaymentResponse.reportMissingField(
+                rawReturnUrl == nil
+                    ? "charge \(id) came back without the required return_url, decoding it as nil"
+                    : "charge \(id) came back with a blank return_url, decoding it as nil"
+            )
+        }
+    }
+
+    /// Reports a required field the decoder had to substitute. The default sends it to the SDK
+    /// debug log through `GopaySDK.logWarning(_:)`; tests observe the reports by swapping it.
+    ///
+    /// A swappable hook rather than a call written straight into the decoder: decoding runs on
+    /// the URLSession thread, and a test has no other way to see what was substituted without
+    /// turning on debug logging and reading stdout.
+    static var reportMissingField: (String) -> Void = { message in
+        GopaySDK.shared.logWarning(message)
     }
 }
