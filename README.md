@@ -178,6 +178,8 @@ do {
     } else {
         print("Charge state:", charge.state)
     }
+} catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
+    print("The 3DS challenge never reached the user; charge again for a fresh redirect")
 } catch is CancellationError {
     print("User dismissed the 3DS verification")
 } catch {
@@ -238,6 +240,41 @@ let charge = try await session.charge(request)
 if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
     try await session.handle3dsVerification(redirectURL: url)
 }
+```
+
+### 3DS verification
+
+`handle3dsVerification(redirectURL:presenting:)` opens the challenge in an SDK-managed WebView and
+suspends. It has three ends, not two:
+
+- **Answered** — the ACS navigates to an address starting with `GopaySDK.chargeReturnURL`,
+  which the WebView intercepts without loading, and the call returns normally. Read the outcome
+  with `getChargeState()`; the SDK does not decide whether the payment went through. The
+  payment has to be created with that return URL for the ACS to come back to it.
+- **Dismissed** — the user closed the screen, which surfaces as `CancellationError`.
+- **Unreachable** — the challenge never reached the user, so there was nothing for them to
+  answer: the page never drew, for instance because the redirect URL has already been retired,
+  or the screen could not be presented because the previous one was still animating away. It
+  throws `GopaySDKError` with `paymentVerificationUnreachable` (`PAYMENT_010`); when the page
+  answered with an error status, `httpStatus` carries it. Charging again is the right answer to
+  a dead redirect URL, and a refused presentation can be retried as soon as the screen is free.
+  This is the case that used to arrive as a dismissal, so hosts ticked the verification off as
+  handled and let the payment lapse.
+
+Anything that breaks *after* the challenge has drawn ends as a dismissal instead, because by then
+only `getChargeState()` can say whether the issuer authorised the payment. Only one verification
+runs per process at a time; a second one throws `paymentVerificationInProgress` (`PAYMENT_008`).
+
+```swift
+do {
+    try await session.handle3dsVerification(redirectURL: url)
+} catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
+    retryCharge()
+} catch is CancellationError {
+    // The user walked away. getChargeState() is still the only source of truth.
+    throw CancellationError()
+}
+let finalState = try await session.getChargeState()
 ```
 
 ---
@@ -584,6 +621,7 @@ Android SDK) and a message:
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
+| `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead, or the screen would not present (that cause is iOS-only) |
 | `NETWORK_002` | Gateway returned 4xx |
 | `NETWORK_003` | Gateway returned 5xx |
 | `CONFIG_001` | `initialize(with:)` was never called |

@@ -41,6 +41,9 @@ public struct GopaySDKError: LocalizedError {
         case paymentVerificationInProgress = "PAYMENT_008"
         /// An Apple Pay sheet is already in progress; only one can run at a time.
         case paymentApplePayInProgress = "PAYMENT_009"
+        /// The 3DS challenge never reached the user: the page could not be loaded, e.g. the
+        /// redirect URL is dead, or the verification screen could not be presented.
+        case paymentVerificationUnreachable = "PAYMENT_010"
 
         // Validation (VALIDATION_XXX)
         /// Invalid input data provided.

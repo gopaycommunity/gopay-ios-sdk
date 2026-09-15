@@ -128,6 +128,23 @@ Never add, rename, or repurpose a code on one platform alone.
 - **Developer Action**:
   - Disable the pay button while a charge is in flight
 
+### PAYMENT_010: Verification Unreachable
+- **Case**: `paymentVerificationUnreachable`
+- **Description**: The 3DS challenge never reached the user, so there was nothing for them to answer
+- **Common Causes**:
+  - The redirect URL has been retired by the gateway, e.g. the charge it belonged to is long finished
+  - No connectivity while the challenge was opening
+  - The verification screen could not be presented, e.g. a previous one was still animating away
+- **Developer Action**:
+  - Read the charge state and report the payment as unverified rather than as abandoned
+  - Do not treat it as a user dismissal, which arrives as a cancellation instead
+  - Charge again to obtain a fresh redirect URL
+  - A presentation that was refused can be retried as soon as the screen is free
+- **Note**: when the page answered with an error status, `httpStatus` carries it. The refused
+  presentation is an iOS-only cause: UIKit will not present while the previous screen is still
+  animating away, and the Android activity has no such window. The Android SDK reports the same
+  code without `httpStatus` and without that cause.
+
 ## Validation Errors (VALIDATION_XXX)
 
 ### VALIDATION_007: Invalid Input
@@ -165,3 +182,8 @@ Neither path reports a `GopaySDKError`, and the two differ:
 
 Treat both as a user action rather than a failure, but catch the Apple Pay case in a general
 `catch`.
+
+A 3DS challenge that never reached the user is neither: it throws `PAYMENT_010` (see above), and
+the payment is unverified rather than abandoned. Anything that breaks after the challenge has
+started rendering is reported as a cancellation, because by then the user may already have
+answered and only `getChargeState()` can say how the payment ended.

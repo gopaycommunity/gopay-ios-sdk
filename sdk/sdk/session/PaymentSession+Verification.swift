@@ -12,6 +12,18 @@ public extension PaymentSession {
     /// ``GopaySDKError/Code/paymentVerificationInProgress``. User dismissal surfaces as
     /// `CancellationError`.
     ///
+    /// A verification page that cannot be loaded at all throws a ``GopaySDKError`` with
+    /// ``GopaySDKError/Code/paymentVerificationUnreachable`` rather than letting the payment lapse
+    /// without a reason. When the page answered with an error status, `httpStatus` carries it. The
+    /// gateway announces a 3DS action for part of the charges and then never produces the data
+    /// behind the link, which is the case this reports. The Android SDK reports the same code.
+    /// A screen the system refuses to present, which is what an immediate retry runs into while
+    /// the previous one is still animating away, is reported the same way and can be retried.
+    ///
+    /// This applies only while the challenge has not started rendering. Once it has, the user may
+    /// already have answered it, so a later failure surfaces as `CancellationError` like a
+    /// dismissal does, and the payment is settled by reading ``getChargeState()``.
+    ///
     /// - Parameters:
     ///   - redirectURL: The `action.redirect_url` returned by the charge.
     ///   - presenting: The view controller to present from. When `nil`, the SDK finds the topmost
@@ -53,20 +65,50 @@ public extension PaymentSession {
         }
         SheetGuards.verificationInProgress = true
 
+        // The controller's own "first outcome wins" rule, extended over the presentation: a
+        // presentation UIKit refuses is settled here, and a controller that somehow reports
+        // afterwards must not resume the continuation a second time.
+        var hasSettled = false
+        func claimTheOutcome() -> Bool {
+            guard !hasSettled else { return false }
+            hasSettled = true
+            return true
+        }
+
         let verificationVC = GopayChargeVerificationViewController(
             redirectURL: redirectURL,
             returnURLString: GopaySDK.chargeReturnURL
         ) { result in
-            presenter.dismiss(animated: true) {
-                SheetGuards.verificationInProgress = false
-                switch result {
-                case .completed:
-                    continuation.resume(returning: ())
-                case .cancelled:
-                    continuation.resume(throwing: CancellationError())
-                }
+            guard claimTheOutcome() else { return }
+            // The guard drops and the caller resumes before the dismissal, and never inside its
+            // completion: a dismiss that cannot run — the presentation is still animating, the
+            // presenter is gone — would otherwise swallow the return to the caller and leave
+            // every later verification failing on ``GopaySDKError/Code/paymentVerificationInProgress``.
+            SheetGuards.verificationInProgress = false
+            presenter.dismiss(animated: true)
+            switch result {
+            case .completed:
+                continuation.resume(returning: ())
+            case .cancelled:
+                continuation.resume(throwing: CancellationError())
+            case .failed(let error):
+                continuation.resume(throwing: error)
             }
         }
         presenter.present(verificationVC, animated: true)
+        // UIKit refuses to present while the presenter is still animating something else away and
+        // says so only in the console: nothing reaches the screen, no delegate callback ever
+        // comes, and the caller would stay suspended with the in-progress guard held for the rest
+        // of the process. An immediate retry after a failure is exactly that window, and the new
+        // ``GopaySDKError/Code/paymentVerificationUnreachable`` invites one. `present` wires the
+        // presentation up synchronously, so a nil presenter here means it was refused.
+        if verificationVC.presentingViewController == nil, claimTheOutcome() {
+            SheetGuards.verificationInProgress = false
+            let error = GopaySDKError(
+                .paymentVerificationUnreachable,
+                message: "The 3DS verification screen could not be presented, the presenter is busy"
+            )
+            continuation.resume(throwing: error)
+        }
     }
 }
