@@ -57,28 +57,6 @@ struct CardTextFormatter {
     static let cvv = CardTextFormatter(maxDigits: 3) { $0 }
 }
 
-/// The `UITextField` behind ``FormattedTextField``, with a height that comes from its font alone.
-///
-/// A plain `UITextField` sizes itself to the glyphs it shows, and secure text entry swaps in the
-/// bullet glyphs, which makes a CVV field a few points shorter than the expiration next to it. The
-/// font's line height, rounded up to a whole point plus the point of room a text field leaves for
-/// the caret, gives the three inputs of a row the same height in every style and matches what the
-/// system font measured before.
-final class GopayInputTextField: UITextField {
-    override var intrinsicContentSize: CGSize {
-        var size = super.intrinsicContentSize
-        if let font = font {
-            size.height = Self.height(for: font)
-        }
-        return size
-    }
-
-    /// The height an input takes for `font`, independent of its content.
-    static func height(for font: UIFont) -> CGFloat {
-        ceil(font.lineHeight) + 1
-    }
-}
-
 /// A `UITextField`-backed field that formats digits-only input in real time
 /// (card number grouping, expiration slash) while keeping the cursor in the
 /// right place - something a plain SwiftUI `TextField` cannot do.
@@ -92,8 +70,6 @@ struct FormattedTextField: UIViewRepresentable {
     /// web form use, which stays readable on a themed background of either brightness. The system
     /// placeholder color would follow the system appearance instead of the form's own.
     var placeholderColor: UIColor? = nil
-    /// Extra spacing between characters, in points. `nil` means none.
-    var letterSpacing: CGFloat? = nil
     /// Name announced for this field when the form draws no visible label.
     var accessibilityLabel: String? = nil
     var textContentType: UITextContentType? = nil
@@ -105,7 +81,7 @@ struct FormattedTextField: UIViewRepresentable {
     var onFocusChange: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> UITextField {
-        let textField = GopayInputTextField()
+        let textField = UITextField()
         textField.delegate = context.coordinator
         textField.keyboardType = .numberPad
         textField.isSecureTextEntry = isSecure
@@ -124,26 +100,17 @@ struct FormattedTextField: UIViewRepresentable {
 
     func updateUIView(_ textField: UITextField, context: Context) {
         context.coordinator.parent = self
-        if textField.font != font {
-            textField.font = font
-            textField.invalidateIntrinsicContentSize()
-        }
+        textField.font = font
         textField.textColor = textColor
         textField.textContentType = textContentType
         textField.accessibilityLabel = accessibilityLabel
-        // Written through the subscript so the font and color set above survive.
-        textField.defaultTextAttributes[.kern] = letterSpacing
 
-        // The placeholder carries the input typography too (font and letter spacing), the way
-        // the web form's placeholder inherits it; the themed color is the only difference.
-        var placeholderAttributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: placeholderColor ?? .gopayDefaultPlaceholder
-        ]
-        if let letterSpacing = letterSpacing {
-            placeholderAttributes[.kern] = letterSpacing
-        }
-        textField.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: placeholderAttributes)
+        // The placeholder carries the input font too, the way the web form's placeholder inherits
+        // it; the themed color is the only difference.
+        textField.attributedPlaceholder = NSAttributedString(
+            string: placeholder,
+            attributes: [.font: font, .foregroundColor: placeholderColor ?? .gopayDefaultPlaceholder]
+        )
 
         let formatted = formatter.format(digits)
         if textField.text != formatted {

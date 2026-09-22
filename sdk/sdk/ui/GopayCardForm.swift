@@ -319,7 +319,6 @@ public struct GopayCardForm: View {
                     font: theme.inputUIFont,
                     textColor: UIColor.from(theme.inputTextColor),
                     placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
-                    letterSpacing: theme.inputLetterSpacing,
                     accessibilityLabel: hiddenLabel(localeStrings.panLabel),
                     textContentType: .creditCardNumber,
                     isFocused: isCardNumberFocused,
@@ -362,7 +361,6 @@ public struct GopayCardForm: View {
                         font: theme.inputUIFont,
                         textColor: UIColor.from(theme.inputTextColor),
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
-                        letterSpacing: theme.inputLetterSpacing,
                         accessibilityLabel: hiddenLabel(localeStrings.expLabel),
                         isFocused: isExpirationFocused,
                         onFocusChange: { isFocused in
@@ -402,7 +400,6 @@ public struct GopayCardForm: View {
                         font: theme.inputUIFont,
                         textColor: UIColor.from(theme.inputTextColor),
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
-                        letterSpacing: theme.inputLetterSpacing,
                         accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),
                         isSecure: true,
                         isFocused: isCvvFocused,
