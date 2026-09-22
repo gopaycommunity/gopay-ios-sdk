@@ -275,9 +275,9 @@ public struct GopayCardForm: View {
             // shorter. A taller sibling column never stretches them either.
             .frame(height: rowInputHeight)
             // A fixed input height takes precedence over the vertical padding, as it does on the web.
-            .padding(.vertical, theme.inputHeight == nil ? theme.inputPaddingVertical : 0)
+            .padding(.vertical, fixedInputHeight == nil ? theme.inputPaddingVertical : 0)
             .padding(.horizontal, theme.inputPaddingHorizontal)
-            .frame(height: theme.inputHeight)
+            .frame(height: fixedInputHeight)
 
         let shape = RoundedRectangle(cornerRadius: theme.inputBorderRadius)
         return input
@@ -285,6 +285,10 @@ public struct GopayCardForm: View {
             // `strokeBorder` keeps the whole line inside the field, so the border needs no
             // measuring of its own and the field stays the size the layout gave it.
             .overlay(shape.strokeBorder(theme.borderColor(hasError: hasError), lineWidth: borderWidth))
+            // Clipped last, so content too tall for a fixed height stays inside the field instead
+            // of running into the label and the error line. The border is drawn inwards and so
+            // survives the clip at its full width.
+            .clipShape(shape)
     }
 
     /// Height the three inputs share, in points.
@@ -301,10 +305,28 @@ public struct GopayCardForm: View {
         ceil(theme.inputUIFont(for: sizeCategory).lineHeight) + 1
     }
 
+    /// The fixed height a theme asked for, or `nil` to let the font and the padding decide.
+    ///
+    /// A height of zero or less is read as unset rather than obeyed: a JSON document can carry
+    /// one, and a field of no height would put its own content outside itself.
+    private var fixedInputHeight: CGFloat? {
+        guard let height = theme.inputHeight, height > 0 else { return nil }
+        return height
+    }
+
+    /// How tall a field ends up, which the theme decides on its own; no measuring is needed.
+    private var resolvedInputHeight: CGFloat {
+        fixedInputHeight ?? (rowInputHeight + 2 * max(0, theme.inputPaddingVertical))
+    }
+
     /// Width of the input border. A theme can only ask for a positive one; anything else draws
     /// nothing at all rather than a hairline the theme did not order.
+    ///
+    /// Capped at half the field, because `strokeBorder` insets the shape by half the width and a
+    /// width past the field's height would inset it out of existence, losing the border entirely.
+    /// A JSON document may carry a width of thousands of points, so the cap is not hypothetical.
     private var borderWidth: CGFloat {
-        max(0, theme.inputBorderWidth)
+        min(max(0, theme.inputBorderWidth), resolvedInputHeight / 2)
     }
 
 

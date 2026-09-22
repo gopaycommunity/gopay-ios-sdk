@@ -68,6 +68,30 @@ struct CardFormRowLayoutTests {
         }
     }
 
+    /// A document can ask for a field of no height; obeying it would put the digits outside the
+    /// field, over the label and the error line.
+    @Test func aZeroOrNegativeFixedHeightIsReadAsUnset() {
+        var zero = GopayCardFormTheme()
+        zero.inputHeight = 0
+        var negative = GopayCardFormTheme()
+        negative.inputHeight = -40
+
+        let natural = hostedFields().first?.bounds.height ?? 0
+        #expect(hostedFields(theme: zero).first?.bounds.height == natural)
+        #expect(hostedFields(theme: negative).first?.bounds.height == natural)
+    }
+
+    /// A width past the field would inset `strokeBorder` out of existence and lose the border.
+    @Test func anAbsurdBorderWidthStillLeavesTheFieldStanding() {
+        var huge = GopayCardFormTheme()
+        huge.inputBorderWidth = 10_000
+
+        let fields = hostedFields(theme: huge)
+        #expect(fields.count == 3)
+        #expect(Set(fields.map { $0.bounds.height }).count == 1)
+        #expect((fields.first?.bounds.height ?? 0) > 0)
+    }
+
     /// The height follows the environment's category, not the device's, so a preview or a host
     /// that overrides it gets fields that match its labels.
     @Test func theRowGrowsWithTheEnvironmentsTextSize() {
