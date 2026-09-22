@@ -249,6 +249,7 @@ extension GopayCardFormTheme: Codable {
     /// is reported through the SDK debug log (`GopaySDKConfig.enableDebugLogging`).
     public init(from decoder: Decoder) throws {
         let keys = GopayTolerantThemeKeys(container: try decoder.container(keyedBy: CodingKeys.self))
+        Self.reportRetiredKeys(in: decoder)
         // Every key the document omits keeps the base theme's value. Plain decoding has no base,
         // so it falls back to the SDK defaults; ``applying(_:)`` puts the caller's theme here.
         let fallback = decoder.userInfo[.gopayThemeBase] as? GopayCardFormTheme ?? GopayCardFormTheme()
@@ -284,6 +285,37 @@ extension GopayCardFormTheme: Codable {
             formPadding: keys.length(.formPadding) ?? fallback.formPadding,
             formBackgroundColor: keys.color(.formBackgroundColor) ?? fallback.formBackgroundColor
         )
+    }
+
+    /// Keys the web theme still has and this SDK no longer carries, because a native field
+    /// cannot honour them. They are known rather than unknown, so a document that sets one is
+    /// told it had no effect instead of having it disappear into the unknown-key branch.
+    private enum RetiredKeys: String, CodingKey, CaseIterable {
+        case inputBorderCollapse, focusRingWidth, focusRingColor
+        case focusGradientStart, focusGradientEnd
+        case inputLetterSpacing, inputLineHeight
+
+        /// Why each one is gone, in the words the debug log uses.
+        var reason: String {
+            switch self {
+            case .inputBorderCollapse, .focusRingWidth, .focusRingColor,
+                 .focusGradientStart, .focusGradientEnd:
+                return "a native field has nothing the SDK could draw it with"
+            case .inputLetterSpacing:
+                return "it would override how the field measures itself, labelLetterSpacing stays"
+            case .inputLineHeight:
+                return "a single-line native field has no such problem, see inputHeight"
+            }
+        }
+    }
+
+    /// Reports the keys a document set that this SDK understands but deliberately does not apply.
+    private static func reportRetiredKeys(in decoder: Decoder) {
+        guard let container = try? decoder.container(keyedBy: RetiredKeys.self) else { return }
+        for key in RetiredKeys.allCases
+        where container.contains(key) && (try? container.decodeNil(forKey: key)) == false {
+            reportDroppedKey("\"\(key.stringValue)\" ignored, \(key.reason)")
+        }
     }
 
     /// Reads the keys of a JSON theme one at a time. Every reader returns `nil` for a key that is
@@ -357,12 +389,17 @@ extension GopayCardFormTheme: Codable {
             return nil
         }
 
-        /// The border style, matched case-insensitively.
+        /// The border style, matched case-insensitively. `underline` is carried so a document
+        /// travels between channels, but iOS has no native underlined field and renders it as
+        /// `boxed`; every untouched web theme sets it, so say so rather than apply it in silence.
         func borderStyle(_ key: CodingKeys) -> GopayCardFormBorderStyle? {
             guard let raw = value(String.self, key) else { return nil }
             guard let style = GopayCardFormBorderStyle(rawValue: raw.lowercased()) else {
                 drop(key, "\"\(raw)\" is not a border style, expected boxed or underline")
                 return nil
+            }
+            if style == .underline {
+                drop(key, "\"underline\" is not supported on iOS, the input is drawn as boxed")
             }
             return style
         }

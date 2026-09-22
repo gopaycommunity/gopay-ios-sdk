@@ -503,6 +503,62 @@ struct GopayCardFormThemeTests {
         #expect(reported.contains { $0.contains("inputHeight") })
         #expect(reported.contains { $0.contains("inputBorderWidth") })
     }
+    /// The seven keys the cut removed are known, not unknown: a document that sets one is told
+    /// it had no effect rather than having it vanish into the unknown-key branch.
+    @Test func decode_reportsTheKeysTheCutRetired() throws {
+        var reported: [String] = []
+        let previous = GopayCardFormTheme.reportDroppedKey
+        defer { GopayCardFormTheme.reportDroppedKey = previous }
+        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
+
+        let json = """
+        {
+          "inputBorderCollapse": true,
+          "focusRingWidth": 3,
+          "focusRingColor": "#19c7d6",
+          "focusGradientStart": "#19c7d6",
+          "focusGradientEnd": "#1899d6",
+          "inputLetterSpacing": 1,
+          "inputLineHeight": 24,
+          "somethingNobodyKnows": 1,
+          "groupSpacing": 20
+        }
+        """
+
+        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
+
+        for key in ["inputBorderCollapse", "focusRingWidth", "focusRingColor", "focusGradientStart",
+                    "focusGradientEnd", "inputLetterSpacing", "inputLineHeight"] {
+            #expect(reported.filter { $0.contains("\"\(key)\"") }.count == 1, "\(key) reported once")
+        }
+        // A key nobody knows stays silent, and the rest of the document still applies.
+        #expect(!reported.contains { $0.contains("somethingNobodyKnows") })
+        #expect(theme.groupSpacing == 20)
+    }
+
+    /// Every untouched web theme carries it, and iOS accepts the value but cannot render it.
+    @Test func decode_reportsAnUnderlineBorderStyleAsUnsupported() throws {
+        var reported: [String] = []
+        let previous = GopayCardFormTheme.reportDroppedKey
+        defer { GopayCardFormTheme.reportDroppedKey = previous }
+        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
+
+        let underline = try JSONDecoder().decode(
+            GopayCardFormTheme.self,
+            from: Data("{ \"inputBorderStyle\": \"underline\" }".utf8)
+        )
+
+        #expect(underline.inputBorderStyle == .underline, "the value is kept for portability")
+        #expect(reported.contains { $0.contains("not supported on iOS") })
+
+        reported.removeAll()
+        _ = try JSONDecoder().decode(
+            GopayCardFormTheme.self,
+            from: Data("{ \"inputBorderStyle\": \"boxed\" }".utf8)
+        )
+        #expect(reported.isEmpty, "boxed is what iOS draws, nothing to report")
+    }
+
     @Test func decode_reportsEveryDroppedKeyToTheHost() throws {
         var reported: [String] = []
         let previous = GopayCardFormTheme.reportDroppedKey
