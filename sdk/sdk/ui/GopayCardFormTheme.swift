@@ -642,19 +642,6 @@ extension GopayCardFormTheme {
         message?.isEmpty == false || errorMinHeight > 0
     }
 
-    /// Whether a collapsed block's two rows actually meet, which is the only case where the line
-    /// between them may be drawn once instead of twice. Any ``groupSpacing``, a label above the
-    /// bottom row and the slot below the card number all push them apart; `cardNumberError` is the
-    /// message currently shown in that slot, so a live error opens the gap while it is on screen.
-    func collapsedRowsTouch(cardNumberError: String?) -> Bool {
-        groupSpacing == 0 && labelHidden && !rendersErrorSlot(for: cardNumberError)
-    }
-
-    /// Whether the expiration and the CVV sit flush against each other, which is the only case
-    /// where the line between them may be drawn once instead of twice.
-    var collapsedBottomRowTouches: Bool {
-        groupSpacing == 0
-    }
 }
 
 // MARK: - Resolved fonts

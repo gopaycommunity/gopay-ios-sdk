@@ -130,8 +130,7 @@ public struct GopayCardForm: View {
     /// Read so the theme's fonts rescale when the user changes the Dynamic Type size.
     @Environment(\.sizeCategory) private var sizeCategory
 
-    /// Read so the underline focus gradient starts at the leading edge and a collapsed block hands
-    /// the same edge to the same field in a right-to-left layout too.
+    /// Read so the underline focus gradient starts at the leading edge.
     @Environment(\.layoutDirection) private var layoutDirection
 
     @State private var isCardNumberFocused: Bool = false
@@ -257,50 +256,22 @@ public struct GopayCardForm: View {
         label: String,
         error: String?,
         isFocused: Bool,
-        position: GopayCollapsedInputPosition,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             fieldLabel(label)
 
-            inputContainer(
-                isFocused: isFocused,
-                hasError: error != nil,
-                position: position,
-                content: content
-            )
+            inputContainer(isFocused: isFocused, hasError: error != nil, content: content)
             .padding(.top, theme.labelHidden ? 0 : theme.fieldSpacing)
 
             errorSlot(error)
         }
-        .zIndex(elevation(isFocused: isFocused, hasError: error != nil))
-    }
-
-    /// A collapsed field in a state paints over the line it shares with a neighbour, so it has to
-    /// draw after that neighbour. Outside a collapsed block nothing overlaps and the order is moot.
-    ///
-    /// Focus outranks an error, matching the border colour rule: on a tie SwiftUI paints in
-    /// declaration order, which would let an invalid neighbour repaint the focused field's shared
-    /// side in the error colour and break the "one closed box" the focused state promises.
-    private func elevation(isFocused: Bool, hasError: Bool) -> Double {
-        guard isCollapsed else { return 0 }
-        if isFocused { return 2 }
-        return hasError ? 1 : 0
-    }
-
-    /// Elevation of the expiration and CVV row against the card number above it, ranked the same
-    /// way as a single cell.
-    private var bottomRowElevation: Double {
-        guard isCollapsed else { return 0 }
-        if isExpirationFocused || isCvvFocused { return 2 }
-        return errors.expiration != nil || errors.cvv != nil ? 1 : 0
     }
 
     /// Wraps an input in the theme's padding, background and border.
     private func inputContainer<Content: View>(
         isFocused: Bool,
         hasError: Bool,
-        position: GopayCollapsedInputPosition,
         @ViewBuilder content: () -> Content
     ) -> some View {
         let input = content()
@@ -312,87 +283,12 @@ public struct GopayCardForm: View {
             .padding(.horizontal, theme.inputPaddingHorizontal)
             .frame(height: theme.inputHeight)
 
-        return Group {
-            if isCollapsed {
-                // A collapsed cell is not clipped: its background and its owned edges are shapes
-                // resolved to physical sides, so a cell in a state can paint over the seam it shares
-                // and its corner rounding cannot be mirrored a second time in a right-to-left layout.
-                input
-                    .background(collapsedBackground(position: position))
-                    .overlay(collapsedBorder(isFocused: isFocused, hasError: hasError, position: position))
-                    .overlay(seamCover(isFocused: isFocused, hasError: hasError, position: position))
-            } else {
-                input
-                    .background(theme.inputBackgroundColor)
-                    .overlay(inputBorder(isFocused: isFocused, hasError: hasError))
-                    .clipShape(RoundedRectangle(cornerRadius: theme.inputBorderRadius))
-            }
-        }
-        // Drawn after the corner clip so the ring can sit outside the border.
-        .overlay(focusRing(isFocused: isFocused, position: position))
-    }
-
-    /// Whether the theme asks for one collapsed block of inputs. Only the boxed style can collapse;
-    /// an underline has no shared edges to merge.
-    private var isCollapsed: Bool {
-        theme.inputBorderCollapse && theme.inputBorderStyle == .boxed
-    }
-
-    /// The sides and corners a collapsed field draws, for the current layout direction and for
-    /// whichever neighbours it actually touches right now: an inline error under the card number
-    /// opens the gap between the rows for as long as it is on screen.
-    private func collapsedEdges(_ position: GopayCollapsedInputPosition) -> GopayCollapsedBorderEdges {
-        gopayCollapsedBorderEdges(
-            position: position,
-            layoutDirection: layoutDirection,
-            rowsTouch: theme.collapsedRowsTouch(cardNumberError: errors.cardNumber),
-            bottomRowTouches: theme.collapsedBottomRowTouches
-        )
-    }
-
-    /// The background of a collapsed input, rounded only on the corners that sit on the outside of
-    /// the block.
-    private func collapsedBackground(position: GopayCollapsedInputPosition) -> some View {
-        GopayPartiallyRoundedRectangle(
-            radius: theme.inputBorderRadius,
-            corners: collapsedEdges(position).corners
-        )
-        .fill(theme.inputBackgroundColor)
-        .physicalSides()
-    }
-
-    /// The edges a collapsed input owns, in the color of its state.
-    @ViewBuilder
-    private func collapsedBorder(
-        isFocused: Bool,
-        hasError: Bool,
-        position: GopayCollapsedInputPosition
-    ) -> some View {
-        if theme.inputBorderWidth > 0 {
-            GopayCollapsedInputBorder(
-                radius: theme.inputBorderRadius,
-                lineWidth: theme.inputBorderWidth,
-                edges: collapsedEdges(position)
-            )
-            .stroked(theme.borderColor(isFocused: isFocused, hasError: hasError))
-            .physicalSides()
-        }
-    }
-
-    /// The neighbour's side of every line a focused or invalid collapsed input shares, repainted
-    /// in the color of its state, so the seam shows one line the way the web recolors the single
-    /// border of a cell in a state.
-    @ViewBuilder
-    private func seamCover(
-        isFocused: Bool,
-        hasError: Bool,
-        position: GopayCollapsedInputPosition
-    ) -> some View {
-        if theme.inputBorderWidth > 0, isFocused || hasError {
-            GopayCollapsedSeamCover(lineWidth: theme.inputBorderWidth, edges: collapsedEdges(position))
-                .fill(theme.borderColor(isFocused: isFocused, hasError: hasError))
-                .physicalSides()
-        }
+        return input
+            .background(theme.inputBackgroundColor)
+            .overlay(inputBorder(isFocused: isFocused, hasError: hasError))
+            .clipShape(RoundedRectangle(cornerRadius: theme.inputBorderRadius))
+            // Drawn after the corner clip so the ring can sit outside the border.
+            .overlay(focusRing(isFocused: isFocused))
     }
 
     /// The border of a standalone input, in whichever style the theme asks for.
@@ -455,20 +351,15 @@ public struct GopayCardForm: View {
     }
 
     /// The optional ring outside the border of a focused field. It is drawn as an overlay, so it
-    /// never moves the surrounding layout. Inside a collapsed block it rounds only the corners the
-    /// field itself rounds, so it follows the outline of the block.
+    /// never moves the surrounding layout.
     @ViewBuilder
-    private func focusRing(isFocused: Bool, position: GopayCollapsedInputPosition) -> some View {
+    private func focusRing(isFocused: Bool) -> some View {
         if isFocused, let ring = theme.resolvedFocusRing {
             // The border is drawn inside the field now, so the ring only has to clear itself.
             let inset = ring.width / 2
-            GopayPartiallyRoundedRectangle(
-                radius: theme.inputBorderRadius + inset,
-                corners: isCollapsed ? collapsedEdges(position).corners : .allCorners
-            )
-            .stroke(ring.color, lineWidth: ring.width)
-            .padding(-inset)
-            .physicalSides()
+            RoundedRectangle(cornerRadius: theme.inputBorderRadius + inset)
+                .stroke(ring.color, lineWidth: ring.width)
+                .padding(-inset)
         }
     }
 
@@ -479,7 +370,6 @@ public struct GopayCardForm: View {
                 label: localeStrings.panLabel,
                 error: errors.cardNumber,
                 isFocused: isCardNumberFocused,
-                position: .top
             ) {
                     FormattedTextField(
                         placeholder: localeStrings.panPlaceholder,
@@ -523,7 +413,6 @@ public struct GopayCardForm: View {
                     label: localeStrings.expLabel,
                     error: errors.expiration,
                     isFocused: isExpirationFocused,
-                    position: .bottomStart
                 ) {
                         FormattedTextField(
                             placeholder: localeStrings.expPlaceholder,
@@ -570,7 +459,6 @@ public struct GopayCardForm: View {
                     label: localeStrings.cvvLabel,
                     error: errors.cvv,
                     isFocused: isCvvFocused,
-                    position: .bottomEnd
                 ) {
                         FormattedTextField(
                             placeholder: localeStrings.cvvPlaceholder,
@@ -601,8 +489,6 @@ public struct GopayCardForm: View {
                         )
                 }
             }
-            // The row rises as a whole, so a field in a state also paints over the row above it.
-            .zIndex(bottomRowElevation)
         }
         .padding(theme.formPadding)
         .background(theme.formBackgroundColor)
@@ -624,14 +510,6 @@ public struct GopayCardForm: View {
         if isValid != nil {
             isValid = data.isValid
         }
-    }
-}
-
-private extension View {
-    /// Keeps a shape that is already resolved to physical sides from being mirrored again in a
-    /// right-to-left layout, which SwiftUI does to shapes by default.
-    func physicalSides() -> some View {
-        environment(\.layoutDirection, .leftToRight)
     }
 }
 
