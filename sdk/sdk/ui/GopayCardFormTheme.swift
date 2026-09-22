@@ -590,11 +590,16 @@ extension GopayCardFormTheme {
         Font(errorUIFont(for: sizeCategory) as CTFont)
     }
 
-    /// The input font. `UITextField` rescales it for Dynamic Type on its own, so it is built from
-    /// the metrics of the body text style without a category of its own.
-    var inputUIFont: UIFont {
-        let weight = inputFontWeight.map(Self.uiFontWeight) ?? .regular
-        return UIFontMetrics(forTextStyle: .body).scaledFont(for: baseFont(size: inputFontSize, weight: weight))
+    /// The input font, scaled for the given Dynamic Type category the way the body text style
+    /// scales. The category comes from the environment, as it does for the labels and the error
+    /// text, so all three follow the same one even where a preview or a test overrides it.
+    func inputUIFont(for sizeCategory: ContentSizeCategory) -> UIFont {
+        scaledFont(
+            size: inputFontSize,
+            weight: inputFontWeight.map(Self.uiFontWeight) ?? .regular,
+            textStyle: .body,
+            sizeCategory: sizeCategory
+        )
     }
 
     /// Scales a length the way the caption text style scales, so a themed line height or reserved

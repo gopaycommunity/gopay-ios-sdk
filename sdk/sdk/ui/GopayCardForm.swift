@@ -270,9 +270,10 @@ public struct GopayCardForm: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         let input = content()
-            // The text field is flexible in both directions; keep its intrinsic height so a taller
-            // sibling column (label or error text) never stretches it.
-            .fixedSize(horizontal: false, vertical: true)
+            // The row decides how tall its fields are, so the three of them match whatever they
+            // show; a field left to itself measures its own glyphs and a masked one comes out
+            // shorter. A taller sibling column never stretches them either.
+            .frame(height: rowInputHeight)
             // A fixed input height takes precedence over the vertical padding, as it does on the web.
             .padding(.vertical, theme.inputHeight == nil ? theme.inputPaddingVertical : 0)
             .padding(.horizontal, theme.inputPaddingHorizontal)
@@ -284,6 +285,20 @@ public struct GopayCardForm: View {
             // `strokeBorder` keeps the whole line inside the field, so the border needs no
             // measuring of its own and the field stays the size the layout gave it.
             .overlay(shape.strokeBorder(theme.borderColor(hasError: hasError), lineWidth: borderWidth))
+    }
+
+    /// Height the three inputs share, in points.
+    ///
+    /// Read from the themed font rather than from what any one field measures: a `UITextField`
+    /// sizes itself to its content, and secure entry swaps digits for bullets, which measure
+    /// lower, so leaving each field to itself steps the CVV out of its row. The font's line
+    /// height rounded up, plus the point a text field keeps for the caret, is what the three
+    /// fields took before.
+    ///
+    /// It lives here rather than on the theme because it is not a design decision: it is the row
+    /// deciding how tall its cells are, the way a parent owns the layout of its children.
+    private var rowInputHeight: CGFloat {
+        ceil(theme.inputUIFont(for: sizeCategory).lineHeight) + 1
     }
 
     /// Width of the input border. A theme can only ask for a positive one; anything else draws
@@ -316,7 +331,7 @@ public struct GopayCardForm: View {
                         }
                     ),
                     formatter: .cardNumber,
-                    font: theme.inputUIFont,
+                    font: theme.inputUIFont(for: sizeCategory),
                     textColor: UIColor.from(theme.inputTextColor),
                     placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                     accessibilityLabel: hiddenLabel(localeStrings.panLabel),
@@ -358,7 +373,7 @@ public struct GopayCardForm: View {
                             }
                         ),
                         formatter: .expiration,
-                        font: theme.inputUIFont,
+                        font: theme.inputUIFont(for: sizeCategory),
                         textColor: UIColor.from(theme.inputTextColor),
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                         accessibilityLabel: hiddenLabel(localeStrings.expLabel),
@@ -397,7 +412,7 @@ public struct GopayCardForm: View {
                             }
                         ),
                         formatter: .cvv,
-                        font: theme.inputUIFont,
+                        font: theme.inputUIFont(for: sizeCategory),
                         textColor: UIColor.from(theme.inputTextColor),
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                         accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),

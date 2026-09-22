@@ -128,7 +128,7 @@ struct GopayCardFormThemeTests {
         theme.inputFontSize = 14
         theme.inputFontWeight = 600
 
-        let font = theme.inputUIFont
+        let font = theme.inputUIFont(for: .large)
         let traits = font.fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
 
         #expect(font.pointSize == 14)
@@ -136,7 +136,7 @@ struct GopayCardFormThemeTests {
     }
 
     @Test func inputFont_defaultMatchesTheBodyTextStyle() {
-        #expect(GopayCardFormTheme.standard.inputUIFont.pointSize
+        #expect(GopayCardFormTheme.standard.inputUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .body).pointSize)
     }
 
@@ -164,14 +164,14 @@ struct GopayCardFormThemeTests {
         var theme = GopayCardFormTheme()
         theme.fontFamily = "NoSuchFontIsRegistered"
 
-        #expect(theme.inputUIFont.familyName == UIFont.systemFont(ofSize: 17).familyName)
+        #expect(theme.inputUIFont(for: .large).familyName == UIFont.systemFont(ofSize: 17).familyName)
     }
 
     @Test func fontFamily_usesARegisteredFont() {
         var theme = GopayCardFormTheme()
         theme.fontFamily = "Georgia"
 
-        #expect(theme.inputUIFont.familyName == "Georgia")
+        #expect(theme.inputUIFont(for: .large).familyName == "Georgia")
     }
 
     @Test func errorFont_usesTheThemedErrorSize() {
