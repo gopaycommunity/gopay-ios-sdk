@@ -1,18 +1,14 @@
 import SwiftUI
 import UIKit
 
-/// How ``GopayCardForm`` draws the border of its inputs.
-///
-/// Mirrors the `inputBorderStyle` key of the web cc-v4 card form theme.
+/// Border style of the inputs, carrying the values of the web `inputBorderStyle` key so one theme
+/// travels between channels.
 public enum GopayCardFormBorderStyle: String, Codable, Equatable {
-    /// A full border around the input. The focus state paints it with
-    /// ``GopayCardFormTheme/focusGradientStart``.
+    /// A border around the whole input.
     case boxed
-    /// A bottom line only, following the rounded bottom corners of the input the way a CSS
-    /// `border-bottom` follows a `border-radius`. The focus state paints it with a
-    /// ``GopayCardFormTheme/focusGradientStart`` to ``GopayCardFormTheme/focusGradientEnd``
-    /// gradient running from the leading edge. The web animates that gradient; on mobile it is
-    /// static.
+    /// A bottom line only. **Not supported on iOS**, which has no native underlined text field and
+    /// where the SDK draws nothing of its own: the value is accepted and the input is rendered as
+    /// ``boxed``. Android renders it with the native Material indicator.
     case underline
 }
 
@@ -22,12 +18,16 @@ public enum GopayCardFormBorderStyle: String, Codable, Equatable {
 /// theme can be described once and applied on the web, on iOS and on Android. The web-only keys
 /// (`submit*`, `errorHidden`) are not part of this type; see the parity table in the README.
 ///
-/// Every parameter is optional. **The default shape is the web card form's**: the underline border,
-/// square corners, the same paddings, type sizes, spacings and reserved error line, so a form
-/// nobody themed is laid out the same on all three channels and a theme document only has to carry
-/// what it actually changes. **Colors are the exception and follow the platform**, so the form
-/// stays readable in dark mode; the focus gradient is the web's, because the system has no
-/// equivalent for it. A host that wants the web's exact palette sets those colors in its theme.
+/// The set is the part of the web theme a native field can carry: every parameter here is a
+/// property of the text field itself or of the layout around it, and the SDK draws nothing of its
+/// own. The web keys that only a custom-drawn form could honour are not part of this type; see the
+/// parity table in the README.
+///
+/// Every parameter is optional. **The default shape is the web card form's**: square corners, the
+/// same paddings, type sizes, spacings and reserved error line, so a form nobody themed is laid
+/// out the same on all three channels and a theme document only has to carry what it actually
+/// changes. **Colors are the exception and follow the platform**, so the form stays readable in
+/// dark mode. A host that wants the web's exact palette sets those colors in its theme.
 ///
 /// The type is `Codable` with colors bridged to hex strings (`"#RGB"`, `"#RGBA"`, `"#RRGGBB"`,
 /// `"#RRGGBBAA"` or `"transparent"`), so a JSON theme travels between channels. Decoding is deliberately tolerant:
@@ -74,12 +74,6 @@ public struct GopayCardFormTheme: Equatable {
     public var inputFontSize: CGFloat
     /// Font weight of the input text, on the CSS scale 100...900. `nil` means regular.
     public var inputFontWeight: Int?
-    /// Accepted for portability of a web theme and ignored. On the web it pins the input height
-    /// across browser engines; on iOS the height follows the font, the padding and
-    /// ``inputHeight``.
-    public var inputLineHeight: CGFloat?
-    /// Letter spacing of the input text, in points. `nil` means none.
-    public var inputLetterSpacing: CGFloat?
     /// Fixed height of the inputs, in points. Takes precedence over the vertical padding.
     /// `nil` derives the height from the font and the padding.
     public var inputHeight: CGFloat?
@@ -102,35 +96,6 @@ public struct GopayCardFormTheme: Equatable {
     public var inputPaddingHorizontal: CGFloat
     /// Corner radius of the inputs, in points.
     public var inputBorderRadius: CGFloat
-    /// Collapses the borders of adjacent boxed inputs into one shared line, so the fields read as
-    /// a single block: ``inputBorderRadius`` then rounds only the outer corners of the block.
-    /// Ignored by the underline style, which has no shared edges to merge.
-    ///
-    /// For one seamless block, pair it with `groupSpacing: 0`, `fieldSpacing: 0`,
-    /// `labelHidden: true` and `errorMinHeight: 0`, the same recipe the web form documents.
-    ///
-    /// Only the lines between fields that actually touch are shared. Anything that opens a gap —
-    /// ``groupSpacing``, a visible label above the bottom row, a slot reserved by
-    /// ``errorMinHeight`` — makes those fields draw a full frame again, so a field never floats
-    /// with a side missing. An inline error message that appears while the user types opens the
-    /// same gap for as long as it is on screen.
-    public var inputBorderCollapse: Bool
-
-    // MARK: - Focus ring
-
-    /// Width of a ring drawn outside the border of a focused input, in points. Needs
-    /// ``focusRingColor`` as well; `nil` draws no ring.
-    public var focusRingWidth: CGFloat?
-    /// Color of the focus ring. Needs ``focusRingWidth`` as well; `nil` draws no ring.
-    public var focusRingColor: Color?
-
-    // MARK: - Focus gradient
-
-    /// Focus color of a boxed border, and the leading color of an underline focus gradient.
-    public var focusGradientStart: Color
-    /// Trailing color of an underline focus gradient. The boxed style ignores it, as the web does.
-    public var focusGradientEnd: Color
-
     // MARK: - Validation errors
 
     /// Border color of an input holding invalid content.
@@ -160,8 +125,7 @@ public struct GopayCardFormTheme: Equatable {
     public var formBackgroundColor: Color
 
     /// Creates a custom theme. Every length, size and style parameter defaults to the web card
-    /// form's value; the colors follow the system palette instead, apart from the focus gradient,
-    /// which is the web's.
+    /// form's value; the colors follow the system palette instead.
     public init(
         fontFamily: String? = nil,
         labelColor: Color = .primary,
@@ -174,8 +138,6 @@ public struct GopayCardFormTheme: Equatable {
         inputTextColor: Color = .primary,
         inputFontSize: CGFloat = 14,
         inputFontWeight: Int? = nil,
-        inputLineHeight: CGFloat? = nil,
-        inputLetterSpacing: CGFloat? = nil,
         inputHeight: CGFloat? = nil,
         placeholderColor: Color? = nil,
         inputBorderStyle: GopayCardFormBorderStyle = .underline,
@@ -185,11 +147,6 @@ public struct GopayCardFormTheme: Equatable {
         inputPaddingVertical: CGFloat = 6,
         inputPaddingHorizontal: CGFloat = 0,
         inputBorderRadius: CGFloat = 0,
-        inputBorderCollapse: Bool = false,
-        focusRingWidth: CGFloat? = nil,
-        focusRingColor: Color? = nil,
-        focusGradientStart: Color = Color(red: 25 / 255, green: 199 / 255, blue: 214 / 255),
-        focusGradientEnd: Color = Color(red: 24 / 255, green: 153 / 255, blue: 214 / 255),
         inputErrorBorderColor: Color = .red,
         errorTextColor: Color = .red,
         errorFontSize: CGFloat = 11,
@@ -211,8 +168,6 @@ public struct GopayCardFormTheme: Equatable {
         self.inputTextColor = inputTextColor
         self.inputFontSize = inputFontSize
         self.inputFontWeight = inputFontWeight
-        self.inputLineHeight = inputLineHeight
-        self.inputLetterSpacing = inputLetterSpacing
         self.inputHeight = inputHeight
         self.placeholderColor = placeholderColor
         self.inputBorderStyle = inputBorderStyle
@@ -222,11 +177,6 @@ public struct GopayCardFormTheme: Equatable {
         self.inputPaddingVertical = inputPaddingVertical
         self.inputPaddingHorizontal = inputPaddingHorizontal
         self.inputBorderRadius = inputBorderRadius
-        self.inputBorderCollapse = inputBorderCollapse
-        self.focusRingWidth = focusRingWidth
-        self.focusRingColor = focusRingColor
-        self.focusGradientStart = focusGradientStart
-        self.focusGradientEnd = focusGradientEnd
         self.inputErrorBorderColor = inputErrorBorderColor
         self.errorTextColor = errorTextColor
         self.errorFontSize = errorFontSize
@@ -243,10 +193,10 @@ public struct GopayCardFormTheme: Equatable {
 
     /// Ceiling for any length read from a JSON theme document, in points.
     ///
-    /// Well past any real design value, but low enough that the geometry the lengths feed stays
-    /// finite: an unbounded border width degenerates the collapsed outline, and an unbounded
-    /// height overflows the layout. A document is read defensively and must never be able to
-    /// fail the form, so the decoder drops anything beyond this rather than passing it on.
+    /// Well past any real design value, but low enough that the layout the lengths feed stays
+    /// finite: an unbounded height or padding overflows the form. A document is read defensively
+    /// and must never be able to fail the form, so the decoder drops anything beyond this rather
+    /// than passing it on.
     static let lengthLimit: CGFloat = 10_000
 }
 
@@ -283,11 +233,10 @@ extension GopayCardFormTheme: Codable {
         case fontFamily
         case labelColor, labelFontSize, labelFontWeight, labelLineHeight
         case labelUppercase, labelLetterSpacing, labelHidden
-        case inputTextColor, inputFontSize, inputFontWeight, inputLineHeight
-        case inputLetterSpacing, inputHeight, placeholderColor
+        case inputTextColor, inputFontSize, inputFontWeight
+        case inputHeight, placeholderColor
         case inputBorderStyle, inputBorderColor, inputBorderWidth, inputBackgroundColor
-        case inputPaddingVertical, inputPaddingHorizontal, inputBorderRadius, inputBorderCollapse
-        case focusRingWidth, focusRingColor, focusGradientStart, focusGradientEnd
+        case inputPaddingVertical, inputPaddingHorizontal, inputBorderRadius
         case inputErrorBorderColor, errorTextColor, errorFontSize, errorMinHeight, errorSpacing
         case groupSpacing, fieldSpacing, formPadding, formBackgroundColor
     }
@@ -316,8 +265,6 @@ extension GopayCardFormTheme: Codable {
             inputTextColor: keys.color(.inputTextColor) ?? fallback.inputTextColor,
             inputFontSize: keys.length(.inputFontSize) ?? fallback.inputFontSize,
             inputFontWeight: keys.fontWeight(.inputFontWeight) ?? fallback.inputFontWeight,
-            inputLineHeight: keys.length(.inputLineHeight) ?? fallback.inputLineHeight,
-            inputLetterSpacing: keys.signedLength(.inputLetterSpacing) ?? fallback.inputLetterSpacing,
             inputHeight: keys.length(.inputHeight) ?? fallback.inputHeight,
             placeholderColor: keys.color(.placeholderColor) ?? fallback.placeholderColor,
             inputBorderStyle: keys.borderStyle(.inputBorderStyle) ?? fallback.inputBorderStyle,
@@ -327,11 +274,6 @@ extension GopayCardFormTheme: Codable {
             inputPaddingVertical: keys.length(.inputPaddingVertical) ?? fallback.inputPaddingVertical,
             inputPaddingHorizontal: keys.length(.inputPaddingHorizontal) ?? fallback.inputPaddingHorizontal,
             inputBorderRadius: keys.length(.inputBorderRadius) ?? fallback.inputBorderRadius,
-            inputBorderCollapse: keys.value(Bool.self, .inputBorderCollapse) ?? fallback.inputBorderCollapse,
-            focusRingWidth: keys.length(.focusRingWidth) ?? fallback.focusRingWidth,
-            focusRingColor: keys.color(.focusRingColor) ?? fallback.focusRingColor,
-            focusGradientStart: keys.color(.focusGradientStart) ?? fallback.focusGradientStart,
-            focusGradientEnd: keys.color(.focusGradientEnd) ?? fallback.focusGradientEnd,
             inputErrorBorderColor: keys.color(.inputErrorBorderColor) ?? fallback.inputErrorBorderColor,
             errorTextColor: keys.color(.errorTextColor) ?? fallback.errorTextColor,
             errorFontSize: keys.length(.errorFontSize) ?? fallback.errorFontSize,
@@ -462,8 +404,6 @@ extension GopayCardFormTheme: Codable {
         try container.encode(inputTextColor.gopayHex, forKey: .inputTextColor)
         try container.encode(inputFontSize, forKey: .inputFontSize)
         try container.encodeIfPresent(inputFontWeight, forKey: .inputFontWeight)
-        try container.encodeIfPresent(inputLineHeight, forKey: .inputLineHeight)
-        try container.encodeIfPresent(inputLetterSpacing, forKey: .inputLetterSpacing)
         try container.encodeIfPresent(inputHeight, forKey: .inputHeight)
         try container.encodeIfPresent(placeholderColor?.gopayHex, forKey: .placeholderColor)
         try container.encode(inputBorderStyle, forKey: .inputBorderStyle)
@@ -473,11 +413,6 @@ extension GopayCardFormTheme: Codable {
         try container.encode(inputPaddingVertical, forKey: .inputPaddingVertical)
         try container.encode(inputPaddingHorizontal, forKey: .inputPaddingHorizontal)
         try container.encode(inputBorderRadius, forKey: .inputBorderRadius)
-        try container.encode(inputBorderCollapse, forKey: .inputBorderCollapse)
-        try container.encodeIfPresent(focusRingWidth, forKey: .focusRingWidth)
-        try container.encodeIfPresent(focusRingColor?.gopayHex, forKey: .focusRingColor)
-        try container.encode(focusGradientStart.gopayHex, forKey: .focusGradientStart)
-        try container.encode(focusGradientEnd.gopayHex, forKey: .focusGradientEnd)
         try container.encode(inputErrorBorderColor.gopayHex, forKey: .inputErrorBorderColor)
         try container.encode(errorTextColor.gopayHex, forKey: .errorTextColor)
         try container.encode(errorFontSize, forKey: .errorFontSize)

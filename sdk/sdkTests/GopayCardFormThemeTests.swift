@@ -30,16 +30,12 @@ struct GopayCardFormThemeTests {
         #expect(theme.labelHidden == false)
         #expect(theme.inputFontSize == 14)
         #expect(theme.inputFontWeight == nil)
-        #expect(theme.inputLineHeight == nil)
-        #expect(theme.inputLetterSpacing == nil)
         #expect(theme.inputHeight == nil)
         #expect(theme.inputBorderStyle == .underline)
         #expect(theme.inputBorderWidth == 1)
         #expect(theme.inputPaddingVertical == 6)
         #expect(theme.inputPaddingHorizontal == 0)
         #expect(theme.inputBorderRadius == 0)
-        #expect(theme.inputBorderCollapse == false)
-        #expect(theme.focusRingWidth == nil)
         #expect(theme.errorFontSize == 11)
         #expect(theme.errorMinHeight == 14)
         #expect(theme.errorSpacing == nil)
@@ -55,13 +51,10 @@ struct GopayCardFormThemeTests {
         #expect(theme.inputTextColor == .primary)
         #expect(theme.inputBorderColor == Color(.separator))
         #expect(theme.inputBackgroundColor == .clear)
-        #expect(theme.focusGradientStart == Color(gopayHex: "#19c7d6"))
-        #expect(theme.focusGradientEnd == Color(gopayHex: "#1899d6"))
         #expect(theme.inputErrorBorderColor == .red)
         #expect(theme.errorTextColor == .red)
         #expect(theme.formBackgroundColor == .clear)
         #expect(theme.placeholderColor == nil)
-        #expect(theme.focusRingColor == nil)
     }
 
     // MARK: - Font weights
@@ -212,8 +205,8 @@ struct GopayCardFormThemeTests {
         var theme = GopayCardFormTheme()
         theme.labelColor = try #require(Color(gopayHex: "#4b5e68"))
         theme.inputBorderColor = try #require(Color(gopayHex: "#698492"))
-        theme.focusGradientStart = try #require(Color(gopayHex: "#19c7d6"))
-        theme.focusGradientEnd = try #require(Color(gopayHex: "#1899d6"))
+        theme.inputErrorBorderColor = try #require(Color(gopayHex: "#ea3c55"))
+        theme.errorTextColor = try #require(Color(gopayHex: "#cc0000"))
         theme.inputBackgroundColor = try #require(Color(gopayHex: "#1a1f2e80"))
         theme.formBackgroundColor = .clear
 
@@ -222,8 +215,8 @@ struct GopayCardFormThemeTests {
 
         #expect(decoded.labelColor.gopayHex == "#4B5E68")
         #expect(decoded.inputBorderColor.gopayHex == "#698492")
-        #expect(decoded.focusGradientStart.gopayHex == "#19C7D6")
-        #expect(decoded.focusGradientEnd.gopayHex == "#1899D6")
+        #expect(decoded.inputErrorBorderColor.gopayHex == "#EA3C55")
+        #expect(decoded.errorTextColor.gopayHex == "#CC0000")
         #expect(decoded.inputBackgroundColor.gopayHex == "#1A1F2E80")
         #expect(decoded.formBackgroundColor.gopayHex == "transparent")
     }
@@ -235,14 +228,15 @@ struct GopayCardFormThemeTests {
         #expect(json["inputBorderStyle"] as? String == "underline")
         #expect(json["groupSpacing"] as? Double == 16)
         #expect(json["fontFamily"] == nil)
-        #expect(json["focusRingWidth"] == nil)
+        #expect(json["inputHeight"] == nil)
         #expect(json["placeholderColor"] == nil)
-        #expect(json["inputLineHeight"] == nil)
+        #expect(json["errorSpacing"] == nil)
     }
 
     // MARK: - Decoding a web theme
 
-    /// The DEFAULT_CARD_FORM_THEME preset the web SDK ships, submit* and errorHidden keys and all.
+    /// The DEFAULT_CARD_FORM_THEME preset the web SDK ships, with every key this SDK does not
+    /// carry: the submit set, errorHidden, and the focus gradient the cut left to the web.
     @Test func decode_appliesKnownKeysAndIgnoresWebOnlyOnes() throws {
         let json = """
         {
@@ -329,7 +323,6 @@ struct GopayCardFormThemeTests {
           "inputFontSize": -14,
           "errorFontSize": -11,
           "inputHeight": -40,
-          "focusRingWidth": -3,
           "errorSpacing": -3,
           "labelLineHeight": -12,
           "inputPaddingHorizontal": "12px"
@@ -352,17 +345,15 @@ struct GopayCardFormThemeTests {
         #expect(theme.errorFontSize == standard.errorFontSize)
         // The optional lengths simply stay unset rather than carrying a negative into layout.
         #expect(theme.inputHeight == nil)
-        #expect(theme.focusRingWidth == nil)
         #expect(theme.errorSpacing == nil)
         #expect(theme.labelLineHeight == nil)
     }
 
     @Test func decode_letterSpacingMayBeNegative() throws {
-        let json = "{ \"labelLetterSpacing\": -0.5, \"inputLetterSpacing\": -1 }"
+        let json = "{ \"labelLetterSpacing\": -0.5 }"
         let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
 
         #expect(theme.labelLetterSpacing == -0.5)
-        #expect(theme.inputLetterSpacing == -1)
     }
 
     @Test func decode_unparsableColorFallsBackToTheDefault() throws {
@@ -381,7 +372,7 @@ struct GopayCardFormThemeTests {
           "labelFontSize": "12",
           "labelHidden": "yes",
           "labelColor": 4473924,
-          "inputBorderCollapse": 1,
+          "labelUppercase": 1,
           "fontFamily": 12,
           "groupSpacing": 20,
           "inputBorderColor": "#698492"
@@ -395,7 +386,7 @@ struct GopayCardFormThemeTests {
         #expect(theme.labelFontSize == standard.labelFontSize)
         #expect(theme.labelHidden == standard.labelHidden)
         #expect(theme.labelColor == standard.labelColor)
-        #expect(theme.inputBorderCollapse == standard.inputBorderCollapse)
+        #expect(theme.labelUppercase == standard.labelUppercase)
         #expect(theme.fontFamily == nil)
         #expect(theme.groupSpacing == 20)
         #expect(theme.inputBorderColor.gopayHex == "#698492")
@@ -407,12 +398,12 @@ struct GopayCardFormThemeTests {
         defer { GopayCardFormTheme.reportDroppedKey = previous }
         GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
 
-        let json = "{ \"placeholderColor\": null, \"inputLetterSpacing\": null }"
+        let json = "{ \"placeholderColor\": null, \"labelLetterSpacing\": null }"
         let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
 
         #expect(theme.placeholderColor == nil)
-        #expect(theme.inputLetterSpacing == nil)
-        #expect(!reported.contains { $0.contains("placeholderColor") || $0.contains("inputLetterSpacing") })
+        #expect(theme.labelLetterSpacing == nil)
+        #expect(!reported.contains { $0.contains("placeholderColor") || $0.contains("labelLetterSpacing") })
     }
 
     @Test func decode_fontWeightAcceptsTheCssKeywords() throws {
@@ -462,18 +453,14 @@ struct GopayCardFormThemeTests {
         brand.labelLineHeight = 21
         brand.labelLetterSpacing = 2
         brand.inputFontWeight = 700
-        brand.inputLineHeight = 24
-        brand.inputLetterSpacing = 1
         brand.inputHeight = 56
         brand.placeholderColor = .orange
-        brand.focusRingWidth = 3
-        brand.focusRingColor = .green
         brand.errorSpacing = 9
 
         // Doubled delimiters: the value itself contains a "# sequence.
-        let merged = brand.applying(##"{"focusGradientStart": "#19c7d6"}"##)
+        let merged = brand.applying(##"{"inputBorderColor": "#19c7d6"}"##)
 
-        #expect(merged.focusGradientStart == Color(gopayHex: "#19c7d6"))
+        #expect(merged.inputBorderColor == Color(gopayHex: "#19c7d6"))
         #expect(merged.labelColor == brand.labelColor)
         #expect(merged.inputBorderRadius == brand.inputBorderRadius)
         #expect(merged.groupSpacing == brand.groupSpacing)
@@ -481,12 +468,8 @@ struct GopayCardFormThemeTests {
         #expect(merged.labelLineHeight == brand.labelLineHeight)
         #expect(merged.labelLetterSpacing == brand.labelLetterSpacing)
         #expect(merged.inputFontWeight == brand.inputFontWeight)
-        #expect(merged.inputLineHeight == brand.inputLineHeight)
-        #expect(merged.inputLetterSpacing == brand.inputLetterSpacing)
         #expect(merged.inputHeight == brand.inputHeight)
         #expect(merged.placeholderColor == brand.placeholderColor)
-        #expect(merged.focusRingWidth == brand.focusRingWidth)
-        #expect(merged.focusRingColor == brand.focusRingColor)
         #expect(merged.errorSpacing == brand.errorSpacing)
     }
 
@@ -526,7 +509,7 @@ struct GopayCardFormThemeTests {
         let json = """
         {
           "inputFontWeight": "heavy",
-          "inputLineHeight": true,
+          "labelLineHeight": true,
           "formBackgroundColor": "#12",
           "labelLetterSpacing": "wide",
           "labelUppercase": true
@@ -534,7 +517,7 @@ struct GopayCardFormThemeTests {
         """
         _ = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
 
-        for key in ["inputFontWeight", "inputLineHeight", "formBackgroundColor", "labelLetterSpacing"] {
+        for key in ["inputFontWeight", "labelLineHeight", "formBackgroundColor", "labelLetterSpacing"] {
             #expect(reported.filter { $0.contains("\"\(key)\"") }.count == 1, "\(key) reported once")
         }
         #expect(!reported.contains { $0.contains("labelUppercase") })

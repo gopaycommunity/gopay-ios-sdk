@@ -57,8 +57,6 @@ enum CheckoutTheme {
             inputPaddingVertical: 14,
             inputPaddingHorizontal: 14,
             inputBorderRadius: controlRadius,
-            focusGradientStart: accent,
-            focusGradientEnd: accent,
             inputErrorBorderColor: danger,
             errorTextColor: danger,
             groupSpacing: 14
