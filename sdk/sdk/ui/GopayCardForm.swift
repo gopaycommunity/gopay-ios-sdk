@@ -130,9 +130,6 @@ public struct GopayCardForm: View {
     /// Read so the theme's fonts rescale when the user changes the Dynamic Type size.
     @Environment(\.sizeCategory) private var sizeCategory
 
-    /// Read so the underline focus gradient starts at the leading edge.
-    @Environment(\.layoutDirection) private var layoutDirection
-
     @State private var isCardNumberFocused: Bool = false
     @State private var isExpirationFocused: Bool = false
     @State private var isCvvFocused: Bool = false
@@ -255,13 +252,12 @@ public struct GopayCardForm: View {
     private func field<Content: View>(
         label: String,
         error: String?,
-        isFocused: Bool,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             fieldLabel(label)
 
-            inputContainer(isFocused: isFocused, hasError: error != nil, content: content)
+            inputContainer(hasError: error != nil, content: content)
             .padding(.top, theme.labelHidden ? 0 : theme.fieldSpacing)
 
             errorSlot(error)
@@ -270,7 +266,6 @@ public struct GopayCardForm: View {
 
     /// Wraps an input in the theme's padding, background and border.
     private func inputContainer<Content: View>(
-        isFocused: Bool,
         hasError: Bool,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -283,125 +278,59 @@ public struct GopayCardForm: View {
             .padding(.horizontal, theme.inputPaddingHorizontal)
             .frame(height: theme.inputHeight)
 
+        let shape = RoundedRectangle(cornerRadius: theme.inputBorderRadius)
         return input
-            .background(theme.inputBackgroundColor)
-            .overlay(inputBorder(isFocused: isFocused, hasError: hasError))
-            .clipShape(RoundedRectangle(cornerRadius: theme.inputBorderRadius))
-            // Drawn after the corner clip so the ring can sit outside the border.
-            .overlay(focusRing(isFocused: isFocused))
+            .background(shape.fill(theme.inputBackgroundColor))
+            // `strokeBorder` keeps the whole line inside the field, so the border needs no
+            // measuring of its own and the field stays the size the layout gave it.
+            .overlay(shape.strokeBorder(theme.borderColor(hasError: hasError), lineWidth: borderWidth))
     }
 
-    /// The border of a standalone input, in whichever style the theme asks for.
-    @ViewBuilder
-    private func inputBorder(isFocused: Bool, hasError: Bool) -> some View {
-        switch theme.inputBorderStyle {
-        case _ where theme.inputBorderWidth <= 0:
-            EmptyView()
-        case .boxed:
-            // Inset by half the width: the stroke is centred on the path, and the container clips
-            // to the same shape, so without this the outer half is cut and the line renders at
-            // half the requested weight. Android and the web draw the whole line. The inset needs
-            // the field's size, because past a point it has to be clamped, see
-            // ``GopayCardFormTheme/boxedBorderInset(in:)``.
-            GeometryReader { proxy in
-                RoundedRectangle(cornerRadius: theme.inputBorderRadius)
-                    .inset(by: theme.boxedBorderInset(in: proxy.size))
-                    .stroke(
-                        theme.borderColor(isFocused: isFocused, hasError: hasError),
-                        lineWidth: theme.inputBorderWidth
-                    )
-            }
-        case .underline:
-            underline(isFocused: isFocused, hasError: hasError)
-        }
+    /// Width of the input border. A theme can only ask for a positive one; anything else draws
+    /// nothing at all rather than a hairline the theme did not order.
+    private var borderWidth: CGFloat {
+        max(0, theme.inputBorderWidth)
     }
 
-    /// The bottom line of an underlined input. It follows the rounded bottom corners the way a CSS
-    /// `border-bottom` follows a `border-radius`. A focused field draws it as a gradient from
-    /// `focusGradientStart` to `focusGradientEnd`; the web animates that gradient, mobile does not.
-    private func underline(isFocused: Bool, hasError: Bool) -> some View {
-        let line = GopayInputUnderline(radius: theme.inputBorderRadius, lineWidth: theme.inputBorderWidth)
-        return Group {
-            if isFocused {
-                line.stroke(
-                    LinearGradient(
-                        gradient: Gradient(colors: [theme.focusGradientStart, theme.focusGradientEnd]),
-                        startPoint: underlineGradientStart,
-                        endPoint: underlineGradientEnd
-                    ),
-                    lineWidth: theme.inputBorderWidth
-                )
-            } else {
-                line.stroke(
-                    theme.borderColor(isFocused: false, hasError: hasError),
-                    lineWidth: theme.inputBorderWidth
-                )
-            }
-        }
-    }
-
-    /// Where the focus gradient starts: the leading edge. A `UnitPoint` is a physical position that
-    /// SwiftUI does not mirror, so a right-to-left layout has to start it on the right by hand.
-    private var underlineGradientStart: UnitPoint {
-        layoutDirection == .rightToLeft ? .trailing : .leading
-    }
-
-    private var underlineGradientEnd: UnitPoint {
-        layoutDirection == .rightToLeft ? .leading : .trailing
-    }
-
-    /// The optional ring outside the border of a focused field. It is drawn as an overlay, so it
-    /// never moves the surrounding layout.
-    @ViewBuilder
-    private func focusRing(isFocused: Bool) -> some View {
-        if isFocused, let ring = theme.resolvedFocusRing {
-            // The border is drawn inside the field now, so the ring only has to clear itself.
-            let inset = ring.width / 2
-            RoundedRectangle(cornerRadius: theme.inputBorderRadius + inset)
-                .stroke(ring.color, lineWidth: ring.width)
-                .padding(-inset)
-        }
-    }
 
     public var body: some View {
         VStack(spacing: theme.groupSpacing) {
             // Card number input (first row)
             field(
                 label: localeStrings.panLabel,
-                error: errors.cardNumber,
-                isFocused: isCardNumberFocused,
+                error: errors.cardNumber
             ) {
-                    FormattedTextField(
-                        placeholder: localeStrings.panPlaceholder,
-                        digits: Binding(
-                            get: { data.cardNumber },
-                            set: { newDigits in
-                                data.cardNumber = newDigits
-                                cardNumberEdited = true
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                updateValidationBinding()
-                                if newDigits.count == 16 {
-                                    isCardNumberFocused = false
-                                    isExpirationFocused = true
-                                }
-                            }
-                        ),
-                        formatter: .cardNumber,
-                        font: theme.inputUIFont,
-                        textColor: UIColor.from(theme.inputTextColor),
-                        placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
-                        letterSpacing: theme.inputLetterSpacing,
-                        accessibilityLabel: hiddenLabel(localeStrings.panLabel),
-                        textContentType: .creditCardNumber,
-                        isFocused: isCardNumberFocused,
-                        onFocusChange: { isFocused in
-                            isCardNumberFocused = isFocused
-                            if isFocused {
-                                isExpirationFocused = false
-                                isCvvFocused = false
+                FormattedTextField(
+                    placeholder: localeStrings.panPlaceholder,
+                    digits: Binding(
+                        get: { data.cardNumber },
+                        set: { newDigits in
+                            data.cardNumber = newDigits
+                            cardNumberEdited = true
+                            GopaySDK.shared.updateCardFormData(data, formId: formId)
+                            updateValidationBinding()
+                            if newDigits.count == 16 {
+                                isCardNumberFocused = false
+                                isExpirationFocused = true
                             }
                         }
-                    )
+                    ),
+                    formatter: .cardNumber,
+                    font: theme.inputUIFont,
+                    textColor: UIColor.from(theme.inputTextColor),
+                    placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
+                    letterSpacing: theme.inputLetterSpacing,
+                    accessibilityLabel: hiddenLabel(localeStrings.panLabel),
+                    textContentType: .creditCardNumber,
+                    isFocused: isCardNumberFocused,
+                    onFocusChange: { isFocused in
+                        isCardNumberFocused = isFocused
+                        if isFocused {
+                            isExpirationFocused = false
+                            isCvvFocused = false
+                        }
+                    }
+                )
             }
 
             // Expiration and CVV inputs (second row)
@@ -411,82 +340,80 @@ public struct GopayCardForm: View {
                 // Expiration input (single field with automatic slash)
                 field(
                     label: localeStrings.expLabel,
-                    error: errors.expiration,
-                    isFocused: isExpirationFocused,
+                    error: errors.expiration
                 ) {
-                        FormattedTextField(
-                            placeholder: localeStrings.expPlaceholder,
-                            digits: Binding(
-                                get: { data.expirationMonth + data.expirationYear },
-                                set: { newDigits in
-                                    data.expirationMonth = String(newDigits.prefix(2))
-                                    data.expirationYear = newDigits.count > 2 ? String(newDigits.dropFirst(2)) : ""
-                                    expirationEdited = true
-                                    GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                    updateValidationBinding()
-                                    if newDigits.count == 4 {
-                                        isExpirationFocused = false
-                                        isCvvFocused = true
-                                    }
-                                }
-                            ),
-                            formatter: .expiration,
-                            font: theme.inputUIFont,
-                            textColor: UIColor.from(theme.inputTextColor),
-                            placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
-                            letterSpacing: theme.inputLetterSpacing,
-                            accessibilityLabel: hiddenLabel(localeStrings.expLabel),
-                            isFocused: isExpirationFocused,
-                            onFocusChange: { isFocused in
-                                isExpirationFocused = isFocused
-                                if isFocused {
-                                    isCardNumberFocused = false
-                                    isCvvFocused = false
-                                } else if data.expirationMonth.count == 1,
-                                          let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
-                                    // Pad a single-digit month with a leading zero once the field loses focus.
-                                    data.expirationMonth = String(format: "%02d", month)
-                                    GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                    updateValidationBinding()
+                    FormattedTextField(
+                        placeholder: localeStrings.expPlaceholder,
+                        digits: Binding(
+                            get: { data.expirationMonth + data.expirationYear },
+                            set: { newDigits in
+                                data.expirationMonth = String(newDigits.prefix(2))
+                                data.expirationYear = newDigits.count > 2 ? String(newDigits.dropFirst(2)) : ""
+                                expirationEdited = true
+                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                updateValidationBinding()
+                                if newDigits.count == 4 {
+                                    isExpirationFocused = false
+                                    isCvvFocused = true
                                 }
                             }
-                        )
+                        ),
+                        formatter: .expiration,
+                        font: theme.inputUIFont,
+                        textColor: UIColor.from(theme.inputTextColor),
+                        placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
+                        letterSpacing: theme.inputLetterSpacing,
+                        accessibilityLabel: hiddenLabel(localeStrings.expLabel),
+                        isFocused: isExpirationFocused,
+                        onFocusChange: { isFocused in
+                            isExpirationFocused = isFocused
+                            if isFocused {
+                                isCardNumberFocused = false
+                                isCvvFocused = false
+                            } else if data.expirationMonth.count == 1,
+                                      let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
+                                // Pad a single-digit month with a leading zero once the field loses focus.
+                                data.expirationMonth = String(format: "%02d", month)
+                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                updateValidationBinding()
+                            }
+                        }
+                    )
                 }
                 .frame(maxWidth: .infinity)
 
                 // CVV input
                 field(
                     label: localeStrings.cvvLabel,
-                    error: errors.cvv,
-                    isFocused: isCvvFocused,
+                    error: errors.cvv
                 ) {
-                        FormattedTextField(
-                            placeholder: localeStrings.cvvPlaceholder,
-                            digits: Binding(
-                                get: { data.cvv },
-                                set: { newDigits in
-                                    data.cvv = newDigits
-                                    cvvEdited = true
-                                    GopaySDK.shared.updateCardFormData(data, formId: formId)
-                                    updateValidationBinding()
-                                }
-                            ),
-                            formatter: .cvv,
-                            font: theme.inputUIFont,
-                            textColor: UIColor.from(theme.inputTextColor),
-                            placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
-                            letterSpacing: theme.inputLetterSpacing,
-                            accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),
-                            isSecure: true,
-                            isFocused: isCvvFocused,
-                            onFocusChange: { isFocused in
-                                isCvvFocused = isFocused
-                                if isFocused {
-                                    isCardNumberFocused = false
-                                    isExpirationFocused = false
-                                }
+                    FormattedTextField(
+                        placeholder: localeStrings.cvvPlaceholder,
+                        digits: Binding(
+                            get: { data.cvv },
+                            set: { newDigits in
+                                data.cvv = newDigits
+                                cvvEdited = true
+                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                updateValidationBinding()
                             }
-                        )
+                        ),
+                        formatter: .cvv,
+                        font: theme.inputUIFont,
+                        textColor: UIColor.from(theme.inputTextColor),
+                        placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .gopayDefaultPlaceholder) },
+                        letterSpacing: theme.inputLetterSpacing,
+                        accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),
+                        isSecure: true,
+                        isFocused: isCvvFocused,
+                        onFocusChange: { isFocused in
+                            isCvvFocused = isFocused
+                            if isFocused {
+                                isCardNumberFocused = false
+                                isExpirationFocused = false
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -529,8 +456,7 @@ struct GopayCardForm_Previews: PreviewProvider {
                     inputTextColor: .blue,
                     inputBorderColor: .gray,
                     inputBackgroundColor: Color(.systemGray6),
-                    inputBorderRadius: 12.0,
-                    focusGradientStart: .blue
+                    inputBorderRadius: 12.0
                 )
             )
             .padding()

@@ -2,9 +2,8 @@
 //  GopayCardFormThemeTests.swift
 //  sdkTests
 //
-//  Pins the public shape of GopayCardFormTheme: the defaults, which are the web card form's, the
-//  hex bridge used for JSON themes, the CSS font weight mapping, the tolerant decoder, and the
-//  geometry rules of the underline and the focus ring.
+//  Pins the public shape of GopayCardFormTheme: the defaults, the hex bridge used for JSON
+//  themes, the CSS font weight mapping and the tolerant decoder.
 //
 
 import Testing
@@ -93,23 +92,14 @@ struct GopayCardFormThemeTests {
         var theme = GopayCardFormTheme()
         theme.inputBorderColor = .gray
 
-        #expect(theme.borderColor(isFocused: false, hasError: false) == .gray)
+        #expect(theme.borderColor(hasError: false) == .gray)
     }
 
-    @Test func borderColor_invalidUnfocusedFieldUsesTheErrorColor() {
+    @Test func borderColor_invalidFieldUsesTheErrorColor() {
         var theme = GopayCardFormTheme()
         theme.inputErrorBorderColor = .orange
 
-        #expect(theme.borderColor(isFocused: false, hasError: true) == .orange)
-    }
-
-    @Test func borderColor_focusWinsOverError() {
-        var theme = GopayCardFormTheme()
-        theme.focusGradientStart = .green
-        theme.inputErrorBorderColor = .orange
-
-        #expect(theme.borderColor(isFocused: true, hasError: true) == .green)
-        #expect(theme.borderColor(isFocused: true, hasError: false) == .green)
+        #expect(theme.borderColor(hasError: true) == .orange)
     }
 
     @Test func borderStyle_decodesBothWebValues() throws {
@@ -124,38 +114,6 @@ struct GopayCardFormThemeTests {
 
         #expect(underline.inputBorderStyle == .underline)
         #expect(boxed.inputBorderStyle == .boxed)
-    }
-
-    // MARK: - Underline
-
-    @Test func underline_followsTheRoundedBottomCornersInsideTheInput() {
-        let rect = CGRect(x: 0, y: 0, width: 100, height: 40)
-        let line = GopayInputUnderline(radius: 8, lineWidth: 2).path(in: rect).boundingRect
-
-        // The stroke stays inside the input and climbs each corner up to where the arc ends.
-        #expect(line.minX == 1)
-        #expect(line.maxX == 99)
-        #expect(line.maxY == 39)
-        #expect(line.minY == 32)
-    }
-
-    @Test func underline_isAStraightLineWithoutARadius() {
-        let rect = CGRect(x: 0, y: 0, width: 100, height: 40)
-        let line = GopayInputUnderline(radius: 0, lineWidth: 1).path(in: rect).boundingRect
-
-        #expect(line.minX == 0)
-        #expect(line.maxX == 100)
-        #expect(line.height == 0)
-        #expect(line.minY == 39.5)
-    }
-
-    @Test func underline_capsAnOversizedRadiusLikeABrowser() {
-        let rect = CGRect(x: 0, y: 0, width: 100, height: 40)
-        let line = GopayInputUnderline(radius: 999, lineWidth: 1).path(in: rect).boundingRect
-
-        // A pill: the arcs reach half the height and meet the straight run in the middle.
-        #expect(abs(line.minY - 20) < 0.001)
-        #expect(abs(line.minX - 0.5) < 0.001)
     }
 
     @Test func errorSpacing_fallsBackToFieldSpacing() {
@@ -476,18 +434,6 @@ struct GopayCardFormThemeTests {
         )
         #expect(huge.labelFontWeight == 900)
         #expect(huge.inputFontWeight == 100)
-    }
-
-    @Test func boxedBorderInset_neverEatsTheWholeField() {
-        var theme = GopayCardFormTheme()
-        let field = CGSize(width: 200, height: 40)
-
-        theme.inputBorderWidth = 2
-        #expect(theme.boxedBorderInset(in: field) == 1)
-
-        // Past the field's smaller side the inset would leave no rectangle to stroke.
-        theme.inputBorderWidth = 400
-        #expect(theme.boxedBorderInset(in: field) == 20)
     }
 
     @Test func errorReserve_holdsAtLeastOneLineOfTheErrorFont() {

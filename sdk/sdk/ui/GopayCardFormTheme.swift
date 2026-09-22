@@ -609,28 +609,10 @@ extension GopayCardFormTheme {
         return max(requested, oneLine)
     }
 
-    /// Inset of a boxed border's path: half the stroke, so the whole line shows inside a
-    /// container clipped to the same shape, but never more than half the field's smaller side.
-    /// Without the clamp a width past the field's height insets the rectangle out of existence
-    /// and every point of the path comes out non-finite, so the border disappears altogether.
-    func boxedBorderInset(in size: CGSize) -> CGFloat {
-        min(inputBorderWidth / 2, min(size.width, size.height) / 2)
-    }
-
-    /// Border color of an input in the given state. A focused field shows focus even while its
-    /// content is invalid; both mobile SDKs and the web form use that precedence.
-    func borderColor(isFocused: Bool, hasError: Bool) -> Color {
-        if isFocused { return focusGradientStart }
-        return hasError ? inputErrorBorderColor : inputBorderColor
-    }
-
-    /// The ring to draw outside a focused input, or `nil` when the theme asks for none.
-    ///
-    /// Both halves are required and the width has to be positive, so a theme that sets only the
-    /// colour, or a zero width, draws nothing rather than an invisible or hairline ring.
-    var resolvedFocusRing: (width: CGFloat, color: Color)? {
-        guard let width = focusRingWidth, let color = focusRingColor, width > 0 else { return nil }
-        return (width, color)
+    /// Border color of an input holding valid or invalid content. Focus does not recolor the
+    /// border: a native field marks focus with the caret and the keyboard rather than its frame.
+    func borderColor(hasError: Bool) -> Color {
+        hasError ? inputErrorBorderColor : inputBorderColor
     }
 
     /// Distance from an input to its error line, falling back to ``fieldSpacing``.
