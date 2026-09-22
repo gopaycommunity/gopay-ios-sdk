@@ -68,6 +68,17 @@ struct CardFormRowLayoutTests {
         }
     }
 
+    /// The text in the field follows the same text size as the box around it, so a preview or a
+    /// host that overrides the category gets both, not one of each.
+    @Test func theInputFontFollowsTheEnvironmentsTextSize() {
+        for category in [ContentSizeCategory.large, .accessibilityLarge] {
+            let expected = GopayCardFormTheme.standard.inputUIFont(for: category).pointSize
+            let rendered = hostedFields(sizeCategory: category).first?.font?.pointSize
+
+            #expect(rendered == expected, "at \(category) the field should render at \(expected)pt")
+        }
+    }
+
     /// A document can ask for a field of no height; obeying it would put the digits outside the
     /// field, over the label and the error line.
     @Test func aZeroOrNegativeFixedHeightIsReadAsUnset() {

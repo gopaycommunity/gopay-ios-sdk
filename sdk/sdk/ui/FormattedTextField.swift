@@ -86,7 +86,10 @@ struct FormattedTextField: UIViewRepresentable {
         textField.isSecureTextEntry = isSecure
         textField.autocorrectionType = .no
         textField.spellCheckingType = .no
-        textField.adjustsFontForContentSizeCategory = true
+        // The form resolves the font for the text size in the environment and hands a new one
+        // down on every render, so UIKit must not rescale it a second time against the device's
+        // own setting; that would undo a size a preview, a test or a host had overridden.
+        textField.adjustsFontForContentSizeCategory = false
         textField.addTarget(context.coordinator, action: #selector(Coordinator.editingBegan), for: .editingDidBegin)
         textField.addTarget(context.coordinator, action: #selector(Coordinator.editingEnded), for: .editingDidEnd)
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)

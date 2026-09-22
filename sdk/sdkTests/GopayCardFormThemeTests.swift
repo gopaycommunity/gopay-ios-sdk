@@ -135,14 +135,19 @@ struct GopayCardFormThemeTests {
         #expect(traits?[.weight] as? CGFloat == UIFont.Weight.semibold.rawValue)
     }
 
+    /// Resolved for the same category the theme font asks for: `preferredFont` without a trait
+    /// collection follows whatever text size the host device is set to, which would make the
+    /// comparison depend on the machine the tests run on.
+    private static let atLargeTextSize = UITraitCollection(preferredContentSizeCategory: .large)
+
     @Test func inputFont_defaultMatchesTheBodyTextStyle() {
         #expect(GopayCardFormTheme.standard.inputUIFont(for: .large).pointSize
-            == UIFont.preferredFont(forTextStyle: .body).pointSize)
+            == UIFont.preferredFont(forTextStyle: .body, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
     @Test func labelFont_defaultMatchesTheCaptionTextStyle() {
         #expect(GopayCardFormTheme.standard.labelUIFont(for: .large).pointSize
-            == UIFont.preferredFont(forTextStyle: .caption1).pointSize)
+            == UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
     @Test func fontFamily_picksTheBoldFaceForHeavyWeightsAndTheRegularOneOtherwise() {
