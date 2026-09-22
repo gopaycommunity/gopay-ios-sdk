@@ -18,30 +18,32 @@ struct GopayCardFormThemeTests {
 
     // MARK: - Defaults
 
-    @Test func standard_matchesTheWebCardFormDefaults() {
+    /// An untouched form is an iOS form: system type, a plain bordered field, no uppercasing and
+    /// no reserved error line. The web preset is a theme a host opts into, not the starting point.
+    @Test func standard_isThePlatformsOwnAppearance() {
         let theme = GopayCardFormTheme.standard
 
         #expect(theme.fontFamily == nil)
-        #expect(theme.labelFontSize == 11)
-        #expect(theme.labelFontWeight == 600)
+        #expect(theme.labelFontSize == 12)
+        #expect(theme.labelFontWeight == 400)
         #expect(theme.labelLineHeight == nil)
-        #expect(theme.labelUppercase == true)
+        #expect(theme.labelUppercase == false)
         #expect(theme.labelLetterSpacing == nil)
         #expect(theme.labelHidden == false)
-        #expect(theme.inputFontSize == 14)
+        #expect(theme.inputFontSize == 17)
         #expect(theme.inputFontWeight == nil)
         #expect(theme.inputHeight == nil)
-        #expect(theme.inputBorderStyle == .underline)
+        #expect(theme.inputBorderStyle == .boxed)
         #expect(theme.inputBorderWidth == 1)
-        #expect(theme.inputPaddingVertical == 6)
-        #expect(theme.inputPaddingHorizontal == 0)
-        #expect(theme.inputBorderRadius == 0)
-        #expect(theme.errorFontSize == 11)
-        #expect(theme.errorMinHeight == 14)
+        #expect(theme.inputPaddingVertical == 12)
+        #expect(theme.inputPaddingHorizontal == 12)
+        #expect(theme.inputBorderRadius == 8)
+        #expect(theme.errorFontSize == 12)
+        #expect(theme.errorMinHeight == 0)
         #expect(theme.errorSpacing == nil)
-        #expect(theme.groupSpacing == 16)
+        #expect(theme.groupSpacing == 12)
         #expect(theme.fieldSpacing == 4)
-        #expect(theme.formPadding == 16)
+        #expect(theme.formPadding == 0)
     }
 
     @Test func standard_defaultColorsFollowTheSystemPalette() {
@@ -50,7 +52,7 @@ struct GopayCardFormThemeTests {
         #expect(theme.labelColor == .primary)
         #expect(theme.inputTextColor == .primary)
         #expect(theme.inputBorderColor == Color(.separator))
-        #expect(theme.inputBackgroundColor == .clear)
+        #expect(theme.inputBackgroundColor == .clear, "the host's own background shows through")
         #expect(theme.inputErrorBorderColor == .red)
         #expect(theme.errorTextColor == .red)
         #expect(theme.formBackgroundColor == .clear)
@@ -133,13 +135,14 @@ struct GopayCardFormThemeTests {
         #expect(traits?[.weight] as? CGFloat == UIFont.Weight.semibold.rawValue)
     }
 
-    @Test func inputFont_defaultUsesTheWebSize() {
-        #expect(GopayCardFormTheme.standard.inputUIFont.pointSize == 14)
+    @Test func inputFont_defaultMatchesTheBodyTextStyle() {
+        #expect(GopayCardFormTheme.standard.inputUIFont.pointSize
+            == UIFont.preferredFont(forTextStyle: .body).pointSize)
     }
 
-    @Test func labelFont_defaultUsesTheWebSize() {
-        let font = GopayCardFormTheme.standard.labelUIFont(for: .large)
-        #expect(font.pointSize == 11)
+    @Test func labelFont_defaultMatchesTheCaptionTextStyle() {
+        #expect(GopayCardFormTheme.standard.labelUIFont(for: .large).pointSize
+            == UIFont.preferredFont(forTextStyle: .caption1).pointSize)
     }
 
     @Test func fontFamily_picksTheBoldFaceForHeavyWeightsAndTheRegularOneOtherwise() {
@@ -225,8 +228,8 @@ struct GopayCardFormThemeTests {
         let data = try JSONEncoder().encode(GopayCardFormTheme.standard)
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        #expect(json["inputBorderStyle"] as? String == "underline")
-        #expect(json["groupSpacing"] as? Double == 16)
+        #expect(json["inputBorderStyle"] as? String == "boxed")
+        #expect(json["groupSpacing"] as? Double == 12)
         #expect(json["fontFamily"] == nil)
         #expect(json["inputHeight"] == nil)
         #expect(json["placeholderColor"] == nil)
@@ -292,7 +295,7 @@ struct GopayCardFormThemeTests {
         #expect(theme.labelColor.gopayHex == "#C8102E")
         #expect(theme.inputPaddingVertical == GopayCardFormTheme.standard.inputPaddingVertical)
         #expect(theme.groupSpacing == GopayCardFormTheme.standard.groupSpacing)
-        #expect(theme.inputBorderStyle == .underline)
+        #expect(theme.inputBorderStyle == .boxed)
     }
 
     @Test func decode_unknownBorderStyleFallsBackInsteadOfFailing() throws {
@@ -305,7 +308,8 @@ struct GopayCardFormThemeTests {
             from: Data("{ \"inputBorderStyle\": \"UNDERLINE\" }".utf8)
         )
 
-        #expect(unknown.inputBorderStyle == .underline)
+        // An unknown value keeps the default; a known one is read whatever its casing.
+        #expect(unknown.inputBorderStyle == .boxed)
         #expect(cased.inputBorderStyle == .underline)
     }
 

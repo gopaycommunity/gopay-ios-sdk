@@ -23,11 +23,11 @@ public enum GopayCardFormBorderStyle: String, Codable, Equatable {
 /// own. The web keys that only a custom-drawn form could honour are not part of this type; see the
 /// parity table in the README.
 ///
-/// Every parameter is optional. **The default shape is the web card form's**: square corners, the
-/// same paddings, type sizes, spacings and reserved error line, so a form nobody themed is laid
-/// out the same on all three channels and a theme document only has to carry what it actually
-/// changes. **Colors are the exception and follow the platform**, so the form stays readable in
-/// dark mode. A host that wants the web's exact palette sets those colors in its theme.
+/// Every parameter is optional and **an untouched form looks like an iOS form**, not like the web
+/// one: the system font and colors, a plain bordered field, sentence-case labels and ordinary
+/// spacing. The web form is a page of its own, while this one sits inside a merchant's screen, so
+/// nobody should have to undo an SDK look to make it fit. Theming is fully available, it is just a
+/// choice rather than the starting point. Passing the web's values reproduces the web appearance.
 ///
 /// The type is `Codable` with colors bridged to hex strings (`"#RGB"`, `"#RGBA"`, `"#RRGGBB"`,
 /// `"#RRGGBBAA"` or `"transparent"`), so a JSON theme travels between channels. Decoding is deliberately tolerant:
@@ -106,7 +106,7 @@ public struct GopayCardFormTheme: Equatable {
     public var errorFontSize: CGFloat
     /// Minimum vertical space reserved for the inline error line, in points, so the layout does
     /// not shift when a message appears. A value below one rendered line of the error font is
-    /// raised to that line; `0` reserves nothing.
+    /// raised to that line; `0`, the default, reserves nothing and lets the form grow.
     public var errorMinHeight: CGFloat
     /// Distance from an input to its error line, in points. `nil` uses ``fieldSpacing``.
     public var errorSpacing: CGFloat?
@@ -118,43 +118,43 @@ public struct GopayCardFormTheme: Equatable {
     public var groupSpacing: CGFloat
     /// Gap between a label and its input, in points.
     public var fieldSpacing: CGFloat
-    /// Padding around the whole form, in points. `16` as on the web; set it to `0` when the host
-    /// lays the form out itself.
+    /// Padding around the whole form, in points. `0`, because the host lays the form out; the web
+    /// uses `16` because there the form sits alone in an iframe.
     public var formPadding: CGFloat
     /// Background color of the form container.
     public var formBackgroundColor: Color
 
-    /// Creates a custom theme. Every length, size and style parameter defaults to the web card
-    /// form's value; the colors follow the system palette instead.
+    /// Creates a custom theme. Every parameter defaults to what the platform would do on its own,
+    /// so anything left out keeps the native appearance.
     public init(
         fontFamily: String? = nil,
         labelColor: Color = .primary,
-        labelFontSize: CGFloat = 11,
-        labelFontWeight: Int = 600,
+        labelFontSize: CGFloat = 12,
+        labelFontWeight: Int = 400,
         labelLineHeight: CGFloat? = nil,
-        labelUppercase: Bool = true,
+        labelUppercase: Bool = false,
         labelLetterSpacing: CGFloat? = nil,
         labelHidden: Bool = false,
         inputTextColor: Color = .primary,
-        inputFontSize: CGFloat = 14,
+        inputFontSize: CGFloat = 17,
         inputFontWeight: Int? = nil,
         inputHeight: CGFloat? = nil,
         placeholderColor: Color? = nil,
-        inputBorderStyle: GopayCardFormBorderStyle = .underline,
+        inputBorderStyle: GopayCardFormBorderStyle = .boxed,
         inputBorderColor: Color = Color(.separator),
         inputBorderWidth: CGFloat = 1,
         inputBackgroundColor: Color = .clear,
-        inputPaddingVertical: CGFloat = 6,
-        inputPaddingHorizontal: CGFloat = 0,
-        inputBorderRadius: CGFloat = 0,
+        inputPaddingVertical: CGFloat = 12,
+        inputPaddingHorizontal: CGFloat = 12,
+        inputBorderRadius: CGFloat = 8,
         inputErrorBorderColor: Color = .red,
         errorTextColor: Color = .red,
-        errorFontSize: CGFloat = 11,
-        errorMinHeight: CGFloat = 14,
+        errorFontSize: CGFloat = 12,
+        errorMinHeight: CGFloat = 0,
         errorSpacing: CGFloat? = nil,
-        groupSpacing: CGFloat = 16,
+        groupSpacing: CGFloat = 12,
         fieldSpacing: CGFloat = 4,
-        formPadding: CGFloat = 16,
+        formPadding: CGFloat = 0,
         formBackgroundColor: Color = .clear
     ) {
         self.fontFamily = fontFamily
@@ -188,7 +188,7 @@ public struct GopayCardFormTheme: Equatable {
         self.formBackgroundColor = formBackgroundColor
     }
 
-    /// Default theme: the web card form's layout with system colors.
+    /// Default theme: the appearance iOS gives a form of plain text fields.
     public static let standard = GopayCardFormTheme()
 
     /// Ceiling for any length read from a JSON theme document, in points.

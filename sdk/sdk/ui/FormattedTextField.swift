@@ -66,9 +66,8 @@ struct FormattedTextField: UIViewRepresentable {
     let formatter: CardTextFormatter
     var font: UIFont = .preferredFont(forTextStyle: .body)
     var textColor: UIColor = .label
-    /// Color of the placeholder text. `nil` falls back to the light grey the Android SDK and the
-    /// web form use, which stays readable on a themed background of either brightness. The system
-    /// placeholder color would follow the system appearance instead of the form's own.
+    /// Color of the placeholder text. `nil` uses the system placeholder color, which is what an
+    /// untouched field shows; a theme that paints its own background sets this too.
     var placeholderColor: UIColor? = nil
     /// Name announced for this field when the form draws no visible label.
     var accessibilityLabel: String? = nil
@@ -109,7 +108,7 @@ struct FormattedTextField: UIViewRepresentable {
         // it; the themed color is the only difference.
         textField.attributedPlaceholder = NSAttributedString(
             string: placeholder,
-            attributes: [.font: font, .foregroundColor: placeholderColor ?? .gopayDefaultPlaceholder]
+            attributes: [.font: font, .foregroundColor: placeholderColor ?? .placeholderText]
         )
 
         let formatted = formatter.format(digits)
@@ -188,11 +187,4 @@ struct FormattedTextField: UIViewRepresentable {
         @objc func editingBegan() { parent.onFocusChange(true) }
         @objc func editingEnded() { parent.onFocusChange(false) }
     }
-}
-
-extension UIColor {
-    /// The placeholder grey the card form falls back to, the same value as Android's `LightGray`.
-    /// A fixed color rather than `placeholderText`, because the theme paints the background and
-    /// the system appearance says nothing about how light or dark that background is.
-    static let gopayDefaultPlaceholder = UIColor(white: 204 / 255, alpha: 1)
 }
