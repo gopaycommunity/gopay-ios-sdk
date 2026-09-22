@@ -329,7 +329,6 @@ public struct GopayCardForm: View {
         min(max(0, theme.inputBorderWidth), resolvedInputHeight / 2)
     }
 
-
     public var body: some View {
         VStack(spacing: theme.groupSpacing) {
             // Card number input (first row)

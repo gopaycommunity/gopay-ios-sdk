@@ -15,8 +15,7 @@ public enum GopayCardFormBorderStyle: String, Codable, Equatable {
 /// Theme configuration for the payment card form.
 ///
 /// The parameters are atomic and carry the names of the web card form theme (cc-v4), so the same
-/// theme can be described once and applied on the web, on iOS and on Android. The web-only keys
-/// (`submit*`, `errorHidden`) are not part of this type; see the parity table in the README.
+/// theme can be described once and applied on the web, on iOS and on Android.
 ///
 /// The set is the part of the web theme a native field can carry: every parameter here is a
 /// property of the text field itself or of the layout around it, and the SDK draws nothing of its
@@ -74,8 +73,13 @@ public struct GopayCardFormTheme: Equatable {
     public var inputFontSize: CGFloat
     /// Font weight of the input text, on the CSS scale 100...900. `nil` means regular.
     public var inputFontWeight: Int?
-    /// Fixed height of the inputs, in points. Takes precedence over the vertical padding.
-    /// `nil` derives the height from the font and the padding.
+    /// Fixed height of the inputs, in points. `nil` derives the height from the font and the
+    /// padding.
+    ///
+    /// On iOS this is the whole height of the field and ``inputPaddingVertical`` is dropped while
+    /// it is set, as it is on the web. Android reads it as a minimum instead, and adds the padding
+    /// on top, so the same value gives a taller field there. A value of zero or less is read as
+    /// unset, and content taller than the height is clipped to the field.
     public var inputHeight: CGFloat?
     /// Color of the placeholder text. `nil` uses the system placeholder color.
     public var placeholderColor: Color?
@@ -595,7 +599,6 @@ extension GopayCardFormTheme {
     func rendersErrorSlot(for message: String?) -> Bool {
         message?.isEmpty == false || errorMinHeight > 0
     }
-
 }
 
 // MARK: - Resolved fonts

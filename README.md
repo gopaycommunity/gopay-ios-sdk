@@ -297,18 +297,25 @@ user abandons checkout while the form is still on screen — call
 
 ### Theming the form
 
-`GopayCardFormTheme` carries the parameter names of the GoPay web card form (cc-v4), so one design
-decision can be written down once and applied on the web, on iOS and on Android. Every parameter is
-optional and defaults to the web form's value, colors excepted: those follow the system palette so
-the form keeps working in dark mode.
+**An untouched form looks like an iOS form.** The system font and colors, a plain bordered field,
+sentence-case labels, ordinary spacing. The web card form is a page of its own and can afford a look
+of its own; this one sits inside your screen, so you should never have to undo an SDK style to make
+it fit. Theming is fully available, it is simply a choice rather than the starting point.
+
+`GopayCardFormTheme` is **a subset of the GoPay web card form theme (cc-v4)**, carrying its
+parameter names, so one design decision can be written down once and applied on the web, on iOS and
+on Android. The subset is the part a native field can carry: every parameter is a property of the
+text field itself or of the layout around it, and the SDK draws nothing of its own. The web keys
+that only a custom-drawn form could honour are listed below, with what happens instead.
 
 ```swift
+// Nothing here is required; each line moves the form one step away from the platform default.
 GopayCardForm(
     theme: GopayCardFormTheme(
         labelUppercase: true,
-        inputBorderStyle: .underline,
-        focusGradientStart: Color(red: 0.10, green: 0.78, blue: 0.84),
-        focusGradientEnd: Color(red: 0.09, green: 0.60, blue: 0.84),
+        inputBorderColor: Color(red: 0.41, green: 0.52, blue: 0.57),
+        inputBorderRadius: 0,
+        inputPaddingHorizontal: 0,
         errorMinHeight: 14
     ),
     validation: .live,
@@ -316,9 +323,12 @@ GopayCardForm(
 )
 ```
 
-These 36 parameters are the same on Android, name for name and type for type, so a theme decided
-once holds on both. The Android SDK adds two of its own on top, `helperTextColor` and
-`helperFontSize`, for a helper line the web form and this SDK do not render.
+These 29 parameters are the same on Android, name for name and type for type, so a theme decided
+once holds on both. Four things differ per platform, because each follows what the platform does
+natively: `underline` is a native field style on Android only; marking the active field is native on
+Android and not on iOS (see below); `inputHeight` is the whole height of the field here and a
+minimum that the padding adds to on Android; and the Android SDK adds `helperTextColor` and
+`helperFontSize` of its own for a helper line neither the web form nor this SDK renders.
 
 The theme is `Codable`, with colors written as `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"` or
 `"transparent"` (the leading `#` is required, as in CSS), so a
@@ -348,49 +358,49 @@ Decoding works on every supported version.
 
 #### Parity with the web theme
 
-All 44 keys of the web card form theme, and what each one does here. The parameters mirror
-Android name for name and type for type, with one exception: `fontFamily` is a string here and
-resolves at render, while Android takes a typed `FontFamily` and needs the host to supply a
-resolver before a font named in a JSON document takes effect.
+Every key of the web card form theme, what it does here, and the value you get when you leave it
+alone. The parameters mirror Android name for name and type for type, with one exception:
+`fontFamily` is a string here and resolves at render, while Android takes a typed `FontFamily` and
+needs the host to supply a resolver before a font named in a JSON document takes effect.
 
 | Web key | iOS parameter | iOS default | Web default |
 | --- | --- | --- | --- |
 | `fontFamily` | `fontFamily` | `nil` (system font) | `system-ui` |
 | `labelColor` | `labelColor` | `.primary` | `#4b5e68` |
-| `labelFontSize` | `labelFontSize` | `11` | `11` |
-| `labelFontWeight` | `labelFontWeight` | `600` | `600` |
+| `labelFontSize` | `labelFontSize` | `12` (caption) | `11` |
+| `labelFontWeight` | `labelFontWeight` | `400` | `600` |
 | `labelLineHeight` | `labelLineHeight` | `nil` (font metrics) | unset |
-| `labelUppercase` | `labelUppercase` | `true` | `true` |
+| `labelUppercase` | `labelUppercase` | `false` | `true` |
 | `labelLetterSpacing` | `labelLetterSpacing` | `nil` (none) | unset (`0.06em`) |
 | `labelHidden` | `labelHidden` | `false` | `false` |
 | `inputTextColor` | `inputTextColor` | `.primary` | `#4b5e68` |
-| `inputFontSize` | `inputFontSize` | `14` | `14` |
+| `inputFontSize` | `inputFontSize` | `17` (body) | `14` |
 | `inputFontWeight` | `inputFontWeight` | `nil` (regular) | unset |
-| `inputLineHeight` | `inputLineHeight` | accepted, ignored | unset |
-| `inputLetterSpacing` | `inputLetterSpacing` | `nil` (none) | unset |
 | `inputHeight` | `inputHeight` | `nil` (font + padding) | unset |
 | `placeholderColor` | `placeholderColor` | `nil` (system) | browser default |
-| `inputBorderStyle` | `inputBorderStyle` | `.underline` | `underline` |
+| `inputBorderStyle` | `inputBorderStyle` | `.boxed`; `underline` is not supported | `underline` |
 | `inputBorderColor` | `inputBorderColor` | `Color(.separator)` | `#698492` |
 | `inputBorderWidth` | `inputBorderWidth` | `1` | `1` |
 | `inputBackgroundColor` | `inputBackgroundColor` | `.clear` | `transparent` |
-| `inputPaddingVertical` | `inputPaddingVertical` | `6` | `6` |
-| `inputPaddingHorizontal` | `inputPaddingHorizontal` | `0` | `0` |
-| `inputBorderRadius` | `inputBorderRadius` | `0` | `0` |
-| `inputBorderCollapse` | `inputBorderCollapse` | `false` | `false` |
-| `focusRingWidth` | `focusRingWidth` | `nil` (no ring) | unset |
-| `focusRingColor` | `focusRingColor` | `nil` (no ring) | unset |
-| `focusGradientStart` | `focusGradientStart` | `#19C7D6` | `#19C7D6` |
-| `focusGradientEnd` | `focusGradientEnd` | `#1899D6` | `#1899D6` |
+| `inputPaddingVertical` | `inputPaddingVertical` | `12` | `6` |
+| `inputPaddingHorizontal` | `inputPaddingHorizontal` | `12` | `0` |
+| `inputBorderRadius` | `inputBorderRadius` | `8` | `0` |
 | `inputErrorBorderColor` | `inputErrorBorderColor` | `.red` | `#ea3c55` |
 | `errorTextColor` | `errorTextColor` | `.red` | `#cc0000` |
-| `errorFontSize` | `errorFontSize` | `11` | `11` |
-| `errorMinHeight` | `errorMinHeight` | `14` | `14` |
+| `errorFontSize` | `errorFontSize` | `12` (caption) | `11` |
+| `errorMinHeight` | `errorMinHeight` | `0` (no reserve) | `14` |
 | `errorSpacing` | `errorSpacing` | `nil` (`fieldSpacing`) | unset (`fieldSpacing`) |
+| `inputLineHeight` | — | web-only | unset |
+| `inputLetterSpacing` | — | web-only | unset |
+| `inputBorderCollapse` | — | web-only | `false` |
+| `focusRingWidth` | — | web-only | unset |
+| `focusRingColor` | — | web-only | unset |
+| `focusGradientStart` | — | web-only | `#19C7D6` |
+| `focusGradientEnd` | — | web-only | `#1899D6` |
 | `errorHidden` | — | web-only | `false` |
-| `groupSpacing` | `groupSpacing` | `16` | `16` |
+| `groupSpacing` | `groupSpacing` | `12` | `16` |
 | `fieldSpacing` | `fieldSpacing` | `4` | `4` |
-| `formPadding` | `formPadding` | `16` | `16` |
+| `formPadding` | `formPadding` | `0` (the host lays it out) | `16` |
 | `formBackgroundColor` | `formBackgroundColor` | `.clear` | `transparent` |
 | `submitBackgroundColor` | — | web-only | `#1899d6` |
 | `submitHoverBackgroundColor` | — | web-only | `#1482ba` |
@@ -400,7 +410,7 @@ resolver before a font named in a JSON document takes effect.
 | `submitBorderRadius` | — | web-only | `4` |
 | `submitFontSize` | — | web-only | `14` |
 
-The eight web-only keys have no counterpart here for a reason:
+The web-only keys have no counterpart here, each for its own reason:
 
 - The seven `submit*` keys style a button this SDK never draws. Submission is yours: you own the
   button and call `submitCardForm()`. That is the same arrangement as the web form's
@@ -408,12 +418,29 @@ The eight web-only keys have no counterpart here for a reason:
 - `errorHidden` is already a first-class parameter of the form, not of the theme: the default
   `validation: .hidden` renders no inline errors and hands you the state through the `isValid`
   binding. Web `errorHidden: true` is the iOS default.
+- `focusGradientStart`, `focusGradientEnd`, `focusRingWidth`, `focusRingColor` and
+  `inputBorderCollapse` all describe something a browser paints around a field: a gradient, a glow
+  outside the frame, one shared line between two neighbours. A native text field has none of them,
+  and the SDK does not draw its own. A focused field is marked the way the platform marks it, with
+  the caret and the keyboard.
+- `inputLetterSpacing` would have to override how the field measures itself, which is exactly the
+  kind of reach into the platform this theme avoids. `labelLetterSpacing` stays, because a label is
+  ordinary text.
+- `inputLineHeight` pins the height of a field across browser engines. A single-line native field
+  has no such problem; `inputHeight` is here for a fixed height.
 
-The defaults are the web form's, so an untouched form is laid out the same on all three channels and
-a theme only has to carry what it actually changes. **Colors are the exception**: they stay on the
-system palette, so the form follows light and dark mode instead of rendering the web's fixed greys
-on a dark background. The focus gradient is the one place where a color is taken from the web,
-because the system has no equivalent for it. Pass the web's hex values to match it exactly.
+A theme document may still carry any of them. Unknown keys are ignored, so a web theme moves over
+unchanged and only the keys this SDK understands take effect.
+
+The iOS column is what the platform would do on its own, which is why it differs from the web
+column: the defaults are not a GoPay style, they are the absence of one. To move towards the web
+appearance, pass the web values; the demo app's `ThemeShowcase.json` shows how far that gets, and
+it cannot get all the way, because the web's default underline is not a style iOS supports.
+
+`inputBorderStyle` is the one parameter whose meaning is not the same everywhere. It stays in the
+type so a theme document travels unchanged, and Android renders `underline` with its native
+Material indicator, but **iOS has no native underlined text field and the SDK draws nothing of its
+own, so on iOS the value is accepted and the input renders as `boxed`**.
 
 A few deviations are behavioral rather than default values:
 
@@ -421,51 +448,44 @@ A few deviations are behavioral rather than default values:
   has nine steps. A weight of 450 renders as 500 here; Android passes it through to a variable font.
 - `labelLetterSpacing` needs iOS 16, and it is not derived from the font size the way the web
   derives its `0.06em`.
-- The focus gradient of an underlined input is static, without the web's animation. The underline
-  follows the rounded bottom corners of the input, as a CSS `border-bottom` does under a
-  `border-radius`; with the default `inputBorderRadius` of 0 the line is straight, raise the radius
-  and it curves up at both ends. A browser tapers that curve to a point, this line keeps its full
-  width around the corner.
-- `inputHeight` is a fixed height and does not grow with Dynamic Type. The text inside still scales
-  and will clip once it outgrows the field, the same as on the web. Leave it unset to let the field
-  follow the font and the padding.
+- The border runs inside the field, so raising `inputBorderWidth` thickens the frame inwards and
+  never changes how much room the form takes.
+- `inputHeight` is the whole height of the field and replaces `inputPaddingVertical` while it is
+  set. It does not grow with Dynamic Type: the text inside still scales and is clipped to the field
+  once it outgrows it, the same as on the web. A value of zero or less is read as unset. Android
+  treats the same key as a minimum height that the padding is added to, so a shared document gives
+  a taller field there.
 
-#### The focus and error states
+#### The error and focus states
 
-Both mobile SDKs now describe a field's border the same way:
+A field's border has two colors:
 
-- resting: `inputBorderColor`
-- focused: `focusGradientStart` as a solid boxed border, or a `focusGradientStart` to
-  `focusGradientEnd` gradient under an underlined input, plus the optional ring from
-  `focusRingWidth` and `focusRingColor`
-- invalid: `inputErrorBorderColor`, on an unfocused field only — focus wins over error
+- valid: `inputBorderColor`
+- invalid: `inputErrorBorderColor`
 
 The error border only appears while the form draws inline errors at all, so with the default
 `validation: .hidden` nothing about the border changes.
 
-Collapsing applies to the boxed style; on the default underline it has no effect.
-
-Inside a block collapsed by `inputBorderCollapse`, a focused or invalid field recolors the lines it
-shares with its neighbours as well, so each seam still shows one line, in the state color. Lines are
-shared only where two fields actually touch: `groupSpacing`, a visible label above the bottom row,
-a slot reserved by `errorMinHeight` and an inline error shown under the card number all open a gap,
-and the fields on both sides of a gap draw a full frame for as long as it is there.
+Marking the active field is left to the platform, which is why it looks different on each: Android
+shows it, because its Material field highlights the indicator itself, and iOS does not, because a
+native text field marks focus with the caret and the keyboard rather than its frame. There is no
+theme parameter for it on either.
 
 #### Migrating a 1.x theme
 
 Version 2.0 renamed every parameter and split the composite ones. There are no aliases: a 1.x theme
-stops compiling, and the table below says what to write instead. Do that mechanically and the theme
-compiles again, but the form does not look the same: the 2.0 defaults are the web form's, so
-everything a 1.x theme left at its default changes with it. The border becomes an underline, the
-corner radius 0, the input padding 6 and 0, the spacing 16 and the labels 11pt uppercase. Set those
-parameters explicitly to keep the old appearance.
+stops compiling, and the table below says what to write instead. The values carry over as they are,
+and 2.0 keeps almost all of the platform defaults 1.x had, so a mechanical rename leaves the form
+looking much as it did. **One default changed**: `inputBackgroundColor` is now `.clear` where 1.x
+filled the inputs with `Color(.systemBackground)`, so the surface behind the form shows through.
+Set it back explicitly if your layout relied on the opaque fill.
 
 | 1.x | 2.0 |
 | --- | --- |
 | `textColor` | `labelColor` and `inputTextColor` |
 | `backgroundColor` | `inputBackgroundColor` |
 | `borderColor` | `inputBorderColor` |
-| `focusedBorderColor` | `focusGradientStart` |
+| `focusedBorderColor` | removed — the border no longer changes color on focus |
 | `errorColor` | `errorTextColor` |
 | `borderWidth` | `inputBorderWidth` |
 | `cornerRadius` | `inputBorderRadius` |
@@ -474,9 +494,21 @@ parameters explicitly to keep the old appearance.
 | `spacing` | `groupSpacing` |
 | `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
 
-Two behaviors change for integrations that render inline errors: an invalid field now takes
-`inputErrorBorderColor` on its border, and a focused field keeps showing focus even while its
-content is invalid. Integrations on the default `validation: .hidden` see neither.
+The cut to native rendering removed seven keys that 1.x never had but the 2.0 branch did carry for
+a while. A theme document may still set them; they are ignored and named in the debug log.
+
+| Removed in 2.0 | Instead |
+| --- | --- |
+| `inputBorderCollapse` | nothing: adjacent native fields cannot share a border |
+| `focusRingWidth`, `focusRingColor` | nothing: the platform marks the active field |
+| `focusGradientStart`, `focusGradientEnd` | nothing: the platform marks the active field |
+| `inputLetterSpacing` | `labelLetterSpacing` still applies to labels |
+| `inputLineHeight` | `inputHeight` for a fixed height |
+
+Two behaviors change. An invalid field now takes `inputErrorBorderColor` on its border, which an
+integration only sees while it renders inline errors; on the default `validation: .hidden` nothing
+changes. And a focused field no longer recolors its border at all, which 1.x did through
+`focusedBorderColor`.
 
 ### Localizing the form
 
