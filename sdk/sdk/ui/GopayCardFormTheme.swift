@@ -82,6 +82,10 @@ public struct GopayCardFormTheme: Equatable {
     /// unset, and content taller than the height is clipped to the field.
     public var inputHeight: CGFloat?
     /// Color of the placeholder text. `nil` uses the system placeholder color.
+    ///
+    /// Set it whenever the theme paints the form dark. The system color follows the system's own
+    /// light or dark appearance, not the theme's, so a dark theme on a device in light mode gets
+    /// a dark placeholder on a dark field.
     public var placeholderColor: Color?
 
     // MARK: - Input border

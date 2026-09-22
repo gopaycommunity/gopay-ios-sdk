@@ -86,6 +86,10 @@ Some web keys have no counterpart here.
 A theme document may still carry any of them: unknown keys are ignored, so a web theme moves over
 unchanged and only the keys this SDK understands take effect.
 
+``GopayCardFormTheme/placeholderColor`` is worth setting whenever a theme paints the form dark:
+unset, it follows the system's light or dark appearance rather than the theme's, so the hint text
+can come out dark on a dark field.
+
 ## The error and focus states
 
 - valid: ``GopayCardFormTheme/inputBorderColor``

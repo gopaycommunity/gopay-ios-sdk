@@ -442,6 +442,11 @@ type so a theme document travels unchanged, and Android renders `underline` with
 Material indicator, but **iOS has no native underlined text field and the SDK draws nothing of its
 own, so on iOS the value is accepted and the input renders as `boxed`**.
 
+The one default worth overriding deliberately is `placeholderColor`: unset, it follows the system's
+light or dark appearance rather than the theme's, so a theme that paints the form dark should set a
+placeholder color of its own or the hint text can come out dark on a dark field. The demo's `Dark`
+document in `ThemeShowcase.json` shows it.
+
 A few deviations are behavioral rather than default values:
 
 - `labelFontWeight` and `inputFontWeight` are rounded to the nearest hundred, because `Font.Weight`
