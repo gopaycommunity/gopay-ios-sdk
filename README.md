@@ -324,11 +324,10 @@ GopayCardForm(
 ```
 
 These 29 parameters are the same on Android, name for name and type for type, so a theme decided
-once holds on both. Four things differ per platform, because each follows what the platform does
+once holds on both. Three things differ per platform, because each follows what the platform does
 natively: `underline` is a native field style on Android only; marking the active field is native on
-Android and not on iOS (see below); `inputHeight` is the whole height of the field here and a
-minimum that the padding adds to on Android; and the Android SDK adds `helperTextColor` and
-`helperFontSize` of its own for a helper line neither the web form nor this SDK renders.
+Android and not on iOS (see below); and the Android SDK adds `helperTextColor` and `helperFontSize`
+of its own for a helper line neither the web form nor this SDK renders.
 
 The theme is `Codable`, with colors written as `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"` or
 `"transparent"` (the leading `#` is required, as in CSS), so a
@@ -376,7 +375,7 @@ needs the host to supply a resolver before a font named in a JSON document takes
 | `inputTextColor` | `inputTextColor` | `.primary` | `#4b5e68` |
 | `inputFontSize` | `inputFontSize` | `17` (body) | `14` |
 | `inputFontWeight` | `inputFontWeight` | `nil` (regular) | unset |
-| `inputHeight` | `inputHeight` | `nil` (font + padding) | unset |
+| `inputHeight` | `inputHeight` | `nil` (font decides) | unset |
 | `placeholderColor` | `placeholderColor` | `nil` (system) | browser default |
 | `inputBorderStyle` | `inputBorderStyle` | `.boxed`; `underline` is not supported | `underline` |
 | `inputBorderColor` | `inputBorderColor` | `Color(.separator)` | `#698492` |
@@ -427,10 +426,12 @@ The web-only keys have no counterpart here, each for its own reason:
   kind of reach into the platform this theme avoids. `labelLetterSpacing` stays, because a label is
   ordinary text.
 - `inputLineHeight` pins the height of a field across browser engines. A single-line native field
-  has no such problem; `inputHeight` is here for a fixed height.
+  has no such problem; `inputHeight` is here to set a minimum.
 
-A theme document may still carry any of them. Unknown keys are ignored, so a web theme moves over
-unchanged and only the keys this SDK understands take effect.
+A theme document may still carry any of them: a web theme moves over unchanged and only the keys
+this SDK understands take effect. These seven are not silently swallowed, though. The SDK knows
+them, so each one a document sets is named in the debug log with the reason it had no effect, the
+same as any other key that could not be applied.
 
 The iOS column is what the platform would do on its own, which is why it differs from the web
 column: the defaults are not a GoPay style, they are the absence of one. To move towards the web
@@ -454,12 +455,12 @@ A few deviations are behavioral rather than default values:
 - `labelLetterSpacing` needs iOS 16, and it is not derived from the font size the way the web
   derives its `0.06em`.
 - The border runs inside the field, so raising `inputBorderWidth` thickens the frame inwards and
-  never changes how much room the form takes.
-- `inputHeight` is the whole height of the field and replaces `inputPaddingVertical` while it is
-  set. It does not grow with Dynamic Type: the text inside still scales and is clipped to the field
-  once it outgrows it, the same as on the web. A value of zero or less is read as unset. Android
-  treats the same key as a minimum height that the padding is added to, so a shared document gives
-  a taller field there.
+  never changes how much room the form takes. It stops at half the field's height, past which a
+  border would have nothing left to enclose.
+- `inputHeight` is the smallest height of the input, with the vertical padding inside it rather
+  than on top of it. It is a minimum, not the fixed height it is on the web, so a large font scale
+  can still grow the field rather than overflow it. Android reads it the same way. A value of zero
+  or less is unset.
 
 #### The error and focus states
 
@@ -508,7 +509,7 @@ a while. A theme document may still set them; they are ignored and named in the 
 | `focusRingWidth`, `focusRingColor` | nothing: the platform marks the active field |
 | `focusGradientStart`, `focusGradientEnd` | nothing: the platform marks the active field |
 | `inputLetterSpacing` | `labelLetterSpacing` still applies to labels |
-| `inputLineHeight` | `inputHeight` for a fixed height |
+| `inputLineHeight` | `inputHeight` to set a minimum height |
 
 Two behaviors change. An invalid field now takes `inputErrorBorderColor` on its border, which an
 integration only sees while it renders inline errors; on the default `validation: .hidden` nothing

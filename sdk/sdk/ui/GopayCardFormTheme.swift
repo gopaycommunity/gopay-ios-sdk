@@ -73,13 +73,12 @@ public struct GopayCardFormTheme: Equatable {
     public var inputFontSize: CGFloat
     /// Font weight of the input text, on the CSS scale 100...900. `nil` means regular.
     public var inputFontWeight: Int?
-    /// Fixed height of the inputs, in points. `nil` derives the height from the font and the
-    /// padding.
+    /// Smallest height of the input, with the vertical padding inside it rather than on top of
+    /// it. It is a minimum, not a fixed height, so a large font scale can still grow the field
+    /// rather than overflow it. `nil` derives the height from the font and the padding alone. The
+    /// Android SDK reads it the same way.
     ///
-    /// On iOS this is the whole height of the field and ``inputPaddingVertical`` is dropped while
-    /// it is set, as it is on the web. Android reads it as a minimum instead, and adds the padding
-    /// on top, so the same value gives a taller field there. A value of zero or less is read as
-    /// unset, and content taller than the height is clipped to the field.
+    /// A value of zero or less is read as unset. The web applies the same key as a fixed height.
     public var inputHeight: CGFloat?
     /// Color of the placeholder text. `nil` uses the system placeholder color.
     ///
@@ -94,7 +93,8 @@ public struct GopayCardFormTheme: Equatable {
     public var inputBorderStyle: GopayCardFormBorderStyle
     /// Border color of an unfocused, valid input.
     public var inputBorderColor: Color
-    /// Border width, in points.
+    /// Border width, in points. Drawn inside the field, and capped at half its height, past which
+    /// a border would have nothing left to enclose.
     public var inputBorderWidth: CGFloat
     /// Background color of the inputs.
     public var inputBackgroundColor: Color
@@ -407,7 +407,7 @@ extension GopayCardFormTheme: Codable {
                 return nil
             }
             if style == .underline {
-                drop(key, "\"underline\" is not supported on iOS, the input is drawn as boxed")
+                note(key, "iOS has no underlined text field, so the input is drawn as boxed")
             }
             return style
         }
@@ -419,6 +419,12 @@ extension GopayCardFormTheme: Codable {
 
         private func drop(_ key: CodingKeys, _ reason: String) {
             GopayCardFormTheme.reportDroppedKey("\"\(key.stringValue)\" ignored, \(reason)")
+        }
+
+        /// Reports a key that is read and kept but cannot be honoured, which is not the same as
+        /// dropping it: it survives a round trip through the theme and comes back out on encode.
+        private func note(_ key: CodingKeys, _ reason: String) {
+            GopayCardFormTheme.reportDroppedKey("\"\(key.stringValue)\" kept but not applied, \(reason)")
         }
 
         private static func name(of type: Any.Type) -> String {

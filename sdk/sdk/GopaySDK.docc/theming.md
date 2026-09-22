@@ -54,10 +54,6 @@ invalid field the same way. These differ per platform:
   `underline` is **not supported on iOS**, which has no native underlined text field; the value is
   accepted and the input renders as `boxed`. Android renders it with the native Material indicator.
 - Marking the active field is native on each platform, so Android highlights it and iOS does not.
-- ``GopayCardFormTheme/inputHeight`` is the whole height of the field here and replaces
-  ``GopayCardFormTheme/inputPaddingVertical``; Android reads it as a minimum and adds the padding
-  on top, so a shared document gives a taller field there. It does not grow with Dynamic Type, so
-  leave it unset unless the design needs the field pinned.
 - The Android SDK adds `helperTextColor` and `helperFontSize` of its own, for a helper line neither
   the web form nor this SDK renders.
 
@@ -81,10 +77,11 @@ Some web keys have no counterpart here.
 - `inputLetterSpacing` would have to override how the field measures itself.
   ``GopayCardFormTheme/labelLetterSpacing`` stays, because a label is ordinary text.
 - `inputLineHeight` pins the height of a field across browser engines. A single-line native field
-  has no such problem; ``GopayCardFormTheme/inputHeight`` is here for a fixed height.
+  has no such problem; ``GopayCardFormTheme/inputHeight`` is here to set a minimum.
 
-A theme document may still carry any of them: unknown keys are ignored, so a web theme moves over
-unchanged and only the keys this SDK understands take effect.
+A theme document may still carry any of them: a web theme moves over unchanged and only the keys
+this SDK understands take effect. These seven are not silently swallowed, though. The SDK knows
+them, so each one a document sets is named in the debug log with the reason it had no effect.
 
 ``GopayCardFormTheme/placeholderColor`` is worth setting whenever a theme paints the form dark:
 unset, it follows the system's light or dark appearance rather than the theme's, so the hint text
@@ -104,7 +101,8 @@ native text field marks focus with the caret and the keyboard rather than its fr
 theme parameter for it on either.
 
 The border runs inside the field, so raising ``GopayCardFormTheme/inputBorderWidth`` thickens the
-frame inwards and never changes how much room the form takes.
+frame inwards and never changes how much room the form takes. It stops at half the field's height,
+past which a border would have nothing left to enclose.
 
 ## Migrating a 1.x theme
 
@@ -126,6 +124,10 @@ over as they are, and 2.0 keeps almost all of the platform defaults 1.x had. One
 | `font` | removed — it never reached the inputs; `fontFamily`, `inputFontSize` and `inputFontWeight` style them now |
 | `spacing` | `groupSpacing` |
 | `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
+
+``GopayCardFormTheme/inputHeight`` is the smallest height of the input, with the vertical padding
+inside it rather than on top of it. It is a minimum on both platforms, not the fixed height it is
+on the web, so a large font scale can still grow the field rather than overflow it.
 
 Seven more keys were carried for part of the 2.0 work and removed with the move to native
 rendering: `inputBorderCollapse`, `focusRingWidth`, `focusRingColor`, `focusGradientStart`,

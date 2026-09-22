@@ -274,10 +274,11 @@ public struct GopayCardForm: View {
             // show; a field left to itself measures its own glyphs and a masked one comes out
             // shorter. A taller sibling column never stretches them either.
             .frame(height: rowInputHeight)
-            // A fixed input height takes precedence over the vertical padding, as it does on the web.
-            .padding(.vertical, fixedInputHeight == nil ? theme.inputPaddingVertical : 0)
-            .padding(.horizontal, theme.inputPaddingHorizontal)
-            .frame(height: fixedInputHeight)
+            .padding(.vertical, verticalPadding)
+            .padding(.horizontal, horizontalPadding)
+            // The themed minimum is the height of the whole field, padding included, which is how
+            // Android reads the same key and how a browser sizes the box.
+            .frame(minHeight: minimumInputHeight)
 
         let shape = RoundedRectangle(cornerRadius: theme.inputBorderRadius)
         return input
@@ -305,18 +306,21 @@ public struct GopayCardForm: View {
         ceil(theme.inputUIFont(for: sizeCategory).lineHeight) + 1
     }
 
-    /// The fixed height a theme asked for, or `nil` to let the font and the padding decide.
-    ///
-    /// A height of zero or less is read as unset rather than obeyed: a JSON document can carry
-    /// one, and a field of no height would put its own content outside itself.
-    private var fixedInputHeight: CGFloat? {
-        guard let height = theme.inputHeight, height > 0 else { return nil }
-        return height
+    /// The minimum height of a whole field, padding included. Zero means the theme asked for
+    /// none; a negative value from a theme set in code says nothing either and is read the same.
+    private var minimumInputHeight: CGFloat {
+        max(0, theme.inputHeight ?? 0)
     }
 
-    /// How tall a field ends up, which the theme decides on its own; no measuring is needed.
+    /// Padding inside a field. Both are public on the theme, so a theme built in code can carry a
+    /// negative one, which would pull the text out of the field it belongs to.
+    private var verticalPadding: CGFloat { max(0, theme.inputPaddingVertical) }
+    private var horizontalPadding: CGFloat { max(0, theme.inputPaddingHorizontal) }
+
+    /// How tall a field ends up. The theme and the text size decide it between them, so nothing
+    /// has to be measured to know it.
     private var resolvedInputHeight: CGFloat {
-        fixedInputHeight ?? (rowInputHeight + 2 * max(0, theme.inputPaddingVertical))
+        max(minimumInputHeight, rowInputHeight + 2 * verticalPadding)
     }
 
     /// Width of the input border. A theme can only ask for a positive one; anything else draws

@@ -554,7 +554,8 @@ struct GopayCardFormThemeTests {
         )
 
         #expect(underline.inputBorderStyle == .underline, "the value is kept for portability")
-        #expect(reported.contains { $0.contains("not supported on iOS") })
+        #expect(reported.contains { $0.contains("kept but not applied") })
+        #expect(!reported.contains { $0.contains("ignored") }, "the key survives a round trip")
 
         reported.removeAll()
         _ = try JSONDecoder().decode(
