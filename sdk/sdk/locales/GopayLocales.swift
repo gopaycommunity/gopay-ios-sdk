@@ -35,7 +35,7 @@ public enum GopayLocales {
     public static let en = GopayLocaleStrings(
         panLabel: "Card number",
         panPlaceholder: panPlaceholder,
-        expLabel: "Expiration date",
+        expLabel: "Expiry date",
         expPlaceholder: "MM/YY",
         cvvLabel: cvvLabelConst,
         cvvPlaceholder: cvvPlaceholder,
@@ -65,7 +65,7 @@ public enum GopayLocales {
     public static let es = GopayLocaleStrings(
         panLabel: "Número de Tarjeta",
         panPlaceholder: panPlaceholder,
-        expLabel: "Fecha de vencimiento",
+        expLabel: "Caducidad",
         expPlaceholder: "MM/AA",
         cvvLabel: cvvLabelConst,
         cvvPlaceholder: cvvPlaceholder,
@@ -140,7 +140,7 @@ public enum GopayLocales {
     public static let pt = GopayLocaleStrings(
         panLabel: "Número do cartão",
         panPlaceholder: panPlaceholder,
-        expLabel: "Data de validade",
+        expLabel: "Validade",
         expPlaceholder: "MM/AA",
         cvvLabel: cvvLabelConst,
         cvvPlaceholder: cvvPlaceholder,
@@ -185,7 +185,7 @@ public enum GopayLocales {
     public static let ru = GopayLocaleStrings(
         panLabel: "Номер карты",
         panPlaceholder: panPlaceholder,
-        expLabel: "Срок действия",
+        expLabel: "Годен до",
         expPlaceholder: "ММ/ГГ",
         cvvLabel: cvvLabelConst,
         cvvPlaceholder: cvvPlaceholder,
@@ -245,7 +245,7 @@ public enum GopayLocales {
     public static let lt = GopayLocaleStrings(
         panLabel: "Kortelės numeris",
         panPlaceholder: panPlaceholder,
-        expLabel: "Galiojimo data",
+        expLabel: "Galioja iki",
         expPlaceholder: "MM/YY",
         cvvLabel: cvvLabelConst,
         cvvPlaceholder: cvvPlaceholder,
@@ -260,7 +260,7 @@ public enum GopayLocales {
     public static let lv = GopayLocaleStrings(
         panLabel: "Kartes numurs",
         panPlaceholder: panPlaceholder,
-        expLabel: "Derīguma termiņš",
+        expLabel: "Derīgs līdz",
         expPlaceholder: "MM/GG",
         cvvLabel: cvvLabelConst,
         cvvPlaceholder: cvvPlaceholder,

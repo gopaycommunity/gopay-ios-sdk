@@ -514,7 +514,13 @@ changes. And a focused field no longer recolors its border at all, which 1.x did
 
 Form labels and placeholders are localized. By default the form uses the **device language and
 falls back to Czech (`cs`)** when the language has no translation. 20 languages ship built in
-(`bg cs de en es et fr hr hu it lt lv nl pl pt ro ru sk sl uk`).
+(`bg cs de en es et fr hr hu it lt lv nl pl pt ro ru sk sl uk`). The strings are identical to the
+Android SDK's, so a screen reads the same on both.
+
+The expiration label sits in a half-width column, so the translations are kept short enough to fit
+on one line at the default text size on a 360pt screen. At the accessibility text sizes a long one
+can still wrap onto a second line, which pushes the label above it rather than being cut off; the
+inputs of the row keep their shared height either way.
 
 Set a preferred locale globally on the config, or per form:
 
