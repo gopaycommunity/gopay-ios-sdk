@@ -31,13 +31,10 @@ GopayCardForm(
 ## Parity with Android
 
 The 29 parameters are identical on Android, name for name and type for type, and both SDKs mark an
-invalid field the same way. These differ per platform:
+invalid field the same way. ``GopayCardFormTheme/inputBorderStyle`` keeps both web values so both
+platforms name the styles the same way, and both render `underline` as `boxed`, because neither has
+a native underlined text field and neither draws one. One thing is Android's alone:
 
-- ``GopayCardFormTheme/inputBorderStyle`` keeps both web values so both platforms name the styles
-  the same way, but `underline` is **not supported on iOS**, which has no native underlined text
-  field; the value is accepted and the input renders as `boxed`. Android renders it with the native
-  Material indicator.
-- Marking the active field is native on each platform, so Android highlights it and iOS does not.
 - The Android SDK adds `helperTextColor` and `helperFontSize` of its own, for a helper line neither
   the web form nor this SDK renders.
 
@@ -83,10 +80,9 @@ can come out dark on a dark field.
 The error border only appears while the form draws inline errors, so the default
 `validation: .hidden` leaves the border untouched.
 
-Marking the active field is left to the platform, which is why it looks different on each: Android
-shows it, because its Material field highlights the indicator itself, and iOS does not, because a
-native text field marks focus with the caret and the keyboard rather than its frame. There is no
-theme parameter for it on either.
+Neither platform marks the active field with its frame. A native text field marks focus with the
+caret and the keyboard, and any more than that is something the SDK would have to paint itself, so
+it does not. There is no theme parameter for it on either.
 
 The border runs inside the field, so raising ``GopayCardFormTheme/inputBorderWidth`` thickens the
 frame inwards and never changes how much room the form takes. It stops at half the field's height,

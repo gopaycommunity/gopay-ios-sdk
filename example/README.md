@@ -108,9 +108,8 @@ The **Theme** picker switches between the themes in
 [`ThemeShowcase.swift`](example/ThemeShowcase.swift). `Dark` and `Red` carry the palettes the web
 card form ships, written out parameter for parameter; `Default` is the SDK untouched. The Android
 demo carries the same three with the same values, so a parameter can be read side by side across
-iOS, Android and the web. The values match, the picture need not: `Dark` and `Red` ask for
-`underline`, which Android draws with its native Material indicator while iOS has no native
-underlined field and renders the input as `boxed`.
+iOS, Android and the web. `Dark` and `Red` ask for `underline`, which the web draws and the two
+mobile demos render as `boxed`, because neither platform has a native underlined field.
 
 Every result, or a `GopaySDKError` with its code, is logged into the **Response** box at the bottom.
 

@@ -324,10 +324,8 @@ GopayCardForm(
 ```
 
 These 29 parameters are the same on Android, name for name and type for type, so a design decided
-once reads the same on both. Three things differ per platform, because each follows what the
-platform does natively: `underline` is a native field style on Android only; marking the active
-field is native on Android and not on iOS (see below); and the Android SDK adds `helperTextColor`
-and `helperFontSize` of its own for a helper line neither the web form nor this SDK renders.
+once reads the same on both. One thing is Android's alone: it adds `helperTextColor` and
+`helperFontSize` for a helper line neither the web form nor this SDK renders.
 
 On iOS 13 the text inside an input keeps the system colors: `inputTextColor` and
 `placeholderColor` reach a `UITextField`, and converting a SwiftUI `Color` to a `UIColor` needs
@@ -355,7 +353,7 @@ alone. The parameters mirror Android name for name and type for type, with one e
 | `inputFontWeight` | `inputFontWeight` | `nil` (regular) | unset |
 | `inputHeight` | `inputHeight` | `nil` (font decides) | unset |
 | `placeholderColor` | `placeholderColor` | `nil` (system) | browser default |
-| `inputBorderStyle` | `inputBorderStyle` | `.boxed`; `underline` is not supported | `underline` |
+| `inputBorderStyle` | `inputBorderStyle` | `.boxed`; `underline` renders as `boxed` | `underline` |
 | `inputBorderColor` | `inputBorderColor` | `Color(.separator)` | `#698492` |
 | `inputBorderWidth` | `inputBorderWidth` | `1` | `1` |
 | `inputBackgroundColor` | `inputBackgroundColor` | `.clear` | `transparent` |
@@ -398,8 +396,8 @@ The web-only keys have no counterpart here, each for its own reason:
 - `focusGradientStart`, `focusGradientEnd`, `focusRingWidth`, `focusRingColor` and
   `inputBorderCollapse` all describe something a browser paints around a field: a gradient, a glow
   outside the frame, one shared line between two neighbours. A native text field has none of them,
-  and the SDK does not draw its own. A focused field is marked the way the platform marks it, with
-  the caret and the keyboard.
+  and neither SDK draws its own. A focused field is marked the way the platform marks it, with the
+  caret and the keyboard.
 - `inputLetterSpacing` would have to override how the field measures itself, which is exactly the
   kind of reach into the platform this theme avoids. `labelLetterSpacing` stays, because a label is
   ordinary text.
@@ -412,12 +410,12 @@ them.
 The iOS column is what the platform would do on its own, which is why it differs from the web
 column: the defaults are not a GoPay style, they are the absence of one. To move towards the web
 appearance, pass the web values; the demo app's `ThemeShowcase.swift` shows how far that gets, and
-it cannot get all the way, because the web's default underline is not a style iOS supports.
+it cannot get all the way, because the web's default underline is not a shape a native field draws.
 
-`inputBorderStyle` is the one parameter whose meaning is not the same everywhere. It stays in the
-type so both platforms name the styles the same way, and Android renders `underline` with its
-native Material indicator, but **iOS has no native underlined text field and the SDK draws nothing
-of its own, so on iOS the value is accepted and the input renders as `boxed`**.
+`inputBorderStyle` is the one parameter the web and the mobile SDKs read differently. It stays in
+the type so every channel names the styles the same way, but **neither mobile platform has a native
+underlined text field and neither SDK draws one, so `underline` is accepted and the input renders
+as `boxed`**.
 
 The one default worth overriding deliberately is `placeholderColor`: unset, it follows the system's
 light or dark appearance rather than the theme's, so a theme that paints the form dark should set a
@@ -448,10 +446,9 @@ A field's border has two colors:
 The error border only appears while the form draws inline errors at all, so with the default
 `validation: .hidden` nothing about the border changes.
 
-Marking the active field is left to the platform, which is why it looks different on each: Android
-shows it, because its Material field highlights the indicator itself, and iOS does not, because a
-native text field marks focus with the caret and the keyboard rather than its frame. There is no
-theme parameter for it on either.
+Neither platform marks the active field with its frame. A native text field marks focus with the
+caret and the keyboard, and any more than that is something the SDK would have to paint itself, so
+it does not. There is no theme parameter for it on either.
 
 #### Migrating a 1.x theme
 
