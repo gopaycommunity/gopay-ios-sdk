@@ -37,6 +37,30 @@ struct CardFormRowLayoutTests {
         return found
     }
 
+    /// Lays the form out in the given language and returns the three inputs in window coordinates,
+    /// so the expiration and the CVV can be compared against one another.
+    private func hostedFieldFrames(
+        locale: String,
+        sizeCategory: ContentSizeCategory
+    ) -> [CGRect] {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 1200))
+        window.rootViewController = UIHostingController(
+            rootView: GopayCardForm(locale: locale)
+                .environment(\.sizeCategory, sizeCategory)
+                .frame(width: 380)
+        )
+        window.isHidden = false
+        window.layoutIfNeeded()
+
+        var found: [UITextField] = []
+        func walk(_ view: UIView) {
+            if let field = view as? UITextField { found.append(field) }
+            view.subviews.forEach(walk)
+        }
+        walk(window)
+        return found.map { $0.convert($0.bounds, to: window) }
+    }
+
     /// How tall the whole form lays out, for checking what the padding around a field adds.
     private func hostedFormHeight(
         theme: GopayCardFormTheme,
@@ -180,5 +204,26 @@ struct CardFormRowLayoutTests {
         let large = hostedFields(sizeCategory: .accessibilityExtraLarge).first?.bounds.height ?? 0
 
         #expect(large > small)
+    }
+
+    /// A label long enough to wrap moved only its own input before the row shared a label height:
+    /// Spanish and Russian wrap the expiration label where English and Lithuanian do not, and the
+    /// expiration input then sat tens of points below the CVV next to it.
+    @Test("the row keeps its two inputs on one line however a label wraps")
+    func theRowKeepsItsTwoInputsOnOneLineHoweverALabelWraps() {
+        for locale in ["en", "es", "ru", "lt"] {
+            for category in [ContentSizeCategory.large, .accessibilityLarge, .accessibilityExtraExtraExtraLarge] {
+                let frames = hostedFieldFrames(locale: locale, sizeCategory: category)
+                guard frames.count == 3 else {
+                    Issue.record("expected three inputs in \(locale) at \(category), got \(frames.count)")
+                    continue
+                }
+
+                let expiration = frames[1], cvv = frames[2]
+                let drop = abs(expiration.minY - cvv.minY)
+                #expect(drop < 0.5, "\(locale) at \(category): the two inputs are \(drop)pt apart")
+                #expect(expiration.height == cvv.height, "\(locale) at \(category): heights differ")
+            }
+        }
     }
 }

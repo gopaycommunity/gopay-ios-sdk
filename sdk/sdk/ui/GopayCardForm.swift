@@ -130,6 +130,11 @@ public struct GopayCardForm: View {
     /// Read so the theme's fonts rescale when the user changes the Dynamic Type size.
     @Environment(\.sizeCategory) private var sizeCategory
 
+    /// Height of the tallest label in the expiration + CVV row. The row measures both labels and
+    /// hands the taller one back down, so a label that wraps in one column does not drop that
+    /// column's input below its neighbour's.
+    @State private var rowLabelHeight: CGFloat = 0
+
     @State private var isCardNumberFocused: Bool = false
     @State private var isExpirationFocused: Bool = false
     @State private var isCvvFocused: Bool = false
@@ -194,13 +199,35 @@ public struct GopayCardForm: View {
     /// Field label styled with the theme's label typography. Renders nothing when the theme hides
     /// the labels; the field then announces the text to VoiceOver instead.
     @ViewBuilder
-    private func fieldLabel(_ text: String) -> some View {
+    private func fieldLabel(_ text: String, sharesRowHeight: Bool) -> some View {
         if !theme.labelHidden {
             labelText(text)
                 .font(theme.labelFont(for: sizeCategory))
                 .foregroundColor(theme.labelColor)
                 .lineSpacing(labelExtraLineSpacing)
+                // Take the height the wrapped text needs. Without this a narrow column at the
+                // largest text sizes truncates the label with an ellipsis instead of wrapping it,
+                // which loses the word that says which field this is.
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(minHeight: theme.labelLineHeight.map { theme.scaledCaptionLength($0, for: sizeCategory) })
+                // Measured inside the shared reserve below, so what the row sees is the height this
+                // label needs on its own. Measuring the reserved frame instead would feed its own
+                // output back in, and the row could then only ever grow.
+                .background(rowLabelHeightReader(active: sharesRowHeight))
+                .frame(
+                    minHeight: sharesRowHeight ? rowLabelHeight : nil,
+                    alignment: .topLeading
+                )
+        }
+    }
+
+    /// Reports a label's own height to the row, for the columns that share one.
+    @ViewBuilder
+    private func rowLabelHeightReader(active: Bool) -> some View {
+        if active {
+            GeometryReader { proxy in
+                Color.clear.preference(key: RowLabelHeightKey.self, value: proxy.size.height)
+            }
         }
     }
 
@@ -252,10 +279,11 @@ public struct GopayCardForm: View {
     private func field<Content: View>(
         label: String,
         error: String?,
+        sharesRowHeight: Bool = false,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            fieldLabel(label)
+            fieldLabel(label, sharesRowHeight: sharesRowHeight)
 
             inputContainer(hasError: error != nil, content: content)
             .padding(.top, theme.labelHidden ? 0 : theme.fieldSpacing)
@@ -375,12 +403,14 @@ public struct GopayCardForm: View {
 
             // Expiration and CVV inputs (second row)
             // Top-aligned so an error line under one field does not push or stretch its neighbour,
-            // the way the web row behaves.
+            // the way the web row behaves. Both columns reserve the taller label's height, so a
+            // label that wraps keeps its input on the same line as its neighbour's.
             HStack(alignment: .top, spacing: theme.groupSpacing) {
                 // Expiration input (single field with automatic slash)
                 field(
                     label: localeStrings.expLabel,
-                    error: errors.expiration
+                    error: errors.expiration,
+                    sharesRowHeight: true
                 ) {
                     FormattedTextField(
                         placeholder: localeStrings.expPlaceholder,
@@ -424,7 +454,8 @@ public struct GopayCardForm: View {
                 // CVV input
                 field(
                     label: localeStrings.cvvLabel,
-                    error: errors.cvv
+                    error: errors.cvv,
+                    sharesRowHeight: true
                 ) {
                     FormattedTextField(
                         placeholder: localeStrings.cvvPlaceholder,
@@ -453,6 +484,9 @@ public struct GopayCardForm: View {
                         }
                     )
                 }
+            }
+            .onPreferenceChange(RowLabelHeightKey.self) { height in
+                rowLabelHeight = height
             }
         }
         .padding(theme.formPadding)
@@ -503,3 +537,14 @@ struct GopayCardForm_Previews: PreviewProvider {
 }
 #endif
 
+
+// MARK: - Row layout
+
+/// Carries the tallest label height in a field row up to the row that lays it out.
+private struct RowLabelHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
