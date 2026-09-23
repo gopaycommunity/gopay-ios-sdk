@@ -91,7 +91,8 @@ public struct GopayCardFormTheme: Equatable {
     public var inputPaddingVertical: CGFloat
     /// Horizontal padding inside the inputs, in points.
     public var inputPaddingHorizontal: CGFloat
-    /// Corner radius of the inputs, in points.
+    /// Corner radius of the inputs, in points. The default `5` with a continuous curve is what
+    /// `UITextField.borderStyle = .roundedRect` gives its own background view.
     public var inputBorderRadius: CGFloat
     // MARK: - Validation errors
 
@@ -111,7 +112,8 @@ public struct GopayCardFormTheme: Equatable {
     // MARK: - Layout
 
     /// Gap between the field groups, in points: between the card number row and the
-    /// expiration + CVV row, and between the expiration and the CVV.
+    /// expiration + CVV row, and between the expiration and the CVV. `16`, the value the web form
+    /// and the Android SDK also use; it is our own spacing, not a platform constant.
     public var groupSpacing: CGFloat
     /// Gap between a label and its input, in points.
     public var fieldSpacing: CGFloat
@@ -143,13 +145,13 @@ public struct GopayCardFormTheme: Equatable {
         inputBackgroundColor: Color = .clear,
         inputPaddingVertical: CGFloat = 12,
         inputPaddingHorizontal: CGFloat = 12,
-        inputBorderRadius: CGFloat = 8,
+        inputBorderRadius: CGFloat = 5,
         inputErrorBorderColor: Color = .red,
         errorTextColor: Color = .red,
         errorFontSize: CGFloat = 12,
         errorMinHeight: CGFloat = 0,
         errorSpacing: CGFloat? = nil,
-        groupSpacing: CGFloat = 12,
+        groupSpacing: CGFloat = 16,
         fieldSpacing: CGFloat = 4,
         formPadding: CGFloat = 0,
         formBackgroundColor: Color = .clear
@@ -184,9 +186,6 @@ public struct GopayCardFormTheme: Equatable {
         self.formPadding = formPadding
         self.formBackgroundColor = formBackgroundColor
     }
-
-    /// Default theme: the appearance iOS gives a form of plain text fields.
-    public static let standard = GopayCardFormTheme()
 
 }
 

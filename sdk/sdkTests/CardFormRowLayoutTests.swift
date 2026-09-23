@@ -17,7 +17,7 @@ struct CardFormRowLayoutTests {
 
     /// Lays the form out in a window and returns the text fields in the order they appear.
     private func hostedFields(
-        theme: GopayCardFormTheme = .standard,
+        theme: GopayCardFormTheme = GopayCardFormTheme(),
         sizeCategory: ContentSizeCategory = .large
     ) -> [UITextField] {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 400))
@@ -83,7 +83,7 @@ struct CardFormRowLayoutTests {
     /// host that overrides the category gets both, not one of each.
     @Test func theInputFontFollowsTheEnvironmentsTextSize() {
         for category in [ContentSizeCategory.large, .accessibilityLarge] {
-            let expected = GopayCardFormTheme.standard.inputUIFont(for: category).pointSize
+            let expected = GopayCardFormTheme().inputUIFont(for: category).pointSize
             let rendered = hostedFields(sizeCategory: category).first?.font?.pointSize
 
             #expect(rendered == expected, "at \(category) the field should render at \(expected)pt")

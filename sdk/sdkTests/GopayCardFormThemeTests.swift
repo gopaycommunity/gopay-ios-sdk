@@ -17,8 +17,8 @@ struct GopayCardFormThemeTests {
 
     /// An untouched form is an iOS form: system type, a plain bordered field, no uppercasing and
     /// no reserved error line. The web preset is a theme a host opts into, not the starting point.
-    @Test func standardIsThePlatformsOwnAppearance() {
-        let theme = GopayCardFormTheme.standard
+    @Test func anUntouchedThemeIsThePlatformsOwnAppearance() {
+        let theme = GopayCardFormTheme()
 
         #expect(theme.fontFamily == nil)
         #expect(theme.labelFontSize == 12)
@@ -34,18 +34,18 @@ struct GopayCardFormThemeTests {
         #expect(theme.inputBorderWidth == 1)
         #expect(theme.inputPaddingVertical == 12)
         #expect(theme.inputPaddingHorizontal == 12)
-        #expect(theme.inputBorderRadius == 8)
+        #expect(theme.inputBorderRadius == 5)
         #expect(theme.errorFontSize == 12)
         #expect(theme.errorMinHeight == 0)
         #expect(theme.errorSpacing == nil)
-        #expect(theme.groupSpacing == 12)
+        #expect(theme.groupSpacing == 16)
         #expect(theme.fieldSpacing == 4)
         #expect(theme.formPadding == 0)
     }
 
-    @Test("standard: the default colors follow the system palette")
-    func standardDefaultColorsFollowTheSystemPalette() {
-        let theme = GopayCardFormTheme.standard
+    @Test("the default colors follow the system palette")
+    func theDefaultColorsFollowTheSystemPalette() {
+        let theme = GopayCardFormTheme()
 
         #expect(theme.labelColor == .primary)
         #expect(theme.inputTextColor == .primary)
@@ -127,12 +127,12 @@ struct GopayCardFormThemeTests {
     private static let atLargeTextSize = UITraitCollection(preferredContentSizeCategory: .large)
 
     @Test func inputFontDefaultMatchesTheBodyTextStyle() {
-        #expect(GopayCardFormTheme.standard.inputUIFont(for: .large).pointSize
+        #expect(GopayCardFormTheme().inputUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .body, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
     @Test func labelFontDefaultMatchesTheCaptionTextStyle() {
-        #expect(GopayCardFormTheme.standard.labelUIFont(for: .large).pointSize
+        #expect(GopayCardFormTheme().labelUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
@@ -173,7 +173,7 @@ struct GopayCardFormThemeTests {
     }
 
     @Test func scaledCaptionLengthIsTheIdentityAtTheDefaultCategory() {
-        #expect(GopayCardFormTheme.standard.scaledCaptionLength(14, for: .large) == 14)
+        #expect(GopayCardFormTheme().scaledCaptionLength(14, for: .large) == 14)
     }
 
     @Test func errorReserveHoldsAtLeastOneLineOfTheErrorFont() {

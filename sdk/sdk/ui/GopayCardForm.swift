@@ -145,7 +145,7 @@ public struct GopayCardForm: View {
     /// (`GopaySDKConfig.locale`), then the device language, falling back to Czech. Pass `locale`
     /// to override per form, or `localeStrings` to supply strings directly.
     /// - Parameters:
-    ///   - theme: Theme for customizing the appearance (default: `.standard`).
+    ///   - theme: Theme for customizing the appearance (default: `GopayCardFormTheme()`).
     ///   - locale: Locale code (e.g. `"cs"`, `"de"`) for the field labels. `nil` uses the SDK
     ///             default. Ignored when `localeStrings` is supplied.
     ///   - localeStrings: Explicit locale strings to use, bypassing `locale` resolution.
@@ -154,7 +154,7 @@ public struct GopayCardForm: View {
     ///   - isValid: Optional binding to track form validation state (default: `nil`).
     ///   - formId: Optional unique identifier for this form. If not provided, a UUID will be generated.
     public init(
-        theme: GopayCardFormTheme = .standard,
+        theme: GopayCardFormTheme = GopayCardFormTheme(),
         locale: String? = nil,
         localeStrings: GopayLocaleStrings? = nil,
         validation: GopayCardFormValidationDisplay = .hidden,
@@ -280,7 +280,9 @@ public struct GopayCardForm: View {
             // Android reads the same key and how a browser sizes the box.
             .frame(minHeight: minimumInputHeight)
 
-        let shape = RoundedRectangle(cornerRadius: theme.inputBorderRadius)
+        // `.continuous` is the curve UIKit gives a rounded text field; a circular corner of the
+        // same radius reads as a tighter, un-iOS box.
+        let shape = RoundedRectangle(cornerRadius: theme.inputBorderRadius, style: .continuous)
         return input
             .background(shape.fill(theme.inputBackgroundColor))
             // `strokeBorder` keeps the whole line inside the field, so the border needs no

@@ -361,7 +361,7 @@ alone. The parameters mirror Android name for name and type for type, with one e
 | `inputBackgroundColor` | `inputBackgroundColor` | `.clear` | `transparent` |
 | `inputPaddingVertical` | `inputPaddingVertical` | `12` | `6` |
 | `inputPaddingHorizontal` | `inputPaddingHorizontal` | `12` | `0` |
-| `inputBorderRadius` | `inputBorderRadius` | `8` | `0` |
+| `inputBorderRadius` | `inputBorderRadius` | `5` (rounded-rect field) | `0` |
 | `inputErrorBorderColor` | `inputErrorBorderColor` | `.red` | `#ea3c55` |
 | `errorTextColor` | `errorTextColor` | `.red` | `#cc0000` |
 | `errorFontSize` | `errorFontSize` | `12` (caption) | `11` |
@@ -375,7 +375,7 @@ alone. The parameters mirror Android name for name and type for type, with one e
 | `focusGradientStart` | — | web-only | `#19C7D6` |
 | `focusGradientEnd` | — | web-only | `#1899D6` |
 | `errorHidden` | — | web-only | `false` |
-| `groupSpacing` | `groupSpacing` | `12` | `16` |
+| `groupSpacing` | `groupSpacing` | `16` | `16` |
 | `fieldSpacing` | `fieldSpacing` | `4` | `4` |
 | `formPadding` | `formPadding` | `0` (the host lays it out) | `16` |
 | `formBackgroundColor` | `formBackgroundColor` | `.clear` | `transparent` |
