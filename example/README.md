@@ -104,12 +104,13 @@ Four sections, top to bottom. Sections 3 and 4 only appear once a session is liv
 4. **Card form → JWE** — a **Theme** picker, a locale picker, `GopayCardForm`,
    *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*.
 
-The **Theme** picker applies one of the JSON theme documents in
-[`ThemeShowcase.json`](example/ThemeShowcase.json), the way a host would apply a theme its own
-backend sent down. The documents use the web card form's parameter names, and the Android demo
-ships the same file, so one document can be compared across iOS, Android and the web. `Dark` and
-`Red` are the two presets the web card form ships with, written out key for key; `Default` is an
-empty document and renders the SDK defaults.
+The **Theme** picker switches between the themes in
+[`ThemeShowcase.swift`](example/ThemeShowcase.swift). `Dark` and `Red` carry the palettes the web
+card form ships, written out parameter for parameter; `Default` is the SDK untouched. The Android
+demo carries the same three with the same values, so a parameter can be read side by side across
+iOS, Android and the web. The values match, the picture need not: `Dark` and `Red` ask for
+`underline`, which Android draws with its native Material indicator while iOS has no native
+underlined field and renders the input as `boxed`.
 
 Every result, or a `GopaySDKError` with its code, is logged into the **Response** box at the bottom.
 
