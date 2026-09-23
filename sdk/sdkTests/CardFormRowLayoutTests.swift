@@ -219,7 +219,8 @@ struct CardFormRowLayoutTests {
                     continue
                 }
 
-                let expiration = frames[1], cvv = frames[2]
+                let expiration = frames[1]
+                let cvv = frames[2]
                 let drop = abs(expiration.minY - cvv.minY)
                 #expect(drop < 0.5, "\(locale) at \(category): the two inputs are \(drop)pt apart")
                 #expect(expiration.height == cvv.height, "\(locale) at \(category): heights differ")
