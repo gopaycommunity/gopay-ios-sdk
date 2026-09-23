@@ -328,7 +328,6 @@ public struct GopayCardForm: View {
     ///
     /// Capped at half the field, because `strokeBorder` insets the shape by half the width and a
     /// width past the field's height would inset it out of existence, losing the border entirely.
-    /// A JSON document may carry a width of thousands of points, so the cap is not hypothetical.
     private var borderWidth: CGFloat {
         min(max(0, theme.inputBorderWidth), resolvedInputHeight / 2)
     }

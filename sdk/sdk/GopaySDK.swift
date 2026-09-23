@@ -336,9 +336,13 @@ public class GopaySDK {
         }
     }
 
-    /// Logs something the integrator should know about that is not an error, such as a JSON theme
-    /// key the SDK dropped. Printed with the same gate as ``handleError(_:)``: only while
-    /// `GopaySDKConfig.enableDebugLogging` is on.
+    /// Logs something the integrator should know about that is not an error, such as a response
+    /// field the decoder had to substitute. Printed with the same gate as ``handleError(_:)``:
+    /// only while `GopaySDKConfig.enableDebugLogging` is on.
+    ///
+    /// Nothing on this branch calls it. It is kept for the 3DS work that builds on top of this
+    /// one, where the charge decoder reports a substituted response field through it; deleting it
+    /// here as dead code breaks that branch's build.
     func logWarning(_ message: String) {
         if config?.enableDebugLogging == true {
             print("[GopaySDK] Warning: \(message)")

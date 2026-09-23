@@ -323,44 +323,22 @@ GopayCardForm(
 )
 ```
 
-These 29 parameters are the same on Android, name for name and type for type, so a theme decided
-once holds on both. Three things differ per platform, because each follows what the platform does
-natively: `underline` is a native field style on Android only; marking the active field is native on
-Android and not on iOS (see below); and the Android SDK adds `helperTextColor` and `helperFontSize`
-of its own for a helper line neither the web form nor this SDK renders.
+These 29 parameters are the same on Android, name for name and type for type, so a design decided
+once reads the same on both. Three things differ per platform, because each follows what the
+platform does natively: `underline` is a native field style on Android only; marking the active
+field is native on Android and not on iOS (see below); and the Android SDK adds `helperTextColor`
+and `helperFontSize` of its own for a helper line neither the web form nor this SDK renders.
 
-The theme is `Codable`, with colors written as `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"` or
-`"transparent"` (the leading `#` is required, as in CSS), so a
-JSON theme travels between channels. Decoding is deliberately tolerant: keys the SDK does not know
-(the web-only ones below among them) are ignored, and a key whose value cannot be used is dropped on
-its own while the rest of the document still applies. That covers a value of the wrong type, a color
-it cannot parse, a negative length and an unknown `inputBorderStyle`; the font weights also accept
-the CSS keywords `bold` (700) and `normal` (400). A length that is negative, or large enough to
-break the layout, drops the same way. Every dropped key is reported as a warning in the debug log
-(`[GopaySDK] Warning: ...`, once the SDK is initialized with `enableDebugLogging`), the way a
-TypeScript compiler warns about one property and still builds, so an integrator learns about a typo
-without the theme failing.
-
-```swift
-// A whole theme from a document, with the SDK defaults for every key it omits.
-let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: json)
-
-// Or over a theme you already have: keys the document omits keep your values, and a document
-// that cannot be read at all leaves your theme untouched, so this never throws.
-let branded = myTheme.applying(json)
-```
-
-Note that decoding produces plain colors: an adaptive `Color` written into a theme in Swift keeps
-following light and dark mode, one restored from hex does not. Encoding needs iOS 14, because
-SwiftUI cannot read a `Color` back on iOS 13 and every color there comes out as `"transparent"`.
-Decoding works on every supported version.
+On iOS 13 the text inside an input keeps the system colors: `inputTextColor` and
+`placeholderColor` reach a `UITextField`, and converting a SwiftUI `Color` to a `UIColor` needs
+iOS 14. Everything drawn by SwiftUI itself, including the labels, the border and the error text,
+is themed on iOS 13 as well.
 
 #### Parity with the web theme
 
 Every key of the web card form theme, what it does here, and the value you get when you leave it
 alone. The parameters mirror Android name for name and type for type, with one exception:
-`fontFamily` is a string here and resolves at render, while Android takes a typed `FontFamily` and
-needs the host to supply a resolver before a font named in a JSON document takes effect.
+`fontFamily` is a string here and resolves at render, while Android takes a typed `FontFamily`.
 
 | Web key | iOS parameter | iOS default | Web default |
 | --- | --- | --- | --- |
@@ -428,25 +406,23 @@ The web-only keys have no counterpart here, each for its own reason:
 - `inputLineHeight` pins the height of a field across browser engines. A single-line native field
   has no such problem; `inputHeight` is here to set a minimum.
 
-A theme document may still carry any of them: a web theme moves over unchanged and only the keys
-this SDK understands take effect. These seven are not silently swallowed, though. The SDK knows
-them, so each one a document sets is named in the debug log with the reason it had no effect, the
-same as any other key that could not be applied.
+They are simply not parameters of this type, so the compiler says so where you would have set
+them.
 
 The iOS column is what the platform would do on its own, which is why it differs from the web
 column: the defaults are not a GoPay style, they are the absence of one. To move towards the web
-appearance, pass the web values; the demo app's `ThemeShowcase.json` shows how far that gets, and
+appearance, pass the web values; the demo app's `ThemeShowcase.swift` shows how far that gets, and
 it cannot get all the way, because the web's default underline is not a style iOS supports.
 
 `inputBorderStyle` is the one parameter whose meaning is not the same everywhere. It stays in the
-type so a theme document travels unchanged, and Android renders `underline` with its native
-Material indicator, but **iOS has no native underlined text field and the SDK draws nothing of its
-own, so on iOS the value is accepted and the input renders as `boxed`**.
+type so both platforms name the styles the same way, and Android renders `underline` with its
+native Material indicator, but **iOS has no native underlined text field and the SDK draws nothing
+of its own, so on iOS the value is accepted and the input renders as `boxed`**.
 
 The one default worth overriding deliberately is `placeholderColor`: unset, it follows the system's
 light or dark appearance rather than the theme's, so a theme that paints the form dark should set a
 placeholder color of its own or the hint text can come out dark on a dark field. The demo's `Dark`
-document in `ThemeShowcase.json` shows it.
+theme shows it.
 
 A few deviations are behavioral rather than default values:
 
@@ -501,7 +477,7 @@ Set it back explicitly if your layout relied on the opaque fill.
 | `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
 
 The cut to native rendering removed seven keys that 1.x never had but the 2.0 branch did carry for
-a while. A theme document may still set them; they are ignored and named in the debug log.
+a while. They are gone from the type, so setting one is a compile error rather than a surprise.
 
 | Removed in 2.0 | Instead |
 | --- | --- |

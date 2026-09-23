@@ -2,25 +2,22 @@
 //  GopayCardFormThemeTests.swift
 //  sdkTests
 //
-//  Pins the public shape of GopayCardFormTheme: the defaults, the hex bridge used for JSON
-//  themes, the CSS font weight mapping and the tolerant decoder.
+//  Pins the public shape of GopayCardFormTheme: the defaults, the CSS font weight mapping and
+//  the fonts and border colours it resolves.
 //
 
 import Testing
-import Foundation
 import SwiftUI
 import UIKit
 @testable import sdk
 
-// Serialized because two tests swap the shared dropped-key handler while they decode.
-@Suite(.serialized)
 struct GopayCardFormThemeTests {
 
     // MARK: - Defaults
 
     /// An untouched form is an iOS form: system type, a plain bordered field, no uppercasing and
     /// no reserved error line. The web preset is a theme a host opts into, not the starting point.
-    @Test func standard_isThePlatformsOwnAppearance() {
+    @Test func standardIsThePlatformsOwnAppearance() {
         let theme = GopayCardFormTheme.standard
 
         #expect(theme.fontFamily == nil)
@@ -46,7 +43,8 @@ struct GopayCardFormThemeTests {
         #expect(theme.formPadding == 0)
     }
 
-    @Test func standard_defaultColorsFollowTheSystemPalette() {
+    @Test("standard: the default colors follow the system palette")
+    func standardDefaultColorsFollowTheSystemPalette() {
         let theme = GopayCardFormTheme.standard
 
         #expect(theme.labelColor == .primary)
@@ -61,7 +59,7 @@ struct GopayCardFormThemeTests {
 
     // MARK: - Font weights
 
-    @Test func fontWeight_mapsTheWholeCssScale() {
+    @Test func fontWeightMapsTheWholeCssScale() {
         #expect(GopayCardFormTheme.uiFontWeight(100) == .ultraLight)
         #expect(GopayCardFormTheme.uiFontWeight(200) == .thin)
         #expect(GopayCardFormTheme.uiFontWeight(300) == .light)
@@ -73,7 +71,7 @@ struct GopayCardFormThemeTests {
         #expect(GopayCardFormTheme.uiFontWeight(900) == .black)
     }
 
-    @Test func fontWeight_roundsInBetweenValuesAndClampsOutOfRange() {
+    @Test func fontWeightRoundsInBetweenValuesAndClampsOutOfRange() {
         #expect(GopayCardFormTheme.uiFontWeight(449) == .regular)
         #expect(GopayCardFormTheme.uiFontWeight(451) == .medium)
         #expect(GopayCardFormTheme.uiFontWeight(0) == .ultraLight)
@@ -83,35 +81,23 @@ struct GopayCardFormThemeTests {
 
     // MARK: - Border state
 
-    @Test func borderColor_restingFieldUsesTheBorderColor() {
+    @Test("borderColor: a resting field uses the border color")
+    func borderColorRestingFieldUsesTheBorderColor() {
         var theme = GopayCardFormTheme()
         theme.inputBorderColor = .gray
 
         #expect(theme.borderColor(hasError: false) == .gray)
     }
 
-    @Test func borderColor_invalidFieldUsesTheErrorColor() {
+    @Test("borderColor: an invalid field uses the error color")
+    func borderColorInvalidFieldUsesTheErrorColor() {
         var theme = GopayCardFormTheme()
         theme.inputErrorBorderColor = .orange
 
         #expect(theme.borderColor(hasError: true) == .orange)
     }
 
-    @Test func borderStyle_decodesBothWebValues() throws {
-        let underline = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"inputBorderStyle\": \"underline\" }".utf8)
-        )
-        let boxed = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"inputBorderStyle\": \"boxed\" }".utf8)
-        )
-
-        #expect(underline.inputBorderStyle == .underline)
-        #expect(boxed.inputBorderStyle == .boxed)
-    }
-
-    @Test func errorSpacing_fallsBackToFieldSpacing() {
+    @Test func errorSpacingFallsBackToFieldSpacing() {
         var theme = GopayCardFormTheme()
         theme.fieldSpacing = 6
 
@@ -123,7 +109,7 @@ struct GopayCardFormThemeTests {
 
     // MARK: - Resolved fonts
 
-    @Test func inputFont_followsTheThemedSizeAndWeight() {
+    @Test func inputFontFollowsTheThemedSizeAndWeight() {
         var theme = GopayCardFormTheme()
         theme.inputFontSize = 14
         theme.inputFontWeight = 600
@@ -140,17 +126,17 @@ struct GopayCardFormThemeTests {
     /// comparison depend on the machine the tests run on.
     private static let atLargeTextSize = UITraitCollection(preferredContentSizeCategory: .large)
 
-    @Test func inputFont_defaultMatchesTheBodyTextStyle() {
+    @Test func inputFontDefaultMatchesTheBodyTextStyle() {
         #expect(GopayCardFormTheme.standard.inputUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .body, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
-    @Test func labelFont_defaultMatchesTheCaptionTextStyle() {
+    @Test func labelFontDefaultMatchesTheCaptionTextStyle() {
         #expect(GopayCardFormTheme.standard.labelUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
-    @Test func fontFamily_picksTheBoldFaceForHeavyWeightsAndTheRegularOneOtherwise() {
+    @Test func fontFamilyPicksTheBoldFaceForHeavyWeightsAndTheRegularOneOtherwise() {
         var theme = GopayCardFormTheme()
         theme.fontFamily = "Georgia"
 
@@ -165,278 +151,32 @@ struct GopayCardFormThemeTests {
         #expect(!regular.fontDescriptor.symbolicTraits.contains(.traitBold))
     }
 
-    @Test func fontFamily_fallsBackToTheSystemFontWhenTheAppHasNotRegisteredIt() {
+    @Test func fontFamilyFallsBackToTheSystemFontWhenTheAppHasNotRegisteredIt() {
         var theme = GopayCardFormTheme()
         theme.fontFamily = "NoSuchFontIsRegistered"
 
         #expect(theme.inputUIFont(for: .large).familyName == UIFont.systemFont(ofSize: 17).familyName)
     }
 
-    @Test func fontFamily_usesARegisteredFont() {
+    @Test func fontFamilyUsesARegisteredFont() {
         var theme = GopayCardFormTheme()
         theme.fontFamily = "Georgia"
 
         #expect(theme.inputUIFont(for: .large).familyName == "Georgia")
     }
 
-    @Test func errorFont_usesTheThemedErrorSize() {
+    @Test func errorFontUsesTheThemedErrorSize() {
         var theme = GopayCardFormTheme()
         theme.errorFontSize = 11
 
         #expect(theme.errorUIFont(for: .large).pointSize == 11)
     }
 
-    @Test func scaledCaptionLength_isTheIdentityAtTheDefaultCategory() {
+    @Test func scaledCaptionLengthIsTheIdentityAtTheDefaultCategory() {
         #expect(GopayCardFormTheme.standard.scaledCaptionLength(14, for: .large) == 14)
     }
 
-    // MARK: - Hex bridge
-
-    @Test func hex_parsesTheSupportedNotations() {
-        #expect(Color(gopayHex: "#4b5e68")?.gopayHex == "#4B5E68")
-        #expect(Color(gopayHex: "#fff") == Color(gopayHex: "#ffffff"))
-        #expect(Color(gopayHex: "#fff0") == Color(gopayHex: "#ffffff00"))
-        #expect(Color(gopayHex: "transparent") == .clear)
-        #expect(Color(gopayHex: "#00000000")?.gopayHex == "transparent")
-    }
-
-    @Test func hex_rejectsMalformedValues() {
-        #expect(Color(gopayHex: "#12345") == nil)
-        #expect(Color(gopayHex: "rgb(1,2,3)") == nil)
-        #expect(Color(gopayHex: "") == nil)
-        // The leading # is required, as in CSS and as on Android.
-        #expect(Color(gopayHex: "4b5e68") == nil)
-        #expect(Color(gopayHex: "#-12345") == nil)
-    }
-
-    @Test func hex_roundTripsThroughEncodingAndDecoding() throws {
-        var theme = GopayCardFormTheme()
-        theme.labelColor = try #require(Color(gopayHex: "#4b5e68"))
-        theme.inputBorderColor = try #require(Color(gopayHex: "#698492"))
-        theme.inputErrorBorderColor = try #require(Color(gopayHex: "#ea3c55"))
-        theme.errorTextColor = try #require(Color(gopayHex: "#cc0000"))
-        theme.inputBackgroundColor = try #require(Color(gopayHex: "#1a1f2e80"))
-        theme.formBackgroundColor = .clear
-
-        let data = try JSONEncoder().encode(theme)
-        let decoded = try JSONDecoder().decode(GopayCardFormTheme.self, from: data)
-
-        #expect(decoded.labelColor.gopayHex == "#4B5E68")
-        #expect(decoded.inputBorderColor.gopayHex == "#698492")
-        #expect(decoded.inputErrorBorderColor.gopayHex == "#EA3C55")
-        #expect(decoded.errorTextColor.gopayHex == "#CC0000")
-        #expect(decoded.inputBackgroundColor.gopayHex == "#1A1F2E80")
-        #expect(decoded.formBackgroundColor.gopayHex == "transparent")
-    }
-
-    @Test func encode_writesEveryValueAndSkipsTheUnsetOnes() throws {
-        let data = try JSONEncoder().encode(GopayCardFormTheme.standard)
-        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-
-        #expect(json["inputBorderStyle"] as? String == "boxed")
-        #expect(json["groupSpacing"] as? Double == 12)
-        #expect(json["fontFamily"] == nil)
-        #expect(json["inputHeight"] == nil)
-        #expect(json["placeholderColor"] == nil)
-        #expect(json["errorSpacing"] == nil)
-    }
-
-    // MARK: - Decoding a web theme
-
-    /// The DEFAULT_CARD_FORM_THEME preset the web SDK ships, with every key this SDK does not
-    /// carry: the submit set, errorHidden, and the focus gradient the cut left to the web.
-    @Test func decode_appliesKnownKeysAndIgnoresWebOnlyOnes() throws {
-        let json = """
-        {
-          "labelColor": "#4b5e68",
-          "labelFontSize": 11,
-          "labelFontWeight": 600,
-          "labelUppercase": true,
-          "inputTextColor": "#4b5e68",
-          "inputFontSize": 14,
-          "inputBorderColor": "#698492",
-          "inputBorderWidth": 1,
-          "inputBackgroundColor": "transparent",
-          "inputPaddingVertical": 6,
-          "inputBorderRadius": 0,
-          "focusGradientStart": "#19C7D6",
-          "focusGradientEnd": "#1899D6",
-          "inputErrorBorderColor": "#ea3c55",
-          "errorTextColor": "#cc0000",
-          "errorFontSize": 11,
-          "errorHidden": false,
-          "groupSpacing": 16,
-          "fieldSpacing": 4,
-          "formPadding": 16,
-          "formBackgroundColor": "transparent",
-          "submitBackgroundColor": "#1899d6",
-          "submitHoverBackgroundColor": "#1482ba",
-          "submitDisabledBackgroundColor": "#a8b6bd",
-          "submitTextColor": "#ffffff",
-          "submitDisabledTextColor": "#ffffff",
-          "submitBorderRadius": 4,
-          "submitFontSize": 14
-        }
-        """
-
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        #expect(theme.labelFontSize == 11)
-        #expect(theme.labelFontWeight == 600)
-        #expect(theme.labelUppercase == true)
-        #expect(theme.inputFontSize == 14)
-        #expect(theme.inputPaddingVertical == 6)
-        #expect(theme.inputBorderRadius == 0)
-        #expect(theme.inputBackgroundColor == .clear)
-        #expect(theme.groupSpacing == 16)
-        #expect(theme.formPadding == 16)
-        #expect(theme.errorTextColor.gopayHex == "#CC0000")
-    }
-
-    @Test func decode_omittedKeysKeepTheirDefaults() throws {
-        let json = "{ \"labelColor\": \"#c8102e\" }"
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        #expect(theme.labelColor.gopayHex == "#C8102E")
-        #expect(theme.inputPaddingVertical == GopayCardFormTheme.standard.inputPaddingVertical)
-        #expect(theme.groupSpacing == GopayCardFormTheme.standard.groupSpacing)
-        #expect(theme.inputBorderStyle == .boxed)
-    }
-
-    @Test func decode_unknownBorderStyleFallsBackInsteadOfFailing() throws {
-        let unknown = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"inputBorderStyle\": \"dashed\" }".utf8)
-        )
-        let cased = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"inputBorderStyle\": \"UNDERLINE\" }".utf8)
-        )
-
-        // An unknown value keeps the default; a known one is read whatever its casing.
-        #expect(unknown.inputBorderStyle == .boxed)
-        #expect(cased.inputBorderStyle == .underline)
-    }
-
-    @Test func decode_negativeAndNonNumericLengthsFallBackToTheDefault() throws {
-        let json = """
-        {
-          "inputPaddingVertical": -12,
-          "inputBorderRadius": -8,
-          "inputBorderWidth": -1,
-          "groupSpacing": -16,
-          "fieldSpacing": -4,
-          "formPadding": -100,
-          "errorMinHeight": -14,
-          "labelFontSize": -11,
-          "inputFontSize": -14,
-          "errorFontSize": -11,
-          "inputHeight": -40,
-          "errorSpacing": -3,
-          "labelLineHeight": -12,
-          "inputPaddingHorizontal": "12px"
-        }
-        """
-
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-        let standard = GopayCardFormTheme.standard
-
-        #expect(theme.inputPaddingVertical == standard.inputPaddingVertical)
-        #expect(theme.inputPaddingHorizontal == standard.inputPaddingHorizontal)
-        #expect(theme.inputBorderRadius == standard.inputBorderRadius)
-        #expect(theme.inputBorderWidth == standard.inputBorderWidth)
-        #expect(theme.groupSpacing == standard.groupSpacing)
-        #expect(theme.fieldSpacing == standard.fieldSpacing)
-        #expect(theme.formPadding == standard.formPadding)
-        #expect(theme.errorMinHeight == standard.errorMinHeight)
-        #expect(theme.labelFontSize == standard.labelFontSize)
-        #expect(theme.inputFontSize == standard.inputFontSize)
-        #expect(theme.errorFontSize == standard.errorFontSize)
-        // The optional lengths simply stay unset rather than carrying a negative into layout.
-        #expect(theme.inputHeight == nil)
-        #expect(theme.errorSpacing == nil)
-        #expect(theme.labelLineHeight == nil)
-    }
-
-    @Test func decode_letterSpacingMayBeNegative() throws {
-        let json = "{ \"labelLetterSpacing\": -0.5 }"
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        #expect(theme.labelLetterSpacing == -0.5)
-    }
-
-    @Test func decode_unparsableColorFallsBackToTheDefault() throws {
-        let json = "{ \"labelColor\": \"not-a-color\" }"
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        #expect(theme.labelColor == GopayCardFormTheme.standard.labelColor)
-    }
-
-    /// One bad value costs its own key only; the rest of the document still applies, the way a
-    /// TypeScript warning about one property does not fail the build.
-    @Test func decode_valueOfTheWrongTypeDropsOnlyThatKey() throws {
-        let json = """
-        {
-          "labelFontWeight": "heavy",
-          "labelFontSize": "12",
-          "labelHidden": "yes",
-          "labelColor": 4473924,
-          "labelUppercase": 1,
-          "fontFamily": 12,
-          "groupSpacing": 20,
-          "inputBorderColor": "#698492"
-        }
-        """
-
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-        let standard = GopayCardFormTheme.standard
-
-        #expect(theme.labelFontWeight == standard.labelFontWeight)
-        #expect(theme.labelFontSize == standard.labelFontSize)
-        #expect(theme.labelHidden == standard.labelHidden)
-        #expect(theme.labelColor == standard.labelColor)
-        #expect(theme.labelUppercase == standard.labelUppercase)
-        #expect(theme.fontFamily == nil)
-        #expect(theme.groupSpacing == 20)
-        #expect(theme.inputBorderColor.gopayHex == "#698492")
-    }
-
-    @Test func decode_nullKeepsTheDefaultWithoutAWarning() throws {
-        var reported: [String] = []
-        let previous = GopayCardFormTheme.reportDroppedKey
-        defer { GopayCardFormTheme.reportDroppedKey = previous }
-        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
-
-        let json = "{ \"placeholderColor\": null, \"labelLetterSpacing\": null }"
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        #expect(theme.placeholderColor == nil)
-        #expect(theme.labelLetterSpacing == nil)
-        #expect(!reported.contains { $0.contains("placeholderColor") || $0.contains("labelLetterSpacing") })
-    }
-
-    @Test func decode_fontWeightAcceptsTheCssKeywords() throws {
-        let json = "{ \"labelFontWeight\": \"bold\", \"inputFontWeight\": \" Normal \" }"
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        #expect(theme.labelFontWeight == 700)
-        #expect(theme.inputFontWeight == 400)
-
-        let fractional = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"labelFontWeight\": 450.0 }".utf8)
-        )
-        #expect(fractional.labelFontWeight == 450)
-
-        let huge = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data(#"{"labelFontWeight": 1e300, "inputFontWeight": -1e300}"#.utf8)
-        )
-        #expect(huge.labelFontWeight == 900)
-        #expect(huge.inputFontWeight == 100)
-    }
-
-    @Test func errorReserve_holdsAtLeastOneLineOfTheErrorFont() {
+    @Test func errorReserveHoldsAtLeastOneLineOfTheErrorFont() {
         var theme = GopayCardFormTheme()
         theme.errorFontSize = 20
         theme.errorMinHeight = 4
@@ -449,143 +189,5 @@ struct GopayCardFormThemeTests {
 
         theme.errorMinHeight = 0
         #expect(theme.reservedErrorHeight(for: .large) == 0, "no reserve means no slot")
-    }
-
-    @Test func applying_keepsTheBaseForEveryKeyTheDocumentOmits() {
-        var brand = GopayCardFormTheme()
-        brand.labelColor = .purple
-        brand.inputBorderRadius = 20
-        brand.groupSpacing = 18
-        // The optional keys too: falling back to their `nil` default would clear the brand's own
-        // value instead of leaving it alone.
-        brand.fontFamily = "Courier"
-        brand.labelLineHeight = 21
-        brand.labelLetterSpacing = 2
-        brand.inputFontWeight = 700
-        brand.inputHeight = 56
-        brand.placeholderColor = .orange
-        brand.errorSpacing = 9
-
-        // Doubled delimiters: the value itself contains a "# sequence.
-        let merged = brand.applying(##"{"inputBorderColor": "#19c7d6"}"##)
-
-        #expect(merged.inputBorderColor == Color(gopayHex: "#19c7d6"))
-        #expect(merged.labelColor == brand.labelColor)
-        #expect(merged.inputBorderRadius == brand.inputBorderRadius)
-        #expect(merged.groupSpacing == brand.groupSpacing)
-        #expect(merged.fontFamily == brand.fontFamily)
-        #expect(merged.labelLineHeight == brand.labelLineHeight)
-        #expect(merged.labelLetterSpacing == brand.labelLetterSpacing)
-        #expect(merged.inputFontWeight == brand.inputFontWeight)
-        #expect(merged.inputHeight == brand.inputHeight)
-        #expect(merged.placeholderColor == brand.placeholderColor)
-        #expect(merged.errorSpacing == brand.errorSpacing)
-    }
-
-    @Test func applying_keepsTheBaseWhenTheDocumentCannotBeRead() {
-        var brand = GopayCardFormTheme()
-        brand.inputBorderRadius = 20
-
-        #expect(brand.applying("not json").inputBorderRadius == 20)
-        #expect(brand.applying("[]").inputBorderRadius == 20)
-        #expect(brand.applying("null").inputBorderRadius == 20)
-    }
-
-    @Test func decode_dropsLengthsBeyondTheCeiling() throws {
-        var reported: [String] = []
-        let previous = GopayCardFormTheme.reportDroppedKey
-        defer { GopayCardFormTheme.reportDroppedKey = previous }
-        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
-
-        let theme = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data(#"{"inputHeight": 1e9, "inputBorderWidth": 1e12, "groupSpacing": 24}"#.utf8)
-        )
-
-        #expect(theme.inputHeight == nil)
-        #expect(theme.inputBorderWidth == GopayCardFormTheme.standard.inputBorderWidth)
-        #expect(theme.groupSpacing == 24)
-        #expect(reported.contains { $0.contains("inputHeight") })
-        #expect(reported.contains { $0.contains("inputBorderWidth") })
-    }
-    /// The seven keys the cut removed are known, not unknown: a document that sets one is told
-    /// it had no effect rather than having it vanish into the unknown-key branch.
-    @Test func decode_reportsTheKeysTheCutRetired() throws {
-        var reported: [String] = []
-        let previous = GopayCardFormTheme.reportDroppedKey
-        defer { GopayCardFormTheme.reportDroppedKey = previous }
-        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
-
-        let json = """
-        {
-          "inputBorderCollapse": true,
-          "focusRingWidth": 3,
-          "focusRingColor": "#19c7d6",
-          "focusGradientStart": "#19c7d6",
-          "focusGradientEnd": "#1899d6",
-          "inputLetterSpacing": 1,
-          "inputLineHeight": 24,
-          "somethingNobodyKnows": 1,
-          "groupSpacing": 20
-        }
-        """
-
-        let theme = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        for key in ["inputBorderCollapse", "focusRingWidth", "focusRingColor", "focusGradientStart",
-                    "focusGradientEnd", "inputLetterSpacing", "inputLineHeight"] {
-            #expect(reported.filter { $0.contains("\"\(key)\"") }.count == 1, "\(key) reported once")
-        }
-        // A key nobody knows stays silent, and the rest of the document still applies.
-        #expect(!reported.contains { $0.contains("somethingNobodyKnows") })
-        #expect(theme.groupSpacing == 20)
-    }
-
-    /// Every untouched web theme carries it, and iOS accepts the value but cannot render it.
-    @Test func decode_reportsAnUnderlineBorderStyleAsUnsupported() throws {
-        var reported: [String] = []
-        let previous = GopayCardFormTheme.reportDroppedKey
-        defer { GopayCardFormTheme.reportDroppedKey = previous }
-        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
-
-        let underline = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"inputBorderStyle\": \"underline\" }".utf8)
-        )
-
-        #expect(underline.inputBorderStyle == .underline, "the value is kept for portability")
-        #expect(reported.contains { $0.contains("kept but not applied") })
-        #expect(!reported.contains { $0.contains("ignored") }, "the key survives a round trip")
-
-        reported.removeAll()
-        _ = try JSONDecoder().decode(
-            GopayCardFormTheme.self,
-            from: Data("{ \"inputBorderStyle\": \"boxed\" }".utf8)
-        )
-        #expect(reported.isEmpty, "boxed is what iOS draws, nothing to report")
-    }
-
-    @Test func decode_reportsEveryDroppedKeyToTheHost() throws {
-        var reported: [String] = []
-        let previous = GopayCardFormTheme.reportDroppedKey
-        defer { GopayCardFormTheme.reportDroppedKey = previous }
-        GopayCardFormTheme.reportDroppedKey = { reported.append($0) }
-
-        // Keys no other test drops, so a stray report from a neighbouring test cannot blur the counts.
-        let json = """
-        {
-          "inputFontWeight": "heavy",
-          "labelLineHeight": true,
-          "formBackgroundColor": "#12",
-          "labelLetterSpacing": "wide",
-          "labelUppercase": true
-        }
-        """
-        _ = try JSONDecoder().decode(GopayCardFormTheme.self, from: Data(json.utf8))
-
-        for key in ["inputFontWeight", "labelLineHeight", "formBackgroundColor", "labelLetterSpacing"] {
-            #expect(reported.filter { $0.contains("\"\(key)\"") }.count == 1, "\(key) reported once")
-        }
-        #expect(!reported.contains { $0.contains("labelUppercase") })
     }
 }

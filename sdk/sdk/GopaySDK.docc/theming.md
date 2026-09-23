@@ -28,40 +28,29 @@ GopayCardForm(
 )
 ```
 
-## Carrying a theme as JSON
-
-The type is `Codable`, with colors written as `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"` or
-`"transparent"`. The leading `#` is required, as in CSS.
-Decoding is deliberately tolerant, so a full web theme decodes without error: keys the SDK does not
-know are ignored, a key the document omits keeps the value of the theme it is applied over (the SDK
-default only when the theme is decoded on its own), and a key whose value cannot be used is dropped on
-its own while the rest of the document applies. That covers a value of the wrong type, an unparsable
-color and a negative length; the font weights also accept the CSS keywords `bold` and `normal`.
-Every dropped key is reported as a warning in the SDK debug log
-(`GopaySDKConfig.enableDebugLogging`), so a typo in a theme is noticed without the theme failing.
-
-Colors restored from hex are plain colors: unlike a `Color` written in Swift, they no longer follow
-light and dark mode on their own. Encoding needs iOS 14, because SwiftUI cannot read a `Color` back
-on iOS 13, where every color comes out as `"transparent"`. Decoding works on every supported
-version.
-
 ## Parity with Android
 
 The 29 parameters are identical on Android, name for name and type for type, and both SDKs mark an
 invalid field the same way. These differ per platform:
 
-- ``GopayCardFormTheme/inputBorderStyle`` keeps both web values so a document travels unchanged, but
-  `underline` is **not supported on iOS**, which has no native underlined text field; the value is
-  accepted and the input renders as `boxed`. Android renders it with the native Material indicator.
+- ``GopayCardFormTheme/inputBorderStyle`` keeps both web values so both platforms name the styles
+  the same way, but `underline` is **not supported on iOS**, which has no native underlined text
+  field; the value is accepted and the input renders as `boxed`. Android renders it with the native
+  Material indicator.
 - Marking the active field is native on each platform, so Android highlights it and iOS does not.
 - The Android SDK adds `helperTextColor` and `helperFontSize` of its own, for a helper line neither
   the web form nor this SDK renders.
 
-The defaults are the platform's, not the web's, so the same document produces a GoPay-styled form
-everywhere while an empty one produces a native form on each channel.
+The defaults are the platform's, not the web's, so an untouched theme gives a native form on each
+channel while the same values give a GoPay-styled one.
 
 A weight is rounded to the nearest hundred here, because `Font.Weight` has nine steps; Android hands
 the exact number to a variable font.
+
+On iOS 13 the text inside an input keeps the system colors. ``GopayCardFormTheme/inputTextColor``
+and ``GopayCardFormTheme/placeholderColor`` reach a `UITextField`, and turning a SwiftUI `Color`
+into a `UIColor` needs iOS 14. Everything SwiftUI draws itself, the labels, the border and the
+error text, is themed on iOS 13 too.
 
 ## What the web has and this SDK does not
 
@@ -79,9 +68,8 @@ Some web keys have no counterpart here.
 - `inputLineHeight` pins the height of a field across browser engines. A single-line native field
   has no such problem; ``GopayCardFormTheme/inputHeight`` is here to set a minimum.
 
-A theme document may still carry any of them: a web theme moves over unchanged and only the keys
-this SDK understands take effect. These seven are not silently swallowed, though. The SDK knows
-them, so each one a document sets is named in the debug log with the reason it had no effect.
+They are simply not parameters of this type, so the compiler says so where you would have set
+them.
 
 ``GopayCardFormTheme/placeholderColor`` is worth setting whenever a theme paints the form dark:
 unset, it follows the system's light or dark appearance rather than the theme's, so the hint text
@@ -131,9 +119,9 @@ on the web, so a large font scale can still grow the field rather than overflow 
 
 Seven more keys were carried for part of the 2.0 work and removed with the move to native
 rendering: `inputBorderCollapse`, `focusRingWidth`, `focusRingColor`, `focusGradientStart`,
-`focusGradientEnd`, `inputLetterSpacing` and `inputLineHeight`. A document may still set them; they
-are ignored and named in the debug log. ``GopayCardFormTheme/labelLetterSpacing`` and
-``GopayCardFormTheme/inputHeight`` cover what is left of the last two.
+`focusGradientEnd`, `inputLetterSpacing` and `inputLineHeight`. Setting one is a compile error now.
+``GopayCardFormTheme/labelLetterSpacing`` and ``GopayCardFormTheme/inputHeight`` cover what is left
+of the last two.
 
 The full parity table, with the iOS and web defaults side by side, is in the README.
 
