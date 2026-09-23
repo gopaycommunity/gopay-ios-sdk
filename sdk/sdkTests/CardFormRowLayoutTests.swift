@@ -226,4 +226,66 @@ struct CardFormRowLayoutTests {
             }
         }
     }
+
+    /// The typed initialiser is the only way into the theme now, so it is the only place left that
+    /// can stop a host's own numbers from taking the form's layout down with them.
+    @Test("a font size that is not a usable number falls back to the text style's own")
+    func aFontSizeThatIsNotAUsableNumberFallsBackToTheTextStyles() {
+        for bad in [CGFloat.nan, .infinity, -12, 0] {
+            var theme = GopayCardFormTheme()
+            theme.inputFontSize = bad
+            theme.labelFontSize = bad
+            theme.errorFontSize = bad
+
+            for size in [theme.inputUIFont(for: .large).pointSize,
+                         theme.labelUIFont(for: .large).pointSize,
+                         theme.errorUIFont(for: .large).pointSize] {
+                #expect(size.isFinite && size > 0, "\(bad) gave a font of \(size)pt")
+            }
+
+            let fields = hostedFields(theme: theme)
+            #expect(fields.count == 3, "the form still lays out with a font size of \(bad)")
+            #expect(fields.allSatisfy { $0.bounds.height.isFinite && $0.bounds.height > 0 })
+        }
+    }
+
+    @Test("a length that is not a usable number is read as no length")
+    func aLengthThatIsNotAUsableNumberIsReadAsNoLength() {
+        for bad in [CGFloat.nan, .infinity, -8] {
+            var theme = GopayCardFormTheme()
+            theme.inputHeight = bad
+            theme.inputPaddingVertical = bad
+            theme.inputPaddingHorizontal = bad
+            theme.inputBorderWidth = bad
+            theme.inputBorderRadius = bad
+            theme.groupSpacing = bad
+            theme.fieldSpacing = bad
+            theme.formPadding = bad
+            theme.errorSpacing = bad
+            theme.errorMinHeight = bad
+            theme.labelLineHeight = bad
+
+            #expect(theme.resolvedErrorSpacing == 0)
+            #expect(theme.reservedErrorHeight(for: .large) == 0)
+            #expect(theme.rendersErrorSlot(for: nil) == false)
+
+            let fields = hostedFields(theme: theme)
+            #expect(fields.count == 3, "the form still lays out with a length of \(bad)")
+            for field in fields {
+                #expect(field.bounds.height.isFinite && field.bounds.height > 0,
+                        "\(bad) gave a field \(field.bounds.height)pt tall")
+            }
+            #expect(Set(fields.map { $0.bounds.height }).count == 1, "the row stays even")
+        }
+    }
+
+    /// A negative spacing used to be taken at face value, so the rows overlapped; Android reads the
+    /// same value as no spacing at all.
+    @Test("a negative group spacing does not pull the rows over one another")
+    func aNegativeGroupSpacingDoesNotPullTheRowsOverOneAnother() {
+        var negative = GopayCardFormTheme()
+        negative.groupSpacing = -40
+
+        #expect(hostedFormHeight(theme: negative) == hostedFormHeight(theme: GopayCardFormTheme(groupSpacing: 0)))
+    }
 }

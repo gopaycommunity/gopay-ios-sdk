@@ -218,14 +218,24 @@ extension GopayCardFormTheme {
 // MARK: - Resolved state
 
 extension GopayCardFormTheme {
+    /// A themed length the layout can build on. A negative length is read as none, and so is one
+    /// the arithmetic cannot carry: `nan` propagates into every sum it touches and makes UIKit
+    /// fail the layout outright, and `infinity` collapses whatever it is measured against. A host
+    /// means nothing by either, so neither is worth taking the form down for.
+    static func usableLength(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return 0 }
+        return max(0, value)
+    }
+
     /// Height reserved below an input so the form does not jump when an error appears.
     ///
     /// ``errorMinHeight`` is what the theme asked for, but a reserve shorter than one line of the
     /// error font would not hold the message it exists for, so the taller of the two wins. Both
     /// scale with the reader's text size.
     func reservedErrorHeight(for sizeCategory: ContentSizeCategory) -> CGFloat {
-        guard errorMinHeight > 0 else { return 0 }
-        let requested = scaledCaptionLength(errorMinHeight, for: sizeCategory)
+        let asked = Self.usableLength(errorMinHeight)
+        guard asked > 0 else { return 0 }
+        let requested = scaledCaptionLength(asked, for: sizeCategory)
         // The height of a rendered line, not the font's point size: a line box is about a fifth
         // taller than the size that names it, and reserving the smaller number lets the form jump
         // by that difference the moment a message appears.
@@ -240,12 +250,12 @@ extension GopayCardFormTheme {
     }
 
     /// Distance from an input to its error line, falling back to ``fieldSpacing``.
-    var resolvedErrorSpacing: CGFloat { errorSpacing ?? fieldSpacing }
+    var resolvedErrorSpacing: CGFloat { Self.usableLength(errorSpacing ?? fieldSpacing) }
 
     /// Whether the slot below an input is on screen for `message`: it is while a message shows,
     /// and while ``errorMinHeight`` reserves room for one.
     func rendersErrorSlot(for message: String?) -> Bool {
-        message?.isEmpty == false || errorMinHeight > 0
+        message?.isEmpty == false || Self.usableLength(errorMinHeight) > 0
     }
 }
 
@@ -294,7 +304,8 @@ extension GopayCardFormTheme {
     /// height keeps up with Dynamic Type.
     func scaledCaptionLength(_ length: CGFloat, for sizeCategory: ContentSizeCategory) -> CGFloat {
         let traits = UITraitCollection(preferredContentSizeCategory: sizeCategory.uiContentSizeCategory)
-        return UIFontMetrics(forTextStyle: .caption1).scaledValue(for: length, compatibleWith: traits)
+        return UIFontMetrics(forTextStyle: .caption1)
+            .scaledValue(for: Self.usableLength(length), compatibleWith: traits)
     }
 
     private func scaledFont(
@@ -304,8 +315,17 @@ extension GopayCardFormTheme {
         sizeCategory: ContentSizeCategory
     ) -> UIFont {
         let traits = UITraitCollection(preferredContentSizeCategory: sizeCategory.uiContentSizeCategory)
+        // A size of zero, `nan` or `infinity` gives a font the text renderer cannot lay out, and on
+        // `nan` UIKit fails the host's layout rather than the form's. The text style's own size
+        // stands in, which is the size this role would have had without a theme at all.
+        let usable = size.isFinite && size > 0
+            ? size
+            : UIFont.preferredFont(
+                forTextStyle: textStyle,
+                compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)
+              ).pointSize
         return UIFontMetrics(forTextStyle: textStyle)
-            .scaledFont(for: baseFont(size: size, weight: weight), compatibleWith: traits)
+            .scaledFont(for: baseFont(size: usable, weight: weight), compatibleWith: traits)
     }
 
     /// The unscaled font for a size and weight: ``fontFamily`` when the app has that font

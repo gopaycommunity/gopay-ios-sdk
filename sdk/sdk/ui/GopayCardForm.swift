@@ -286,7 +286,7 @@ public struct GopayCardForm: View {
             fieldLabel(label, sharesRowHeight: sharesRowHeight)
 
             inputContainer(hasError: error != nil, content: content)
-            .padding(.top, theme.labelHidden ? 0 : theme.fieldSpacing)
+            .padding(.top, theme.labelHidden ? 0 : fieldSpacing)
 
             errorSlot(error)
         }
@@ -310,7 +310,7 @@ public struct GopayCardForm: View {
 
         // `.continuous` is the curve UIKit gives a rounded text field; a circular corner of the
         // same radius reads as a tighter, un-iOS box.
-        let shape = RoundedRectangle(cornerRadius: theme.inputBorderRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return input
             .background(shape.fill(theme.inputBackgroundColor))
             // `strokeBorder` keeps the whole line inside the field, so the border needs no
@@ -339,13 +339,19 @@ public struct GopayCardForm: View {
     /// The minimum height of a whole field, padding included. Zero means the theme asked for
     /// none; a negative value from a theme set in code says nothing either and is read the same.
     private var minimumInputHeight: CGFloat {
-        max(0, theme.inputHeight ?? 0)
+        GopayCardFormTheme.usableLength(theme.inputHeight ?? 0)
     }
 
     /// Padding inside a field. Both are public on the theme, so a theme built in code can carry a
     /// negative one, which would pull the text out of the field it belongs to.
-    private var verticalPadding: CGFloat { max(0, theme.inputPaddingVertical) }
-    private var horizontalPadding: CGFloat { max(0, theme.inputPaddingHorizontal) }
+    private var verticalPadding: CGFloat { GopayCardFormTheme.usableLength(theme.inputPaddingVertical) }
+    private var horizontalPadding: CGFloat { GopayCardFormTheme.usableLength(theme.inputPaddingHorizontal) }
+
+    /// The remaining themed lengths, read the same way: a negative or unusable one is no length.
+    private var cornerRadius: CGFloat { GopayCardFormTheme.usableLength(theme.inputBorderRadius) }
+    private var groupSpacing: CGFloat { GopayCardFormTheme.usableLength(theme.groupSpacing) }
+    private var fieldSpacing: CGFloat { GopayCardFormTheme.usableLength(theme.fieldSpacing) }
+    private var formPadding: CGFloat { GopayCardFormTheme.usableLength(theme.formPadding) }
 
     /// How tall a field ends up. The theme and the text size decide it between them, so nothing
     /// has to be measured to know it.
@@ -359,11 +365,11 @@ public struct GopayCardForm: View {
     /// Capped at half the field, because `strokeBorder` insets the shape by half the width and a
     /// width past the field's height would inset it out of existence, losing the border entirely.
     private var borderWidth: CGFloat {
-        min(max(0, theme.inputBorderWidth), resolvedInputHeight / 2)
+        min(GopayCardFormTheme.usableLength(theme.inputBorderWidth), resolvedInputHeight / 2)
     }
 
     public var body: some View {
-        VStack(spacing: theme.groupSpacing) {
+        VStack(spacing: groupSpacing) {
             // Card number input (first row)
             field(
                 label: localeStrings.panLabel,
@@ -405,7 +411,7 @@ public struct GopayCardForm: View {
             // Top-aligned so an error line under one field does not push or stretch its neighbour,
             // the way the web row behaves. Both columns reserve the taller label's height, so a
             // label that wraps keeps its input on the same line as its neighbour's.
-            HStack(alignment: .top, spacing: theme.groupSpacing) {
+            HStack(alignment: .top, spacing: groupSpacing) {
                 // Expiration input (single field with automatic slash)
                 field(
                     label: localeStrings.expLabel,
@@ -489,7 +495,7 @@ public struct GopayCardForm: View {
                 rowLabelHeight = height
             }
         }
-        .padding(theme.formPadding)
+        .padding(formPadding)
         .background(theme.formBackgroundColor)
         .onAppear {
             // Initial sync when form appears
