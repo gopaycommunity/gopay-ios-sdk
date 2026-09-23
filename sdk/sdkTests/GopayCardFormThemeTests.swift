@@ -30,7 +30,6 @@ struct GopayCardFormThemeTests {
         #expect(theme.inputFontSize == 17)
         #expect(theme.inputFontWeight == nil)
         #expect(theme.inputHeight == nil)
-        #expect(theme.inputBorderStyle == .boxed)
         #expect(theme.inputBorderWidth == 1)
         #expect(theme.inputPaddingVertical == 12)
         #expect(theme.inputPaddingHorizontal == 12)

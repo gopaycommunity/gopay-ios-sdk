@@ -1,16 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Border style of the inputs, named after the web `inputBorderStyle` key.
-public enum GopayCardFormBorderStyle: String, Equatable {
-    /// A border around the whole input.
-    case boxed
-    /// A bottom line only. **Not supported on iOS**, which has no native underlined text field and
-    /// where the SDK draws nothing of its own: the value is accepted and the input is rendered as
-    /// ``boxed``. Android renders it with the native Material indicator.
-    case underline
-}
-
 /// Theme configuration for the payment card form.
 ///
 /// The parameters are atomic and carry the names of the web card form theme (cc-v4), so a design
@@ -78,8 +68,6 @@ public struct GopayCardFormTheme: Equatable {
 
     // MARK: - Input border
 
-    /// Whether the inputs are drawn with a full border or with a bottom line only.
-    public var inputBorderStyle: GopayCardFormBorderStyle
     /// Border color of an unfocused, valid input.
     public var inputBorderColor: Color
     /// Border width, in points. Drawn inside the field, and capped at half its height, past which
@@ -139,7 +127,6 @@ public struct GopayCardFormTheme: Equatable {
         inputFontWeight: Int? = nil,
         inputHeight: CGFloat? = nil,
         placeholderColor: Color? = nil,
-        inputBorderStyle: GopayCardFormBorderStyle = .boxed,
         inputBorderColor: Color = Color(.separator),
         inputBorderWidth: CGFloat = 1,
         inputBackgroundColor: Color = .clear,
@@ -169,7 +156,6 @@ public struct GopayCardFormTheme: Equatable {
         self.inputFontWeight = inputFontWeight
         self.inputHeight = inputHeight
         self.placeholderColor = placeholderColor
-        self.inputBorderStyle = inputBorderStyle
         self.inputBorderColor = inputBorderColor
         self.inputBorderWidth = inputBorderWidth
         self.inputBackgroundColor = inputBackgroundColor

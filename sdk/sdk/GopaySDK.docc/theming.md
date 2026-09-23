@@ -30,10 +30,8 @@ GopayCardForm(
 
 ## Parity with Android
 
-The 29 parameters are identical on Android, name for name and type for type, and both SDKs mark an
-invalid field the same way. ``GopayCardFormTheme/inputBorderStyle`` keeps both web values so both
-platforms name the styles the same way, and both render `underline` as `boxed`, because neither has
-a native underlined text field and neither draws one. One thing is Android's alone:
+The 28 parameters are identical on Android, name for name and type for type, and both SDKs mark an
+invalid field the same way. One thing is Android's alone:
 
 - The Android SDK adds `helperTextColor` and `helperFontSize` of its own, for a helper line neither
   the web form nor this SDK renders.
@@ -60,6 +58,9 @@ Some web keys have no counterpart here.
 - `focusGradientStart`, `focusGradientEnd`, `focusRingWidth`, `focusRingColor` and
   `inputBorderCollapse` describe something a browser paints around a field: a gradient, a glow
   outside the frame, one shared line between two neighbours. A native text field has none of them.
+- `inputBorderStyle` names a shape rather than a color or a length. `underline` is the web's
+  default, and a native text field on neither platform draws one, so honouring it would mean the
+  SDK painting the field itself.
 - `inputLetterSpacing` would have to override how the field measures itself.
   ``GopayCardFormTheme/labelLetterSpacing`` stays, because a label is ordinary text.
 - `inputLineHeight` pins the height of a field across browser engines. A single-line native field
@@ -126,4 +127,3 @@ The full parity table, with the iOS and web defaults side by side, is in the REA
 ### Theme
 
 - ``GopayCardFormTheme``
-- ``GopayCardFormBorderStyle``

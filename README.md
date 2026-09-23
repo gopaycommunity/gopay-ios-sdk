@@ -323,7 +323,7 @@ GopayCardForm(
 )
 ```
 
-These 29 parameters are the same on Android, name for name and type for type, so a design decided
+These 28 parameters are the same on Android, name for name and type for type, so a design decided
 once reads the same on both. One thing is Android's alone: it adds `helperTextColor` and
 `helperFontSize` for a helper line neither the web form nor this SDK renders.
 
@@ -353,7 +353,6 @@ alone. The parameters mirror Android name for name and type for type, with one e
 | `inputFontWeight` | `inputFontWeight` | `nil` (regular) | unset |
 | `inputHeight` | `inputHeight` | `nil` (font decides) | unset |
 | `placeholderColor` | `placeholderColor` | `nil` (system) | browser default |
-| `inputBorderStyle` | `inputBorderStyle` | `.boxed`; `underline` renders as `boxed` | `underline` |
 | `inputBorderColor` | `inputBorderColor` | `Color(.separator)` | `#698492` |
 | `inputBorderWidth` | `inputBorderWidth` | `1` | `1` |
 | `inputBackgroundColor` | `inputBackgroundColor` | `.clear` | `transparent` |
@@ -365,6 +364,7 @@ alone. The parameters mirror Android name for name and type for type, with one e
 | `errorFontSize` | `errorFontSize` | `12` (caption) | `11` |
 | `errorMinHeight` | `errorMinHeight` | `0` (no reserve) | `14` |
 | `errorSpacing` | `errorSpacing` | `nil` (`fieldSpacing`) | unset (`fieldSpacing`) |
+| `inputBorderStyle` | — | web-only | `underline` |
 | `inputLineHeight` | — | web-only | unset |
 | `inputLetterSpacing` | — | web-only | unset |
 | `inputBorderCollapse` | — | web-only | `false` |
@@ -398,6 +398,9 @@ The web-only keys have no counterpart here, each for its own reason:
   outside the frame, one shared line between two neighbours. A native text field has none of them,
   and neither SDK draws its own. A focused field is marked the way the platform marks it, with the
   caret and the keyboard.
+- `inputBorderStyle` names a shape rather than a color or a length. Its web default, `underline`,
+  is not something a native text field draws on either mobile platform, so honouring it would mean
+  the SDK painting the field itself.
 - `inputLetterSpacing` would have to override how the field measures itself, which is exactly the
   kind of reach into the platform this theme avoids. `labelLetterSpacing` stays, because a label is
   ordinary text.
@@ -411,11 +414,6 @@ The iOS column is what the platform would do on its own, which is why it differs
 column: the defaults are not a GoPay style, they are the absence of one. To move towards the web
 appearance, pass the web values; the demo app's `ThemeShowcase.swift` shows how far that gets, and
 it cannot get all the way, because the web's default underline is not a shape a native field draws.
-
-`inputBorderStyle` is the one parameter the web and the mobile SDKs read differently. It stays in
-the type so every channel names the styles the same way, but **neither mobile platform has a native
-underlined text field and neither SDK draws one, so `underline` is accepted and the input renders
-as `boxed`**.
 
 The one default worth overriding deliberately is `placeholderColor`: unset, it follows the system's
 light or dark appearance rather than the theme's, so a theme that paints the form dark should set a

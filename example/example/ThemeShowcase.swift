@@ -38,10 +38,6 @@ struct ThemeShowcase {
         inputTextColor: Color(hex: 0xE2E8F0),
         inputFontSize: 14,
         placeholderColor: Color(hex: 0x64748B),
-        // Stated outright, not left to the default: the web ships these palettes with an underline,
-        // which Android renders natively and iOS does not, and an unstated style would have the two
-        // demos draw different shapes from identical values.
-        inputBorderStyle: .underline,
         inputBorderColor: Color(hex: 0x334155),
         inputBorderWidth: 1,
         inputBackgroundColor: .clear,
@@ -66,10 +62,6 @@ struct ThemeShowcase {
         inputTextColor: Color(hex: 0x4B5E68),
         inputFontSize: 14,
         placeholderColor: Color(hex: 0x64748B),
-        // Stated outright, not left to the default: the web ships these palettes with an underline,
-        // which Android renders natively and iOS does not, and an unstated style would have the two
-        // demos draw different shapes from identical values.
-        inputBorderStyle: .underline,
         inputBorderColor: Color(hex: 0xC8102E),
         inputBorderWidth: 1,
         inputBackgroundColor: .clear,
