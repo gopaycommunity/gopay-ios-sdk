@@ -16,7 +16,7 @@ struct GopayCardFormThemeTests {
     // MARK: - Defaults
 
     /// An untouched form is an iOS form: system type, a plain bordered field, no uppercasing and
-    /// no reserved error line. The web preset is a theme a host opts into, not the starting point.
+    /// no reserved error line. The web look is values a host passes in, not the starting point.
     @Test func anUntouchedThemeIsThePlatformsOwnAppearance() {
         let theme = GopayCardFormTheme()
 

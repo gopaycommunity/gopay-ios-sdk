@@ -388,9 +388,10 @@ GopayCardForm(
 )
 ```
 
-These 28 parameters are the same on Android, name for name and type for type, so a design decided
-once reads the same on both. One thing is Android's alone: it adds `helperTextColor` and
-`helperFontSize` for a helper line neither the web form nor this SDK renders.
+These 28 parameters are the same on Android, name for name and type for type with the single
+exception of `fontFamily` (see the parity table below), so a design decided once reads the same on
+both. One thing is Android's alone: it adds `helperTextColor` and `helperFontSize` for a helper line
+neither the web form nor this SDK renders.
 
 On iOS 13 the text inside an input keeps the system colors: `inputTextColor` and
 `placeholderColor` reach a `UITextField`, and converting a SwiftUI `Color` to a `UIColor` needs
@@ -537,14 +538,15 @@ Set it back explicitly if your layout relied on the opaque fill.
 | `spacing` | `groupSpacing` |
 | `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
 
-The cut to native rendering removed seven keys that 1.x never had but the 2.0 branch did carry for
+The cut to native rendering removed eight keys that 1.x never had but the 2.0 branch did carry for
 a while. They are gone from the type, so setting one is a compile error rather than a surprise.
 
 | Removed in 2.0 | Instead |
 | --- | --- |
 | `inputBorderCollapse` | nothing: adjacent native fields cannot share a border |
-| `focusRingWidth`, `focusRingColor` | nothing: the platform marks the active field |
-| `focusGradientStart`, `focusGradientEnd` | nothing: the platform marks the active field |
+| `inputBorderStyle` | nothing: every field renders bordered, and the web's `underline` is a shape the SDK would have to paint itself |
+| `focusRingWidth`, `focusRingColor` | nothing: marking the active field is something the SDK would have to paint, so neither platform marks it |
+| `focusGradientStart`, `focusGradientEnd` | nothing: marking the active field is something the SDK would have to paint, so neither platform marks it |
 | `inputLetterSpacing` | `labelLetterSpacing` still applies to labels |
 | `inputLineHeight` | `inputHeight` to set a minimum height |
 
@@ -560,10 +562,10 @@ falls back to Czech (`cs`)** when the language has no translation. 20 languages 
 (`bg cs de en es et fr hr hu it lt lv nl pl pt ro ru sk sl uk`). The strings are identical to the
 Android SDK's, so a screen reads the same on both.
 
-The expiration label sits in a half-width column, so the translations are kept short enough to fit
-on one line at the default text size on a 360pt screen. At the accessibility text sizes a long one
-can still wrap onto a second line, which pushes the label above it rather than being cut off; the
-inputs of the row keep their shared height either way.
+The expiration label sits in a narrow column and carries GoPay's own wording, so nothing is
+shortened to fit: a long translation wraps onto a second line rather than being cut off. The
+expiration and CVV columns each reserve the height of the taller of the two labels, so a label that
+wraps moves neither input and both stay on one line at every text size.
 
 Set a preferred locale globally on the config, or per form:
 

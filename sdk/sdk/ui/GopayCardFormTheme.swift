@@ -68,7 +68,8 @@ public struct GopayCardFormTheme: Equatable {
 
     // MARK: - Input border
 
-    /// Border color of an unfocused, valid input.
+    /// Border color of a valid input. Focus does not recolor it; only an invalid field does,
+    /// through ``inputErrorBorderColor``.
     public var inputBorderColor: Color
     /// Border width, in points. Drawn inside the field, and capped at half its height, past which
     /// a border would have nothing left to enclose.

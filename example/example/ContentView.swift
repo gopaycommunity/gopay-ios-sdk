@@ -151,8 +151,8 @@ struct ContentView: View {
         }
     }
 
-    /// Themes the form from a JSON document, the way a host would apply one its backend sent.
-    /// The same documents ship with the Android demo, so a parameter can be compared side by side.
+    /// Themes the form from the typed values in `ThemeShowcase`, the way a host would write them.
+    /// The same three themes ship with the Android demo, so a parameter can be compared side by side.
     private var themeMenu: some View {
         HStack {
             Text("Theme:")

@@ -30,9 +30,11 @@ GopayCardForm(
 
 ## Parity with Android
 
-The 28 parameters are identical on Android, name for name and type for type, and both SDKs mark an
-invalid field the same way. One thing is Android's alone:
+The 28 parameters carry the same names on Android and, with one exception, the same types, and both
+SDKs mark an invalid field the same way. Two things differ:
 
+- ``GopayCardFormTheme/fontFamily`` is a font name here and resolves at render, while Android takes
+  a typed `FontFamily`. It is the only parameter whose type differs.
 - The Android SDK adds `helperTextColor` and `helperFontSize` of its own, for a helper line neither
   the web form nor this SDK renders.
 
@@ -114,11 +116,11 @@ over as they are, and 2.0 keeps almost all of the platform defaults 1.x had. One
 inside it rather than on top of it. It is a minimum on both platforms, not the fixed height it is
 on the web, so a large font scale can still grow the field rather than overflow it.
 
-Seven more keys were carried for part of the 2.0 work and removed with the move to native
-rendering: `inputBorderCollapse`, `focusRingWidth`, `focusRingColor`, `focusGradientStart`,
-`focusGradientEnd`, `inputLetterSpacing` and `inputLineHeight`. Setting one is a compile error now.
-``GopayCardFormTheme/labelLetterSpacing`` and ``GopayCardFormTheme/inputHeight`` cover what is left
-of the last two.
+Eight more keys were carried for part of the 2.0 work and removed with the move to native
+rendering: `inputBorderCollapse`, `inputBorderStyle`, `focusRingWidth`, `focusRingColor`,
+`focusGradientStart`, `focusGradientEnd`, `inputLetterSpacing` and `inputLineHeight`. Setting one is
+a compile error now. ``GopayCardFormTheme/labelLetterSpacing`` and
+``GopayCardFormTheme/inputHeight`` cover what is left of the last two.
 
 The full parity table, with the iOS and web defaults side by side, is in the README.
 

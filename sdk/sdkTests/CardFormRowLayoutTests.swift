@@ -114,7 +114,7 @@ struct CardFormRowLayoutTests {
         }
     }
 
-    /// A document can ask for a field of no height; it says nothing, so it is read as unset.
+    /// A theme can ask for a field of no height; it says nothing, so it is read as unset.
     @Test func aZeroOrNegativeMinimumHeightIsReadAsUnset() {
         var zero = GopayCardFormTheme()
         zero.inputHeight = 0
