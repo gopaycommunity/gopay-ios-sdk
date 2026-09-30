@@ -104,6 +104,15 @@ Four sections, top to bottom. Sections 3 and 4 only appear once a session is liv
 4. **Card form → JWE** — a **Theme** picker, a locale picker, `GopayCardForm`,
    *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*.
 
+A 3DS redirect URL in the charge response enables **Handle 3DS verification**, which opens the
+managed WebView. The gateway does not always answer the charge with the action: when it does not,
+the console polls `getChargeState()` once a second for 20 seconds and enables the button as soon
+as the action turns up, so the challenge window is not lost to hand-refreshing. A poll that fails
+is logged and the watch carries on. After the verification returns, the gateway still answers
+`PROCESSING` for a while, so the console polls the same way until the charge reaches `SUCCEEDED`
+or `FAILED`, with the same cap. The link stays armed after a failed or dismissed verification, so
+a refused presentation can be retried.
+
 The **Theme** picker switches between the themes in
 [`ThemeShowcase.swift`](example/ThemeShowcase.swift). `Dark` and `Red` carry the palettes the web
 card form ships, written out parameter for parameter; `Default` is the SDK untouched. The Android

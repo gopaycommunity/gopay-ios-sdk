@@ -33,6 +33,12 @@ struct ContentView: View {
     @State private var responseText = "Ready."
     @State private var busyLabel: String?
 
+    /// How long the console watches a charge, for a 3DS action after the charge and for the
+    /// terminal state after the verification, before giving up. The Android demo watches for the
+    /// same twenty seconds.
+    private static let pollInterval: Double = 1.0
+    private static let pollAttempts = 20
+
     private var isBusy: Bool { busyLabel != nil }
 
     var body: some View {
@@ -77,6 +83,10 @@ struct ContentView: View {
         section("2. Payment session") {
             button(session == nil ? "Start session" : "Restart session", system: "key.fill") {
                 if let existing = session { await existing.close() }
+                // Dropped before the call, not after it: a start that throws would otherwise
+                // leave the previous payment's link armed, and the next tap would open the
+                // verification of a long dead payment. Android drops it here too.
+                await MainActor.run { pending3dsURL = nil }
                 let started = try await GopaySDK.shared.startPaymentSession(
                     paymentId: paymentId,
                     paymentSecret: paymentSecret
@@ -89,7 +99,10 @@ struct ContentView: View {
             if session != nil {
                 button("Close session", system: "xmark.circle", role: .destructive) {
                     if let session = session { await session.close() }
-                    await MainActor.run { session = nil }
+                    await MainActor.run {
+                        session = nil
+                        pending3dsURL = nil
+                    }
                     log("Session closed.")
                 }
             }
@@ -124,8 +137,10 @@ struct ContentView: View {
                 }
             }
             button("Handle 3DS verification", system: "lock.shield") {
+                // The link stays armed until the verification returns: `handle3ds` drops it on
+                // success, and after a failed or dismissed verification it is kept, because a
+                // refused presentation is exactly the error the SDK invites the caller to retry.
                 guard let url = pending3dsURL else { return }
-                await MainActor.run { pending3dsURL = nil }
                 try await handle3ds(url)
             }
             .disabled(pending3dsURL == nil)
@@ -243,48 +258,68 @@ struct ContentView: View {
     }
 
     private func chargeWithCardToken() async throws {
-        let session = try requireSession()
-        let request = ChargePaymentRequest.cardToken(
-            cardToken,
-            browserData: try await browserDataForCharge(session),
-            challengePreference: .auto
-        )
-        let charge = try await session.charge(request)
-        logResponse("charge(.cardToken) -> ChargePaymentResponse", charge)
-        if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-            await MainActor.run { pending3dsURL = url }
-            log("3DS required — tap \"Handle 3DS verification\" to continue.")
+        try await runCharge(labelled: "charge(.cardToken)") { session, browserData in
+            try await session.charge(
+                .cardToken(cardToken, browserData: browserData, challengePreference: .auto)
+            )
         }
     }
 
     /// Charges the JWE from the field directly via the `ENCRYPTED_CARD` input — no
     /// `POST /cards/tokens` round-trip. The field is autofilled by "Encrypt card → JWE" above.
     private func chargeWithEncryptedCard() async throws {
-        let session = try requireSession()
-        let request = ChargePaymentRequest.encryptedCard(
-            jwe.trimmingCharacters(in: .whitespacesAndNewlines),
-            browserData: try await browserDataForCharge(session),
-            challengePreference: .auto
-        )
-        let charge = try await session.charge(request)
-        logResponse("charge(.encryptedCard) -> ChargePaymentResponse", charge)
-        if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-            await MainActor.run { pending3dsURL = url }
-            log("3DS required — tap \"Handle 3DS verification\" to continue.")
+        try await runCharge(labelled: "charge(.encryptedCard)") { session, browserData in
+            try await session.charge(
+                .encryptedCard(
+                    jwe.trimmingCharacters(in: .whitespacesAndNewlines),
+                    browserData: browserData,
+                    challengePreference: .auto
+                )
+            )
         }
     }
 
-    private func chargeWithApplePay() async throws {
+    /// The shape every charge in this console shares, wallets included: drop the previous
+    /// charge's 3DS link, log the browser data going out, send the request, then either arm the
+    /// 3DS button or watch the charge for the action the gateway reports a few seconds late.
+    ///
+    /// The buttons differ only in the call they make, so everything around it lives here rather
+    /// than in copies that drift. The Android demo keeps the same shape in `chargeAndReport`.
+    private func runCharge(
+        labelled label: String,
+        _ charge: (PaymentSession, BrowserData) async throws -> ChargePaymentResponse
+    ) async throws {
         let session = try requireSession()
+        // A new charge invalidates the previous charge's 3DS link, whether or not this one
+        // produces its own.
+        await MainActor.run { pending3dsURL = nil }
+        let response = try await charge(session, try await browserDataForCharge(session))
+        logResponse("\(label) -> ChargePaymentResponse", response)
+        let armed = await arm3dsButton(for: response)
+        if !armed {
+            try await watchForAction(session)
+        }
+    }
+
+    /// Arms the 3DS button when the charge already carries a redirect. Returns whether it did.
+    private func arm3dsButton(for charge: ChargePaymentResponse) async -> Bool {
+        guard let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) else {
+            return false
+        }
+        await MainActor.run { pending3dsURL = url }
+        log("3DS required — tap \"Handle 3DS verification\" to continue.")
+        return true
+    }
+
+    private func chargeWithApplePay() async throws {
         guard GopaySDK.canUseApplePay() else {
             log("Apple Pay is not available on this device.")
             return
         }
-        let charge = try await session.chargeWithApplePay(browserData: try await browserDataForCharge(session))
-        logResponse("chargeWithApplePay() -> ChargePaymentResponse", charge)
-        if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-            await MainActor.run { pending3dsURL = url }
-            log("3DS required — tap \"Handle 3DS verification\" to continue.")
+        // Down the same path as the card charges: a wallet charge gets its action late just as
+        // often, and the console has to show the browser data it sent either way.
+        try await runCharge(labelled: "chargeWithApplePay()") { session, browserData in
+            try await session.chargeWithApplePay(browserData: browserData)
         }
     }
 
@@ -319,11 +354,90 @@ struct ContentView: View {
         return kept + String(separator) + masked
     }
 
+    /// Watches a charge for a 3DS action when the charge response did not carry one.
+    ///
+    /// The gateway usually does answer the charge with the action, but not always: it can arrive
+    /// a couple of seconds later and then only through `getChargeState()`. That is why the
+    /// callers check the response first and fall back to this. Without it the tester has to race
+    /// the gateway by hand, and the challenge window is only tens of seconds long.
+    private func watchForAction(_ session: PaymentSession) async throws {
+        let found = try await watch(session) { state, attempt in
+            if let action = state.action {
+                log("// poll \(attempt) -> \(state.state.rawValue)\n"
+                    + "Action: \(action.actionType.rawValue) (\(action.state?.rawValue ?? "nil"))\n"
+                    + "Redirect: \(action.redirectUrl ?? "N/A")")
+                if let redirect = action.redirectUrl, let url = URL(string: redirect) {
+                    pending3dsURL = url
+                    log("3DS required — tap \"Handle 3DS verification\" now, the window is short.")
+                }
+                return true
+            }
+            if Self.isTerminal(state.state) {
+                log("// poll \(attempt) -> \(state.state.rawValue), no action")
+                return true
+            }
+            return false
+        }
+        if !found {
+            log("No action after \(Self.pollAttempts) polls; charge still in flight.")
+        }
+    }
+
     private func handle3ds(_ url: URL) async throws {
         let session = try requireSession()
         try await session.handle3dsVerification(redirectURL: url)
         await MainActor.run { pending3dsURL = nil }
-        logResponse("getChargeState() after 3DS -> ChargePaymentResponse", try await session.getChargeState())
+        let finalState = try await session.getChargeState()
+        logResponse("getChargeState() after 3DS -> ChargePaymentResponse", finalState)
+        if !Self.isTerminal(finalState.state) {
+            try await watchForFinalState(session)
+        }
+    }
+
+    /// Watches a charge for its terminal state after a 3DS verification returned.
+    ///
+    /// The gateway still answers PROCESSING right after the WebView comes back, and the final
+    /// state can take a minute to appear, so a single read after the return reports an in-flight
+    /// charge as the outcome. The watch runs with the same interval and cap as the action watch.
+    private func watchForFinalState(_ session: PaymentSession) async throws {
+        let settled = try await watch(session) { state, attempt in
+            log("// poll \(attempt) -> \(state.state.rawValue)")
+            return Self.isTerminal(state.state)
+        }
+        if !settled {
+            log("No terminal state after \(Self.pollAttempts) polls; charge still in flight, tap \"Get charge state\" later.")
+        }
+    }
+
+    /// The one polling loop behind both watches: reads the charge state once a second, up to
+    /// ``pollAttempts`` times, and hands each answer to `isDone`, which logs what it saw and says
+    /// whether the watch is over. Returns `false` when the cap ran out first.
+    ///
+    /// One failed poll must not end the watch. The action appears in a window only tens of
+    /// seconds long, and giving up on the first transient error is how the tester loses it. A
+    /// cancellation is the console itself going away, so that one is passed on.
+    private func watch(
+        _ session: PaymentSession,
+        until isDone: @MainActor (ChargePaymentResponse, _ attempt: Int) -> Bool
+    ) async throws -> Bool {
+        for attempt in 1...Self.pollAttempts {
+            try await Task.sleep(for: .seconds(Self.pollInterval))
+            let state: ChargePaymentResponse
+            do {
+                state = try await session.getChargeState()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                log("// poll \(attempt) failed, still watching: \(error.localizedDescription)")
+                continue
+            }
+            if isDone(state, attempt) { return true }
+        }
+        return false
+    }
+
+    private static func isTerminal(_ state: ChargeState) -> Bool {
+        state == .succeeded || state == .failed
     }
 
     private func requireSession() throws -> PaymentSession {
