@@ -14,7 +14,7 @@ Never add, rename, or repurpose a code on one platform alone.
 ## Error Code Structure
 
 - **AUTH_XXX**: authentication and authorization errors
-- **NETWORK_XXX**: HTTP errors returned by the gateway
+- **NETWORK_XXX**: HTTP errors returned by the gateway, and the transport failing before one
 - **CONFIG_XXX**: configuration and initialization errors
 - **PAYMENT_XXX**: payment flow errors
 - **VALIDATION_XXX**: input validation errors
@@ -47,6 +47,7 @@ Never add, rename, or repurpose a code on one platform alone.
 - **Description**: `clientId` / `shareableKey` are absent from `GopaySDKConfig` but required by the requested operation
 - **Common Causes**:
   - SDK initialized without them, then a public-resource endpoint was called (`GET /cards/public-key`)
+  - A charge, which first fetches `GET /cards/browser-data` with the same credentials; the charge is not sent
 - **Developer Action**:
   - Supply both in `GopaySDKConfig` — they are safe to embed in the app
 
@@ -84,6 +85,16 @@ Never add, rename, or repurpose a code on one platform alone.
   - Gateway or downstream outage
 - **Developer Action**:
   - Retry with backoff; surface a transient-failure message to the user
+
+### NETWORK_007: Network I/O Error
+- **Case**: `networkIOError`
+- **Description**: The request never got an HTTP response: the connection failed, dropped, or timed out
+- **Common Causes**:
+  - Device offline or the connection interrupted while `GET /cards/browser-data` ran before a charge
+- **Developer Action**:
+  - Retry the charge; `underlying` carries the `URLError`
+  - The charge itself was not sent, so nothing needs to be checked on the gateway
+- **Note**: raised only for the browser data fetch a charge runs first; other transport failures still surface as the bare `URLError`
 
 ## Configuration Errors (CONFIG_XXX)
 

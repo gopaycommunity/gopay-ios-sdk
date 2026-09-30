@@ -27,6 +27,8 @@ public struct GopaySDKError: LocalizedError {
         case networkClientError = "NETWORK_002"
         /// HTTP server error (5xx).
         case networkServerError = "NETWORK_003"
+        /// The request never got an HTTP response: the connection failed, dropped, or timed out.
+        case networkIOError = "NETWORK_007"
 
         // Configuration (CONFIG_XXX)
         /// SDK has not been initialized.

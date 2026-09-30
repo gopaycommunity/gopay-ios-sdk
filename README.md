@@ -162,6 +162,9 @@ let qr = try await session.getQrPaymentInfo(format: .png)   // GET /payments/{id
 
 // Apple Pay config (for building a sheet manually, if needed)
 let appInfo = try await session.getApplePayInfo()           // GET /payments/{id}/apple-pay/app-info
+
+// Browser data as the charge will send it (charge() runs this step itself)
+let browserData = try await session.completeBrowserData(await BrowserData.deviceDefault())
 ```
 
 ### Charging with Apple Pay
@@ -205,6 +208,23 @@ charge doesn't pay the WebView-construction latency. If the lookup ever fails, i
 ```swift
 let browserData = await BrowserData.deviceDefault()
 ```
+
+The gateway also requires `ip`, and the device cannot know its own public address, so every
+`charge(_:)` on a session first calls `GET /cards/browser-data` with the SDK's `clientId` and
+`shareableKey` and fills in `ip` and `accept_header` from the answer; `javascript_enabled` is
+sent as `true`, because the challenge runs in a WebView with JavaScript on. The request carries
+the WebView's User-Agent, so the gateway sees the same browser as the issuer later does in the
+AReq and in the challenge. `user_agent` itself never comes from the answer: a `BrowserData` you
+build without a `userAgent` gets the WebView's User-Agent filled in before the fetch, with a
+warning in the debug log, because the SDK's own HTTP User-Agent would fail that comparison. Only
+fields that are still `nil` are filled: a value you set on `BrowserData` stays, and when `ip` and
+`accept_header` are both set the gateway is not asked. When the fetch fails the charge is not
+sent; the error carries the underlying code (`NETWORK_002` for an HTTP 4xx, `NETWORK_003` for a
+5xx, `NETWORK_007` for a transport failure, `AUTH_011` when the config has no `shareableKey`, or
+whatever else the fetch produced) with the original error as `underlying`. The transport mapping
+to `NETWORK_007` applies to this step only: the charge request itself still surfaces a transport
+failure as the bare `URLError`, as before. `session.completeBrowserData(_:)` runs the same step
+on its own when you want to log what goes out; pass its result to the charge unchanged.
 
 ### Charging with a card token
 
@@ -619,7 +639,7 @@ Android SDK) and a message:
 |---|---|
 | `AUTH_009` | Payment token expired and couldn't be re-acquired |
 | `AUTH_010` | `payment_id` / `payment_secret` rejected |
-| `AUTH_011` | `clientId` / `shareableKey` missing for a public-endpoint call |
+| `AUTH_011` | `clientId` / `shareableKey` missing for a public-endpoint call, including the browser data fetch a charge runs first |
 | `AUTH_012` | A session for this `payment_id` already exists |
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_008` | A 3DS verification is already in progress |
@@ -627,6 +647,7 @@ Android SDK) and a message:
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
 | `NETWORK_002` | Gateway returned 4xx |
 | `NETWORK_003` | Gateway returned 5xx |
+| `NETWORK_007` | No HTTP response: the connection failed, dropped or timed out (raised for the browser data fetch before a charge) |
 | `CONFIG_001` | `initialize(with:)` was never called |
 | `CONFIG_003` | A required configuration parameter is missing |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |

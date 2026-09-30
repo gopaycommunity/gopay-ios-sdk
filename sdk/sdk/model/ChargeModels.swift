@@ -39,7 +39,17 @@ public enum Emv3dsState: String, Codable {
 }
 
 /// Browser data collected for 3DS authentication. Required on every card charge regardless of the
-/// input type. Maps to `Browser-Data`.
+/// input type. Maps to `Browser-Data` in the published spec.
+///
+/// The gateway requires every field, ``ip`` included, and rejects a charge without it. The device
+/// cannot know its own public address, and the issuer expects ``acceptHeader`` to come from the
+/// same request that produced the address, so the SDK fetches the two from
+/// `GET /cards/browser-data` right before it charges and fills in whichever of them is `nil`; see
+/// ``PaymentSession/charge(_:)``. ``userAgent`` never comes from that answer: when `nil` it is
+/// filled in before the fetch with the challenge WebView's User-Agent, which the fetch then
+/// carries. A value you set yourself is kept, so pass ``ip`` only if you collected it in the
+/// customer's own browser. ``javascriptEnabled`` is filled as `true` when `nil`, because the
+/// challenge runs in a WebView with JavaScript on.
 public struct BrowserData: Encodable {
     public let language: String
     public let timezone: Int
@@ -49,6 +59,8 @@ public struct BrowserData: Encodable {
     public let userAgent: String?
     public let acceptHeader: String?
     public let javascriptEnabled: Bool?
+    /// Public address of the customer's browser, at most 45 characters.
+    public let ip: String?
 
     enum CodingKeys: String, CodingKey {
         case language
@@ -59,6 +71,7 @@ public struct BrowserData: Encodable {
         case userAgent = "user_agent"
         case acceptHeader = "accept_header"
         case javascriptEnabled = "javascript_enabled"
+        case ip
     }
 
     public init(
@@ -69,7 +82,8 @@ public struct BrowserData: Encodable {
         colorDepth: Int,
         userAgent: String? = nil,
         acceptHeader: String? = nil,
-        javascriptEnabled: Bool? = nil
+        javascriptEnabled: Bool? = nil,
+        ip: String? = nil
     ) {
         self.language = language
         self.timezone = timezone
@@ -79,6 +93,62 @@ public struct BrowserData: Encodable {
         self.userAgent = userAgent
         self.acceptHeader = acceptHeader
         self.javascriptEnabled = javascriptEnabled
+        self.ip = ip
+    }
+
+    /// The two fields only the gateway can supply present, so a charge needs no
+    /// `GET /cards/browser-data`. ``userAgent`` is not part of it: the SDK fills that one in from
+    /// the challenge WebView before it asks, as the Android SDK does.
+    var hasGatewayFields: Bool {
+        ip != nil && acceptHeader != nil
+    }
+
+    /// A copy with ``userAgent`` replaced; every other field stays.
+    func withUserAgent(_ userAgent: String) -> BrowserData {
+        BrowserData(
+            language: language,
+            timezone: timezone,
+            screenWidth: screenWidth,
+            screenHeight: screenHeight,
+            colorDepth: colorDepth,
+            userAgent: userAgent,
+            acceptHeader: acceptHeader,
+            javascriptEnabled: javascriptEnabled,
+            ip: ip
+        )
+    }
+
+    /// A copy with every `nil` among ``ip`` and ``acceptHeader`` taken from `detected`, and
+    /// ``javascriptEnabled`` set to `true` when `nil`. A value already set stays. ``userAgent`` is
+    /// left alone: the gateway only echoes the one the fetch sent, and the SDK fills it in before
+    /// the fetch, so the echo is never the source.
+    func filled(from detected: BrowserDataDetected?) -> BrowserData {
+        BrowserData(
+            language: language,
+            timezone: timezone,
+            screenWidth: screenWidth,
+            screenHeight: screenHeight,
+            colorDepth: colorDepth,
+            userAgent: userAgent,
+            acceptHeader: acceptHeader ?? detected?.acceptHeader,
+            javascriptEnabled: javascriptEnabled ?? true,
+            ip: ip ?? detected?.ip
+        )
+    }
+}
+
+/// Response of `GET /cards/browser-data`: the ``BrowserData`` fields the device cannot determine on
+/// its own, derived by the gateway from the request that fetched them. Maps to
+/// `Browser-Data-Detected`. The SDK merges it into the charge's ``BrowserData``.
+public struct BrowserDataDetected: Codable {
+    public let ip: String
+    public let userAgent: String
+    public let acceptHeader: String
+
+    enum CodingKeys: String, CodingKey {
+        case ip
+        case userAgent = "user_agent"
+        case acceptHeader = "accept_header"
     }
 }
 

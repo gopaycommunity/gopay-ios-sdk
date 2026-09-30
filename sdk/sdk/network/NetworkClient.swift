@@ -46,11 +46,18 @@ extension DefaultNetworkClient: AsyncHTTPClient {
     /// Sends a request and returns the body together with the `HTTPURLResponse`.
     ///
     /// Wraps the completion-based `dataTask` in a continuation — `URLSession.data(for:)` is iOS
-    /// 15+, while this SDK supports iOS 13. Attaches the `User-Agent` header.
+    /// 15+, while this SDK supports iOS 13.
+    ///
+    /// Identifies the SDK in the `User-Agent` header of every request that does not set one
+    /// itself. A request that names its own User-Agent keeps it: `GET /cards/browser-data` sends
+    /// the 3DS challenge WebView's, because the gateway echoes the header back as
+    /// `browser_data.user_agent` and the issuer expects that value to match the browser it later
+    /// sees. Overwriting it here would put the SDK's HTTP client name into the AReq instead.
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         var mutableRequest = request
-        let userAgent = "GoPay iOS SDK \(GopaySDK.version)"
-        mutableRequest.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if mutableRequest.value(forHTTPHeaderField: "User-Agent") == nil {
+            mutableRequest.setValue("GoPay iOS SDK \(GopaySDK.version)", forHTTPHeaderField: "User-Agent")
+        }
 
         return try await withCheckedThrowingContinuation { continuation in
             let task = session.dataTask(with: mutableRequest) { data, response, error in

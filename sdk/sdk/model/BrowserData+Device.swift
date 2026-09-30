@@ -2,12 +2,6 @@ import Foundation
 import UIKit
 
 public extension BrowserData {
-    /// Standard `Accept` header sent by a modern mobile WebView. There's no device API to read
-    /// this back at charge time (the ACS challenge WebView doesn't exist yet), so this mirrors
-    /// the conventional value every mainstream mobile browser/3DS SDK reports.
-    private static let defaultAcceptHeader =
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
-
     /// Synthesized fallback User-Agent, used only if the real WebView lookup in
     /// ``GopayUserAgent`` fails. Reproduces the form a plain `WKWebView` reports (the
     /// `Mobile/15E148` token without Safari's trailing `Version/… Safari/…`; the WebKit build
@@ -34,6 +28,11 @@ public extension BrowserData {
     /// default configuration, which runs JavaScript. `userAgent` is the real UA that WebView
     /// reports — see ``GopayUserAgent``, which requires a JS round-trip and so makes this async.
     ///
+    /// `ip` and `acceptHeader` are left `nil` on purpose: the device cannot know its public
+    /// address, and the gateway wants the Accept headers of the same request that produced it, so
+    /// ``PaymentSession/charge(_:)`` fetches both from `GET /cards/browser-data` and fills them in;
+    /// the fetch itself is sent under the User-Agent read here, which stays in `user_agent`.
+    ///
     /// Every field can be overridden by constructing ``BrowserData`` directly if you collected
     /// more accurate values elsewhere.
     @MainActor
@@ -49,7 +48,6 @@ public extension BrowserData {
             screenHeight: Int(bounds.height),
             colorDepth: 24,
             userAgent: await GopayUserAgent.resolve(),
-            acceptHeader: defaultAcceptHeader,
             javascriptEnabled: true
         )
     }

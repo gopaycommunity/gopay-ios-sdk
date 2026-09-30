@@ -241,7 +241,7 @@ struct ContentView: View {
         let session = try requireSession()
         let request = ChargePaymentRequest.cardToken(
             cardToken,
-            browserData: await BrowserData.deviceDefault(),
+            browserData: try await browserDataForCharge(session),
             challengePreference: .auto
         )
         let charge = try await session.charge(request)
@@ -258,7 +258,7 @@ struct ContentView: View {
         let session = try requireSession()
         let request = ChargePaymentRequest.encryptedCard(
             jwe.trimmingCharacters(in: .whitespacesAndNewlines),
-            browserData: await BrowserData.deviceDefault(),
+            browserData: try await browserDataForCharge(session),
             challengePreference: .auto
         )
         let charge = try await session.charge(request)
@@ -275,12 +275,43 @@ struct ContentView: View {
             log("Apple Pay is not available on this device.")
             return
         }
-        let charge = try await session.chargeWithApplePay()
+        let charge = try await session.chargeWithApplePay(browserData: try await browserDataForCharge(session))
         logResponse("chargeWithApplePay() -> ChargePaymentResponse", charge)
         if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
             await MainActor.run { pending3dsURL = url }
             log("3DS required — tap \"Handle 3DS verification\" to continue.")
         }
+    }
+
+    /// The device data the gateway forwards to the issuer, which weighs it when deciding between
+    /// a frictionless approval and a 3DS challenge. Completed through the session the way the
+    /// charge would complete it, logged, and then passed explicitly, so the console shows exactly
+    /// what went out rather than a second guess at it. The charge sees every field set and does
+    /// not ask the gateway a second time.
+    private func browserDataForCharge(_ session: PaymentSession) async throws -> BrowserData {
+        let data = try await session.completeBrowserData(await BrowserData.deviceDefault())
+        log("""
+            // browser_data sent with this charge
+            user_agent: \(data.userAgent ?? "nil")
+            language: \(data.language), timezone: \(data.timezone)
+            screen: \(data.screenWidth)x\(data.screenHeight), color_depth: \(data.colorDepth)
+            ip: \(Self.maskIp(data.ip))
+            accept_header: \(data.acceptHeader ?? "nil")
+            """)
+        return data
+    }
+
+    /// The address as the run's protocol may carry it: the first two groups stay, so the log can
+    /// be matched against the gateway's records, and the rest is replaced, so the log does not
+    /// name the tester's network. `nil` reads as such, because a missing address is the finding.
+    private static func maskIp(_ ip: String?) -> String {
+        guard let ip = ip else { return "nil" }
+        let separator: Character = ip.contains(":") ? ":" : "."
+        let groups = ip.split(separator: separator, omittingEmptySubsequences: false).map(String.init)
+        guard groups.count >= 3 else { return ip }
+        let kept = groups.prefix(2).joined(separator: String(separator))
+        let masked = groups.dropFirst(2).map { _ in "x" }.joined(separator: String(separator))
+        return kept + String(separator) + masked
     }
 
     private func handle3ds(_ url: URL) async throws {

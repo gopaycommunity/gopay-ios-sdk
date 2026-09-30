@@ -44,6 +44,8 @@ public class GopaySDK {
     private var asyncClient: AsyncHTTPClient?
     /// Unauthenticated token endpoint used to acquire payment-scoped JWTs.
     private var authAPI: AuthAPI?
+    /// Shareable-key endpoints: the public key, and the browser data every charge completes itself with.
+    private var publicAPI: PublicAPI?
     /// In-memory cache of the merchant's encryption JWK.
     private var publicKeyCache: PublicKeyCache?
     /// Registry of live payment sessions keyed by `payment_id`. Supports concurrent payments.
@@ -75,9 +77,9 @@ public class GopaySDK {
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
         self.asyncClient = client
         self.authAPI = AuthAPI(client: client)
-        self.publicKeyCache = PublicKeyCache(
-            publicAPI: PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
-        )
+        let publicAPI = PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
+        self.publicAPI = publicAPI
+        self.publicKeyCache = PublicKeyCache(publicAPI: publicAPI)
         // Resolve the real WebView User-Agent now, off the critical path, so the first charge's
         // browser_data doesn't pay the WKWebView construction + JS round-trip latency.
         Task { @MainActor in GopayUserAgent.prewarm() }
@@ -99,9 +101,9 @@ public class GopaySDK {
         let client = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
         self.asyncClient = client
         self.authAPI = AuthAPI(client: client)
-        self.publicKeyCache = PublicKeyCache(
-            publicAPI: PublicAPI(client: client, clientId: config?.clientId, shareableKey: config?.shareableKey)
-        )
+        let publicAPI = PublicAPI(client: client, clientId: config?.clientId, shareableKey: config?.shareableKey)
+        self.publicAPI = publicAPI
+        self.publicKeyCache = PublicKeyCache(publicAPI: publicAPI)
     }
 
     // MARK: - Payment sessions
@@ -133,7 +135,7 @@ public class GopaySDK {
         guard !paymentSecret.isEmpty else {
             throw GopaySDKError(.validationInvalidInput, message: "paymentSecret must not be empty")
         }
-        guard let authAPI = authAPI, let client = asyncClient else {
+        guard let authAPI = authAPI, let publicAPI = publicAPI, let client = asyncClient else {
             throw GopaySDKError(
                 .sdkNotInitialized,
                 message: "GopaySDK has not been initialized. Call initialize(with:) first."
@@ -146,6 +148,7 @@ public class GopaySDK {
             paymentSecret: paymentSecret,
             scope: scope,
             authApi: authAPI,
+            publicApi: publicAPI,
             client: client,
             onClose: { session in await registry.remove(session) }
         )

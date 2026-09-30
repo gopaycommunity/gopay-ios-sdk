@@ -112,6 +112,8 @@ iOS, Android and the web. The web ships both palettes with an underlined field, 
 mobile SDK carries, so the demos show the same colors and spacing in a bordered field.
 
 Every result, or a `GopaySDKError` with its code, is logged into the **Response** box at the bottom.
+Each charge also logs the `browser_data` it sent, with the `ip` and `accept_header` the SDK fetched
+from the gateway for it; the address is cut to its first two groups.
 
 Apple Pay needs the Apple Pay capability and a Merchant ID entitlement added in Xcode, plus Apple
 Pay in-app enabled for the merchant on the gateway. Completing a real authorization needs a
