@@ -174,6 +174,92 @@ extension SessionNetworkTests {
         }
     }
 
+    @Test func submitCardForm_success_runsTheRegisteredWipe() async throws {
+        // Only that the wipe is invoked; that it actually empties a live form's fields is covered
+        // by CardFormResetTests, which hosts a real GopayCardForm.
+        // Clearing the SDK's copy leaves the digits on screen, so the form registers a wipe and
+        // the card does not outlive the JWE made from it (GPMOB-140; PCI DSS 4.0.1, req. 3.3.1).
+        let jwkJSON = try freshPublicJWKJSON()
+        StubURLProtocol.reset { req in
+            (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, jwkJSON) : (404, Data())
+        }
+        let sdk = lifecycleSDK()
+        sdk.updateCardFormData(filledData(), formId: "f1")
+
+        let wiped = Locked(false)
+        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1")
+
+        _ = try await sdk.submitCardForm()
+        await drainMainQueue()
+
+        #expect(wiped.value)
+    }
+
+    @Test func submitCardForm_encryptionFailure_doesNotRunTheWipe() async throws {
+        // The mirror of the rule above: nothing is authorized yet, so the user must not have to
+        // retype the card after a network drop. Android resets on success only for the same reason.
+        StubURLProtocol.reset { _ in (500, Data()) }
+        let sdk = lifecycleSDK()
+        sdk.updateCardFormData(filledData(), formId: "f1")
+
+        let wiped = Locked(false)
+        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1")
+
+        await #expect(throws: GopaySDKError.self) {
+            _ = try await sdk.submitCardForm()
+        }
+        await drainMainQueue()
+
+        #expect(wiped.value == false)
+    }
+
+    @Test func unregisteringWipesTheFieldsBeforeDroppingTheHandler() async throws {
+        // The closure holds the form and with it the PAN, so dropping it without firing it would
+        // hand the card on rather than clear it. Firing it once is also all that happens: the
+        // handler is gone afterwards, so a later submit cannot reach a view that has left.
+        let jwkJSON = try freshPublicJWKJSON()
+        StubURLProtocol.reset { req in
+            (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, jwkJSON) : (404, Data())
+        }
+        let sdk = lifecycleSDK()
+        sdk.updateCardFormData(filledData(), formId: "f1")
+
+        let wipeCount = Locked(0)
+        sdk.registerCardFormReset({ wipeCount.value += 1 }, formId: "f1")
+
+        sdk.unregisterCardFormReset(formId: "f1")
+        await drainMainQueue()
+        #expect(wipeCount.value == 1)
+
+        _ = try await sdk.submitCardForm()
+        await drainMainQueue()
+        #expect(wipeCount.value == 1)
+    }
+
+    /// A wipe writes SwiftUI state, so the SDK hops it to the main thread. Tests run off it, so
+    /// they have to let that hop land before reading the result.
+    private func drainMainQueue() async {
+        await MainActor.run {}
+    }
+
+    @Test func clearingEveryFormWipesEveryFieldOnScreen() async {
+        // Documented as the call for "the user abandoned checkout while the form stayed up", so
+        // it has to reach the fields too, not just the SDK's copy.
+        let sdk = lifecycleSDK()
+        sdk.updateCardFormData(filledData(), formId: "f1")
+        sdk.updateCardFormData(filledData(), formId: "f2")
+
+        let wiped = Locked(0)
+        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f1")
+        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f2")
+
+        sdk.clearCardFormData()
+        await drainMainQueue()
+
+        #expect(wiped.value == 2)
+        #expect(sdk.internalCardFormData.isEmpty)
+    }
+
     @Test func submitCardForm_encryptionFailure_keepsData() async throws {
         // Key endpoint down → encryption can't happen. Authorization hasn't occurred yet,
         // so the user's input must survive for a retry (deliberate decision, GPMOB-140).
@@ -186,5 +272,16 @@ extension SessionNetworkTests {
         }
         #expect(sdk.internalCardFormData["f1"] != nil)
         #expect(sdk.mostRecentFormId == "f1")
+    }
+}
+
+/// A `Sendable` box for a flag a test closure sets and the test body reads.
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); defer { lock.unlock() }; stored = newValue }
     }
 }

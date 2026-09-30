@@ -110,8 +110,13 @@ public struct GopayCardForm: View {
     /// which keeps error display host-driven.
     public var validation: GopayCardFormValidationDisplay
 
-    /// Optional binding to track form validation state (for UI feedback).
-    /// Set this if you want to enable/disable submit buttons based on form validity.
+    /// Binding the form writes its current validity into, for driving a submit button.
+    ///
+    /// The form fills it on appear and on every edit, so from the first render onwards it always
+    /// holds `true` or `false` and never `nil`. `nil` is only the value a host starts it at before
+    /// the form has rendered; treat it as "not known yet", not as a state the form produces. The
+    /// optionality is here for that starting point alone and goes away with the next major, when
+    /// this becomes `Binding<Bool>`.
     @Binding public var isValid: Bool?
     
     /// Unique identifier for this form instance.
@@ -156,7 +161,9 @@ public struct GopayCardForm: View {
     ///   - localeStrings: Explicit locale strings to use, bypassing `locale` resolution.
     ///   - validation: When/whether to render localized inline validation errors
     ///                 (default: ``GopayCardFormValidationDisplay/hidden``).
-    ///   - isValid: Optional binding to track form validation state (default: `nil`).
+    ///   - isValid: Binding the form writes its validity into, filled from the first render
+    ///              onwards. Omit it if you do not need the state; the default binding discards
+    ///              the writes.
     ///   - formId: Optional unique identifier for this form. If not provided, a UUID will be generated.
     public init(
         theme: GopayCardFormTheme = GopayCardFormTheme(),
@@ -500,21 +507,64 @@ public struct GopayCardForm: View {
         .onAppear {
             // Initial sync when form appears
             GopaySDK.shared.updateCardFormData(data, formId: formId)
+            // Let the SDK empty these fields once it has turned them into a JWE.
+            GopaySDK.shared.registerCardFormReset(resetFields, formId: formId)
             // Update validation binding if provided
             updateValidationBinding()
         }
         .onDisappear {
-            // Drop the SDK-held copy of the card data when the form leaves the screen;
-            // `onAppear` re-syncs it if the form comes back (PCI DSS 4.0.1, req. 3.3.1).
+            // Drop the card when the form leaves the screen, both the SDK's copy and the fields
+            // themselves (PCI DSS 4.0.1, req. 3.3.1). `@State` outlives the view whenever the
+            // hierarchy is only detached rather than destroyed, an inactive tab being the common
+            // case, so leaving the digits in place would keep the card in memory indefinitely and
+            // `onAppear` would sync them straight back into the SDK.
+            //
+            // Emptying the fields is `unregisterCardFormReset`'s job, here as everywhere else: it
+            // runs the wipe and then drops the handler. Clearing the SDK's copy afterwards finds
+            // no handler left, so the fields are emptied exactly once. `onDisappear` is already on
+            // the main thread, where both calls run the wipe synchronously, so nothing can slip in
+            // between the two.
+            GopaySDK.shared.unregisterCardFormReset(formId: formId)
             GopaySDK.shared.clearCardFormData(formId: formId)
         }
     }
     
-    /// Updates the validation binding if provided.
+    /// Returns the form to its pristine state, dropping the card the user typed.
+    ///
+    /// Runs on every path that clears the card, not only the one it was written for: after
+    /// ``GopaySDK/submitCardForm(formId:)`` has encrypted it, so the PAN and CVV do not stay on
+    /// screen once the JWE exists (PCI DSS 4.0.1, req. 3.3.1), and equally from the host's own
+    /// ``GopaySDK/clearCardFormData(formId:)`` and from the form leaving the screen. Deliberately
+    /// not called on a failed encryption: nothing has been authorized yet and the user should not
+    /// have to retype the card after a network drop.
+    ///
+    /// The edited flags go with the digits, so the emptied fields come back pristine instead of
+    /// lit up with validation errors, and so do the focus flags, which closes the keyboard if the
+    /// user was still typing.
+    ///
+    /// The SDK's own copy is already gone by this point and this does not re-sync an empty one,
+    /// so a second submit fails until a new card is typed: with `noCardFormData` while nothing is
+    /// stored, and with `invalidCardFormData` from the next `onAppear` or keystroke onwards, which
+    /// syncs the emptied fields back in.
+    private func resetFields() {
+        data = GopayCardFormData()
+        cardNumberEdited = false
+        expirationEdited = false
+        cvvEdited = false
+        isCardNumberFocused = false
+        isExpirationFocused = false
+        isCvvFocused = false
+        updateValidationBinding()
+    }
+
+    /// Publishes the current validity to the host's binding.
+    ///
+    /// The write is unconditional. Guarding it on the binding already holding a value meant a
+    /// host that started from `nil`, which is the documented starting point, never received the
+    /// first one and saw the form as permanently invalid. When no binding was passed, the
+    /// default is `.constant(nil)` and the write is a no-op.
     private func updateValidationBinding() {
-        if isValid != nil {
-            isValid = data.isValid
-        }
+        isValid = data.isValid
     }
 }
 

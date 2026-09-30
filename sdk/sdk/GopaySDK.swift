@@ -62,6 +62,12 @@ public class GopaySDK {
     /// ``submitCardForm(formId:)`` reads and clears from whatever executor resumes it.
     private let cardFormDataLock = NSLock()
 
+    /// Wipes the fields a ``GopayCardForm`` still shows, keyed by form ID. Clearing
+    /// ``internalCardFormData`` only drops the SDK's own copy; the digits the user typed stay on
+    /// screen until the form itself is told to let go of them. Registered while a form is on
+    /// screen and guarded by ``cardFormDataLock`` alongside the data it belongs to.
+    private var cardFormResetHandlers: [String: () -> Void] = [:]
+
     /// Initializes the SDK with the given configuration. Call once before any other operation.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
@@ -228,11 +234,19 @@ public class GopaySDK {
     /// Encrypts the card data currently held by a ``GopayCardForm`` into a JWE for server-side
     /// tokenization. The sensitive PAN/CVV never leave the SDK — only the JWE is returned.
     ///
-    /// On success the form's card data is removed from memory, so a second call for the same
-    /// form throws ``GopaySDKError`` with `GopaySDKErrors.noCardFormData` until the form
-    /// re-syncs (it does so on appear and on any edit). Forward the returned JWE promptly and
-    /// use it for a single charge: the gateway accepts each JWE only once and its payload
-    /// expires 10 minutes after creation, so a retry needs the user to confirm the card again.
+    /// On success the form returns to its pristine state: the SDK's copy of the card is dropped
+    /// **and the visible fields are emptied**, so the user sees an empty card form and your own UI
+    /// should move on rather than wait for further input. A failed encryption leaves everything as
+    /// the user typed it, since nothing has been authorized yet.
+    ///
+    /// A second call for the same form therefore fails until a new card is typed: with
+    /// `GopaySDKErrors.noCardFormData` while nothing is stored, and with
+    /// `GopaySDKErrors.invalidCardFormData` once the emptied form has re-synced (it does so on
+    /// appear and on any edit).
+    ///
+    /// Forward the returned JWE promptly and use it for a single charge: the gateway accepts each
+    /// JWE only once and its payload expires 10 minutes after creation, so a retry needs the user
+    /// to confirm the card again.
     ///
     /// - Parameter formId: The form to read. When `nil`, uses the most recently active form.
     public func submitCardForm(formId: String? = nil) async throws -> String {
@@ -258,9 +272,46 @@ public class GopaySDK {
         )
         let jwe = try await encryptCardData(cardData)
         // Only clear after encryption succeeded — on failure (e.g. key fetch offline) the user
-        // shouldn't have to retype the card; authorization hasn't happened yet.
+        // shouldn't have to retype the card; authorization hasn't happened yet. Clearing also
+        // empties the fields the form still shows, so the card does not outlive the JWE made
+        // from it (PCI DSS 4.0.1, req. 3.3.1). Mirrors the Android SDK, which resets the form on
+        // a successful encryption and deliberately not on a failed one.
         clearCardFormData(formId: id)
         return jwe
+    }
+
+    /// Registers the wipe a live ``GopayCardForm`` performs on its own fields.
+    internal func registerCardFormReset(_ reset: @escaping () -> Void, formId: String) {
+        cardFormDataLock.lock()
+        defer { cardFormDataLock.unlock() }
+        cardFormResetHandlers[formId] = reset
+    }
+
+    /// Runs the wipe for a form that is leaving the screen and then drops it.
+    ///
+    /// The wipe runs first because the form's `@State` outlives the view whenever the hierarchy is
+    /// only detached rather than destroyed, an inactive tab being the common case: dropping the
+    /// handler without firing it would leave the PAN and the CVV sitting in that state with
+    /// nothing left able to reach them, ready for the next `onAppear` to sync them straight back
+    /// into the SDK. Running it first leaves nothing behind.
+    internal func unregisterCardFormReset(formId: String) {
+        cardFormDataLock.lock()
+        let reset = cardFormResetHandlers.removeValue(forKey: formId)
+        cardFormDataLock.unlock()
+        runOnMain { reset?() }
+    }
+
+    /// Runs `work` on the main thread, synchronously when already there.
+    ///
+    /// The wipes write SwiftUI state. ``clearCardFormData(formId:)`` is public and documented as
+    /// callable from anywhere, and ``submitCardForm(formId:)`` resumes on whatever executor the
+    /// encryption left it on.
+    private func runOnMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
     }
 
     /// Removes card data held for a ``GopayCardForm`` from memory.
@@ -270,19 +321,28 @@ public class GopaySDK {
     /// abandons checkout while the form stays on screen, so the PAN/CVV don't linger in
     /// memory longer than needed (PCI DSS 4.0.1, req. 3.3.1).
     ///
+    /// This empties the fields of every affected form that is currently on screen, not just the
+    /// SDK's copy of them — otherwise clearing on the host's behalf would leave the card the user
+    /// can still see, and the form's next appearance would sync it straight back in.
+    ///
     /// - Parameter formId: The form to clear. When `nil`, clears every stored form.
     public func clearCardFormData(formId: String? = nil) {
         cardFormDataLock.lock()
-        defer { cardFormDataLock.unlock() }
+        let resets: [() -> Void]
         if let id = formId {
             internalCardFormData.removeValue(forKey: id)
             if mostRecentFormId == id {
                 mostRecentFormId = nil
             }
+            resets = cardFormResetHandlers[id].map { [$0] } ?? []
         } else {
             internalCardFormData.removeAll()
             mostRecentFormId = nil
+            resets = Array(cardFormResetHandlers.values)
         }
+        cardFormDataLock.unlock()
+        // Run outside the lock: a wipe re-enters through the form's own bookkeeping.
+        runOnMain { resets.forEach { $0() } }
     }
 
     private func validateCardData(_ cardData: GopayCardData) throws {

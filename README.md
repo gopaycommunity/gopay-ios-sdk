@@ -349,11 +349,16 @@ pass the same `formId` to `submitCardForm(formId:)`).
 
 The SDK clears the form's card data from memory after a successful `submitCardForm()` and when
 the form disappears — so call `submitCardForm()` while the form is on screen and forward the
-JWE promptly. The gateway accepts each JWE **once** and its payload expires 10 minutes after
-creation; to retry a failed charge, have the user confirm the card again (any edit re-syncs the
-form's data and the next `submitCardForm()` succeeds). To wipe the data early — e.g. when the
+JWE promptly. **The visible fields are emptied too**: after a successful `submitCardForm()` the
+form returns to its pristine state, so the user sees an empty card form and your own UI should
+move on rather than wait for further input. A failed encryption leaves everything as the user
+typed it, since nothing has been authorized yet.
+
+The gateway accepts each JWE **once** and its payload expires 10 minutes after creation; to retry
+a failed charge, have the user confirm the card again. To wipe the data early — e.g. when the
 user abandons checkout while the form is still on screen — call
-`GopaySDK.shared.clearCardFormData()`. Discard the JWE once your backend has tokenized it.
+`GopaySDK.shared.clearCardFormData()`, which empties the visible fields as well. Discard the JWE
+once your backend has tokenized it.
 
 ### Theming the form
 
@@ -452,7 +457,8 @@ The web-only keys have no counterpart here, each for its own reason:
   `submitMode: 'external'`, where the iframe hides its own button too.
 - `errorHidden` is already a first-class parameter of the form, not of the theme: the default
   `validation: .hidden` renders no inline errors and hands you the state through the `isValid`
-  binding. Web `errorHidden: true` is the iOS default.
+  binding, which the form fills from its first render onwards and keeps current on every edit.
+  Web `errorHidden: true` is the iOS default.
 - `focusGradientStart`, `focusGradientEnd`, `focusRingWidth`, `focusRingColor` and
   `inputBorderCollapse` all describe something a browser paints around a field: a gradient, a glow
   outside the frame, one shared line between two neighbours. A native text field has none of them,
@@ -712,8 +718,10 @@ See [`example/README.md`](example/README.md) for the full walkthrough.
 - `GopayCardForm` keeps PAN and CVV inside the SDK; you only ever receive a JWE.
 - Card data lives in memory only while the form needs it: the SDK's copy is dropped after a
   successful `submitCardForm()`, when the form disappears, and on demand via `clearCardFormData()`
-  (PCI DSS 4.0.1, req. 3.3.1 — SAD must not be retained once no longer needed). Swift strings
-  cannot be securely overwritten, so this releases the references rather than zeroing bytes.
+  (PCI DSS 4.0.1, req. 3.3.1 — SAD must not be retained once no longer needed). Each of those also
+  empties the form's visible fields, so the card is not left on screen holding a reference the SDK
+  has already let go of. Swift strings cannot be securely overwritten, so this releases the
+  references rather than zeroing bytes.
 - Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
   payments and never sees the merchant secret.
