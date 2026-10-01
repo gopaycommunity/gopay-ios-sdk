@@ -9,7 +9,8 @@ import Testing
 import Foundation
 @testable import sdk
 
-// Serialized because the tests mutate GopayLocales' shared custom/default state.
+// Serialized because the tests mutate GopayLocales' shared custom/default state and its
+// preferredLanguages test hook.
 @Suite(.serialized)
 struct GopayLocalesTests {
 
@@ -17,6 +18,21 @@ struct GopayLocalesTests {
     private func reset() {
         GopayLocales.clearCustom()
         GopayLocales.setDefaultLocale(nil)
+    }
+
+    /// Runs `body` with the device languages pinned to `languages`. resolve() falls through to the
+    /// device language before Czech, so the ambient language would make it environment-dependent
+    /// (a CI simulator runs in English).
+    private func withSystemLanguages(_ languages: [String], _ body: () -> Void) {
+        let original = GopayLocales.preferredLanguages
+        GopayLocales.preferredLanguages = { languages }
+        defer { GopayLocales.preferredLanguages = original }
+        body()
+    }
+
+    /// Runs `body` with the device language pinned to Japanese, which has no built-in locale.
+    private func withUnknownSystemLanguage(_ body: () -> Void) {
+        withSystemLanguages(["ja"], body)
     }
 
     @Test func resolve_knownCode_returnsThatLocale() {
@@ -34,7 +50,9 @@ struct GopayLocalesTests {
 
     @Test func resolve_unknownCode_fallsBackToCzech() {
         reset()
-        #expect(GopayLocales.resolve("xx") == GopayLocales.cs)
+        withUnknownSystemLanguage {
+            #expect(GopayLocales.resolve("xx") == GopayLocales.cs)
+        }
     }
 
     @Test func resolve_nilPreferred_usesSdkDefaultWhenSet() {
@@ -42,6 +60,20 @@ struct GopayLocalesTests {
         GopayLocales.setDefaultLocale("fr")
         #expect(GopayLocales.resolve(nil) == GopayLocales.fr)
         reset()
+    }
+
+    @Test func resolve_noPreferredNoDefault_usesSystemLanguageWhenKnown() {
+        reset()
+        withSystemLanguages(["de-AT"]) {
+            #expect(GopayLocales.resolve(nil) == GopayLocales.de)
+        }
+    }
+
+    @Test func resolve_unknownSystemLanguage_fallsBackToCzech() {
+        reset()
+        withUnknownSystemLanguage {
+            #expect(GopayLocales.resolve(nil) == GopayLocales.cs)
+        }
     }
 
     @Test func resolve_explicitPreferred_beatsSdkDefault() {
@@ -81,10 +113,12 @@ struct GopayLocalesTests {
 
     @Test func clearCustom_removesCustomButKeepsBuiltIns() {
         reset()
-        GopayLocales.register(GopayLocales.en, for: "xx")
-        GopayLocales.clearCustom()
-        #expect(GopayLocales.resolve("xx") == GopayLocales.cs) // custom gone -> fallback
-        #expect(GopayLocales.resolve("de") == GopayLocales.de) // built-in intact
+        withUnknownSystemLanguage {
+            GopayLocales.register(GopayLocales.en, for: "xx")
+            GopayLocales.clearCustom()
+            #expect(GopayLocales.resolve("xx") == GopayLocales.cs) // custom gone -> fallback
+            #expect(GopayLocales.resolve("de") == GopayLocales.de) // built-in intact
+        }
     }
 
     @Test func availableCodes_includesCustomAndBuiltIns() {

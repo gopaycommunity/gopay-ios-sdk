@@ -325,6 +325,12 @@ public enum GopayLocales {
         "ro": ro, "ru": ru, "sk": sk, "sl": sl, "uk": uk,
     ]
 
+    // MARK: - Test hook
+
+    /// The device's preferred languages, read by ``systemLanguage()``. Replaceable so tests can pin
+    /// the device language. Only serialized tests write it, and it is not guarded by the lock.
+    static var preferredLanguages: () -> [String] = { Locale.preferredLanguages }
+
     // MARK: - Mutable registry (thread-safe)
 
     private static let lock = NSLock()
@@ -366,7 +372,7 @@ public enum GopayLocales {
 
     /// The device language code, e.g. `"cs"` for a Czech device.
     public static func systemLanguage() -> String {
-        normalize(Locale.preferredLanguages.first ?? Locale.current.identifier)
+        normalize(preferredLanguages().first ?? Locale.current.identifier)
     }
 
     /// Resolves the ``GopayLocaleStrings`` to use, in priority order:
