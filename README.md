@@ -765,6 +765,10 @@ messages, bumps `package.json`, rewrites `CHANGELOG.md`, and creates and pushes 
 commitlint enforces conventional commits with a `GPMOB-` reference, so the commit message is what
 picks the next version. Don't tag by hand — SPM consumers resolve the tag semantic-release made.
 
+A release runs only when someone starts the manual `release` step in the Bitbucket pipeline of the
+newest commit on `master`. The pipeline then pushes the release commit and its tag to GitHub, and
+the CocoaPods push below follows.
+
 `@semantic-release/exec` runs [`scripts/set-version.sh`](scripts/set-version.sh) as part of that
 same release, which rewrites `spec.version` in `GopaySDK.podspec` and the `GopaySDK.version`
 constant in [`sdk/sdk/GopaySDK.swift`](sdk/sdk/GopaySDK.swift) to match — both are committed by

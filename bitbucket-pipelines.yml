@@ -18,7 +18,7 @@ definitions:
                   depth: full
               script:
                   - git fetch origin master --tags
-                  - git checkout master
+                  - git checkout -B master origin/master
                   # Authenticates via the repository SSH key configured in Pipelines settings,
                   # registered as a write-enabled deploy key on the GitHub mirror
                   - git remote add github git@github.com:gopaycommunity/gopay-ios-sdk.git || true
@@ -43,10 +43,17 @@ definitions:
 pipelines:
     branches:
         master:
-            - parallel:
-                - step: *release
-                - step: *sonarcloud-analysis
+            - step: *sonarcloud-analysis
             - step: *github-sync
+            # Release by hand from the pipeline of the newest master commit. semantic-release
+            # releases nothing from an older pipeline.
+            - step:
+                  <<: *release
+                  trigger: manual
+            # Sends the release commit and its tag.
+            - step:
+                  <<: *github-sync
+                  name: Sync release to GitHub
     pull-requests:
         '**':
             - parallel:

@@ -21,21 +21,21 @@ if [[ -z "$version" ]]; then
     exit 1
 fi
 
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
     echo "error: '$version' is not a semver version" >&2
     exit 1
 fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Rewrites the quoted value following `pattern` in `file`, and fails loudly if it matched nothing —
-# a silent no-op here would ship a release with a stale version baked in.
+# Rewrites the quoted value of the line assigning `pattern` in `file`, and fails loudly if it
+# matched nothing, since a silent no-op would ship a release with a stale version baked in.
 replace() {
     local file="$1" pattern="$2"
     local path="$root/$file"
 
     VERSION="$version" perl -0777 -pi -e \
-        "die qq(no assignment matching /${pattern}/ in \$ARGV\\n) unless s/(${pattern}\\s*=\\s*)\"[^\"]*\"/\$1\"\$ENV{VERSION}\"/g" \
+        "die qq(no assignment matching /${pattern}/ in \$ARGV\\n) unless s/^([ \\t]*${pattern}[ \\t]*=[ \\t]*)\"[^\"\\n]*\"[ \\t]*\$/\$1\"\$ENV{VERSION}\"/mg" \
         "$path"
 
     echo "  $file"
