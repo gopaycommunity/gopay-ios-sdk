@@ -1,0 +1,119 @@
+# Unit tests and distribution manifest checks for the SDK.
+#
+# Runs on master only: pull requests live in the upstream repository and never reach this mirror,
+# so this is a regression net after merge, not a PR gate. No secrets are needed, the tests stub
+# the network and never reach a gateway.
+name: Unit tests
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time, and the run in progress is never cancelled. GitHub keeps at most one pending
+# run per group, so a newer push replaces a run that is still waiting.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: xcodebuild test
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Xcode is not pinned: a pinned version breaks hard once the image drops it. The toolchain
+      # can change under us instead, so log what was used. Diagnostic only, allowed to fail.
+      - name: Toolchain and available destinations
+        continue-on-error: true
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+          xcodebuild -project sdk/sdk.xcodeproj -scheme sdk -showdestinations
+
+      # Package.swift has no test target, so the tests run through the Xcode project.
+      - name: Run unit tests
+        run: |
+          rm -rf test-results
+          xcodebuild test \
+            -project sdk/sdk.xcodeproj \
+            -scheme sdk \
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -resultBundlePath test-results/TestResults.xcresult
+
+      # Upload the parent directory so the download keeps its .xcresult wrapper and opens in Xcode.
+      - name: Upload test results
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  manifests:
+    name: Distribution manifests
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # `swift build` targets macOS, where UIKit is missing, so build the package for iOS instead.
+      - name: Build the Swift package
+        run: xcodebuild build -scheme GopaySDK -destination 'generic/platform=iOS Simulator'
+
+      # --allow-warnings: the pod builds, but the NSLock warnings in GopaySDK.swift would fail the
+      # lint. Drop the flag once they are fixed.
+      - name: Lint the podspec
+        run: pod lib lint GopaySDK.podspec --allow-warnings
+
+  # Run notifications only reach whoever triggered the run, and a mirror sync triggers it here, so
+  # a failure opens an issue instead, which notifies everyone watching the repository. Only master
+  # runs report, since the issue title names master.
+  notify:
+    name: Failure issue
+    needs: [test, manifests]
+    if: always() && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: 'CI: tests failed on master'
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHA: ${{ github.sha }}
+      # A timed-out or cancelled job counts as a failure, so a hang is reported too.
+      FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+
+    steps:
+      - name: Open, update or close the failure issue
+        shell: bash
+        run: |
+          short="${SHA:0:7}"
+          gh label create ci-failure --color B60205 \
+            --description 'Opened by CI when a workflow fails' --force
+          issues=$(gh issue list --label ci-failure --state open --limit 100 \
+            --json number,title --jq '.[] | select(.title == env.TITLE) | .number')
+
+          if [ "$FAILED" = "true" ]; then
+            issue=$(head -n 1 <<< "$issues")
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --body "Failed again at $short. Run: $RUN_URL"
+            else
+              gh issue create --title "$TITLE" --label ci-failure \
+                --body "Unit tests or manifest checks failed on master at $short. Run: $RUN_URL"
+            fi
+          else
+            for issue in $issues; do
+              gh issue close "$issue" --comment "Passed on master at $short. Run: $RUN_URL"
+            done
+          fi
