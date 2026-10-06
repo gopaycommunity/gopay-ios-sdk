@@ -283,8 +283,9 @@ struct ChargeVerificationReportingTests {
         controller.report(.failed(GopaySDKError(.paymentVerificationUnreachable, message: "late")))
 
         #expect(results.count == 1)
-        if case .completed = results[0] {} else {
+        guard case .completed = results[0] else {
             Issue.record("expected the first outcome to win, got \(results[0])")
+            return
         }
     }
 
@@ -317,8 +318,9 @@ struct ChargeVerificationReportingTests {
         controller.webView(stubWebView, didFailProvisionalNavigation: nil, withError: offline)
 
         #expect(results.count == 1)
-        if case .cancelled = results.first {} else {
+        guard case .cancelled = results.first else {
             Issue.record("expected a cancellation, got \(String(describing: results.first))")
+            return
         }
     }
 

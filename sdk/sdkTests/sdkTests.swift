@@ -68,16 +68,16 @@ final class StubURLProtocol: URLProtocol {
     static let transportFailure = -1
 
     private static let lock = NSLock()
-    private static var _handler: Handler?
-    private static var _requests: [RecordedRequest] = []
+    private static var storedHandler: Handler?
+    private static var recordedRequests: [RecordedRequest] = []
     /// Artificial per-request delay (seconds), to widen single-flight windows.
-    private static var _delay: TimeInterval = 0
+    private static var storedDelay: TimeInterval = 0
 
     static func reset(delay: TimeInterval = 0, handler: @escaping Handler) {
         lock.lock(); defer { lock.unlock() }
-        _handler = handler
-        _requests = []
-        _delay = delay
+        storedHandler = handler
+        recordedRequests = []
+        storedDelay = delay
     }
 
     static func requestCount(forPathSuffix suffix: String) -> Int {
@@ -86,13 +86,13 @@ final class StubURLProtocol: URLProtocol {
 
     static func requests(forPathSuffix suffix: String) -> [RecordedRequest] {
         lock.lock(); defer { lock.unlock() }
-        return _requests.filter { $0.path.hasSuffix(suffix) }
+        return recordedRequests.filter { $0.path.hasSuffix(suffix) }
     }
 
     /// Paths of every request so far, in arrival order.
     static var paths: [String] {
         lock.lock(); defer { lock.unlock() }
-        return _requests.map(\.path)
+        return recordedRequests.map(\.path)
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -100,13 +100,13 @@ final class StubURLProtocol: URLProtocol {
 
     override func startLoading() {
         StubURLProtocol.lock.lock()
-        StubURLProtocol._requests.append(RecordedRequest(
+        StubURLProtocol.recordedRequests.append(RecordedRequest(
             path: request.url?.path ?? "",
             headers: request.allHTTPHeaderFields ?? [:],
             body: StubURLProtocol.readBody(of: request)
         ))
-        let handler = StubURLProtocol._handler
-        let delay = StubURLProtocol._delay
+        let handler = StubURLProtocol.storedHandler
+        let delay = StubURLProtocol.storedDelay
         StubURLProtocol.lock.unlock()
 
         if delay > 0 { Thread.sleep(forTimeInterval: delay) }
@@ -307,7 +307,9 @@ struct SessionNetworkTests {
             paymentId: "p1", paymentSecret: "secret", scope: "payment:charge",
             authApi: AuthAPI(client: client),
             publicApi: PublicAPI(client: client, clientId: "client", shareableKey: shareableKey),
-            client: client, onClose: { _ in }
+            client: client, onClose: { _ in
+                // Created outside the SDK, so there is no registry entry for the close to drop.
+            }
         )
     }
 

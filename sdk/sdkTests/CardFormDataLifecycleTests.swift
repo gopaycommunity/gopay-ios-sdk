@@ -239,7 +239,10 @@ extension SessionNetworkTests {
     /// A wipe writes SwiftUI state, so the SDK hops it to the main thread. Tests run off it, so
     /// they have to let that hop land before reading the result.
     private func drainMainQueue() async {
-        await MainActor.run {}
+        await MainActor.run {
+            // Nothing to do here: reaching the main actor is the point, the wipe queued before
+            // this hop has landed by the time it returns.
+        }
     }
 
     @Test func clearingEveryFormWipesEveryFieldOnScreen() async {
