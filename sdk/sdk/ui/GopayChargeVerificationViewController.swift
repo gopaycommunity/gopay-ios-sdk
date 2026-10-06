@@ -94,6 +94,50 @@ enum GopayVerificationNavigationPolicy {
     /// for a local test rig.
     static let redirectSchemes: Set<String> = ["http", "https"]
 
+    /// The address whose arrival ends the verification.
+    ///
+    /// The ACS finishes by sending the browser to the `return_url` the payment was created with,
+    /// which the charge response repeats. That is the merchant's own address, so it wins. Without
+    /// a usable one the SDK falls back to ``GopaySDK/chargeReturnURL``, which only works when the
+    /// payment was created with it. A blank address, one that is not `http(s)` and one without a
+    /// host are not usable: as a prefix, `https://` would match the challenge's own first
+    /// navigation and end the verification before the user saw it. The Android SDK applies the
+    /// same conditions.
+    ///
+    /// The address is matched in a form close to the one WebKit reports a navigation in: scheme
+    /// and host in lowercase, no default port, `/` for an empty path, no whitespace at the end.
+    /// Path, query and fragment stay as they are, so what WebKit normalises there (`/../` in the
+    /// path, `'` in the query) has to be written the same way in the return URL already. The return URL should carry no fragment (`#…`): what the
+    /// gateway appends lands in front of it, and the address no longer matches.
+    /// A host with non-ASCII characters is not recognised on iOS 13 to 16, where Foundation
+    /// cannot parse such an address, and the SDK waits for the constant instead.
+    static func completionPrefix(forReturnURL returnURL: URL?) -> String {
+        guard let returnURL,
+              var components = URLComponents(url: returnURL, resolvingAgainstBaseURL: false),
+              let scheme = components.scheme?.lowercased(), redirectSchemes.contains(scheme),
+              let host = components.host?.lowercased(), !host.isEmpty
+        else { return GopaySDK.chargeReturnURL }
+        components.scheme = scheme
+        components.host = host
+        if components.port == defaultPorts[scheme] { components.port = nil }
+        if components.percentEncodedPath.isEmpty { components.percentEncodedPath = "/" }
+        guard var canonical = components.string else { return GopaySDK.chargeReturnURL }
+        // iOS 17 and later percent-encode trailing whitespace instead of refusing the string.
+        while let tail = encodedWhitespace.first(where: { canonical.hasSuffix($0) }) {
+            canonical.removeLast(tail.count)
+        }
+        return canonical
+    }
+
+    private static let defaultPorts = ["http": 80, "https": 443]
+    private static let encodedWhitespace = ["%20", "%09", "%0A", "%0D"]
+
+    /// Whether this navigation is the ACS coming back, i.e. the verification is over. Matched by
+    /// prefix, so whatever the gateway appends to the address still counts.
+    static func completesVerification(_ url: URL, completionPrefix: String) -> Bool {
+        url.absoluteString.hasPrefix(completionPrefix)
+    }
+
     /// The error for a redirect URL the verification WebView cannot load, or `nil` when it can.
     ///
     /// Checked on the way in, because nothing downstream would catch it: the navigation decision
@@ -114,12 +158,14 @@ enum GopayVerificationNavigationPolicy {
 }
 
 /// Internal view controller that presents a WKWebView for 3DS / PSD2 / bank
-/// verification. The navigation delegate intercepts the SDK's return URL to
-/// detect when verification is complete, then dismisses itself.
+/// verification. The navigation delegate intercepts the return URL to detect
+/// when verification is complete, then dismisses itself.
 final class GopayChargeVerificationViewController: UIViewController {
 
     private let redirectURL: URL
-    private let returnURLString: String
+    /// Prefix of the address that ends the verification, from
+    /// ``GopayVerificationNavigationPolicy/completionPrefix(forReturnURL:)``.
+    private let completionPrefix: String
     private let onResult: (GopayChargeVerificationResult) -> Void
 
     /// `onResult` is contractually called once, but several delegate callbacks can race to report
@@ -180,16 +226,17 @@ final class GopayChargeVerificationViewController: UIViewController {
 
     /// - Parameters:
     ///   - redirectURL: The URL to load in the WebView (from the charge action).
-    ///   - returnURLString: The return URL the SDK sent to the API. Navigation
-    ///     to this URL signals that verification is complete.
+    ///   - returnURL: The `return_url` from the charge response. Navigation to it signals that
+    ///     verification is complete. `nil` or an unusable one falls back to
+    ///     ``GopaySDK/chargeReturnURL``.
     ///   - onResult: Called exactly once with the verification outcome.
     init(
         redirectURL: URL,
-        returnURLString: String,
+        returnURL: URL?,
         onResult: @escaping (GopayChargeVerificationResult) -> Void
     ) {
         self.redirectURL = redirectURL
-        self.returnURLString = returnURLString
+        self.completionPrefix = GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: returnURL)
         self.onResult = onResult
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
@@ -334,7 +381,7 @@ extension GopayChargeVerificationViewController: WKNavigationDelegate {
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
         if let url = navigationAction.request.url,
-           url.absoluteString.hasPrefix(returnURLString) {
+           GopayVerificationNavigationPolicy.completesVerification(url, completionPrefix: completionPrefix) {
             decisionHandler(.cancel)
             report(.completed)
             return

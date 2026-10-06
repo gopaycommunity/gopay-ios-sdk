@@ -8,7 +8,7 @@ public extension PaymentSession {
     ///
     /// Suspends while the sheet is visible. Returns the ``ChargePaymentResponse`` on success —
     /// inspect `action?.redirectUrl` and call
-    /// ``handle3dsVerification(redirectURL:presenting:)`` if 3DS is required, then
+    /// ``handle3dsVerification(redirectURL:returnURL:presenting:)`` if 3DS is required, then
     /// ``getChargeState()`` for the final result.
     ///
     /// Only one Apple Pay sheet can be presented per process; a concurrent attempt throws

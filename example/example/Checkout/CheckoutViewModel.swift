@@ -266,7 +266,10 @@ final class CheckoutViewModel {
                let url = URL(string: redirect),
                handledRedirects.insert(redirect).inserted {
                 busyLabel = "Verifying with your bank…"
-                try await session.handle3dsVerification(redirectURL: url)
+                try await session.handle3dsVerification(
+                    redirectURL: url,
+                    returnURL: response.returnUrl.flatMap(URL.init(string:))
+                )
             }
 
             switch response.state {

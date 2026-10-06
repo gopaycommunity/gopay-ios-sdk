@@ -82,7 +82,10 @@ enum MerchantBackendSimulator {
             "customer": ["email": "demo@example.com"],
             "callback": [
                 "notification_url": "https://example.com/gopay/notify",
-                // SDK intercepts this URL in the 3DS WebView to detect flow completion
+                // The charge response echoes this as return_url, and the demo passes it to
+                // handle3dsVerification. A real backend puts its own address here; the SDK
+                // constant is also what the WebView falls back to without one. The gateway
+                // accepts only an absolute http(s) return_url.
                 "return_url": GopaySDK.chargeReturnURL
             ]
         ]

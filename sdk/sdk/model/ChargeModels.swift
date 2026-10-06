@@ -400,24 +400,28 @@ public struct ChargeAction: Codable {
 ///
 /// Per the spec only `id`, `state`, and `return_url` are required; instrument details and the
 /// follow-up action are absent in early states, and `fail_reason` is only present when
-/// `state == failed`. In practice `return_url` is missing too, hence its optionality below.
+/// `state == failed`. The charge block inside `GET /payments/{payment_id}` comes without
+/// `return_url`, hence its optionality below.
 public struct ChargePaymentResponse: Codable {
     public let id: String
     public let state: ChargeState
 
-    /// Where the gateway sends the browser once verification finishes, when it tells us at all.
+    /// Where the gateway sends the browser once verification finishes.
     ///
-    /// Optional because the deployed gateway omits it: the charge block nested in
-    /// `GET /payments/{payment_id}` arrives as just `{id, state, href}`, and the charge endpoints
-    /// can leave it out too. The type says so rather than substituting an empty string, which
-    /// silently broke the obvious use: `url.hasPrefix(charge.returnUrl)` matches every URL against
-    /// `""`, so the first navigation of a challenge page reads as a finished verification, and
-    /// `URL(string: "")` is `nil`. For the same reason a blank `return_url` from the gateway
-    /// decodes as `nil` rather than as the string that breaks that check.
+    /// Optional because it is not always there: the charge block nested in
+    /// `GET /payments/{payment_id}` arrives as just `{id, state, href}`. The type says so rather
+    /// than substituting an empty string, which silently broke the obvious use:
+    /// `url.hasPrefix(charge.returnUrl)` matches every URL against `""`, so the first navigation
+    /// of a challenge page reads as a finished verification, and `URL(string: "")` is `nil`. For
+    /// the same reason a blank `return_url` from the gateway decodes as `nil` rather than as the
+    /// string that breaks that check.
     ///
-    /// If you run your own WebView, treat `nil` as "the gateway did not say" and use
-    /// ``GopaySDK/chargeReturnURL``, which
-    /// ``PaymentSession/handle3dsVerification(redirectURL:presenting:)`` watches for.
+    /// On the charge endpoints it is the address the backend created the payment with
+    /// (`callback.return_url`). Pass it to
+    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` together with
+    /// `action.redirectUrl`: the verification ends when the challenge navigates there. Without it
+    /// the SDK waits for ``GopaySDK/chargeReturnURL``, and then the payment has to be created with
+    /// that address.
     public let returnUrl: String?
     public let paymentInstrument: PaymentInstrumentData?
     public let action: ChargeAction?
@@ -438,8 +442,9 @@ public struct ChargePaymentResponse: Codable {
     /// arrives as just `{id, state, href}`. Failing the whole decode over it would take the
     /// payment state with it, so the field decodes to `nil` and the omission is reported through
     /// ``reportMissingField``. A blank value is treated as missing too, since an empty string is
-    /// exactly what `url.hasPrefix` cannot be trusted with. The Android SDK tolerates both the
-    /// same way.
+    /// exactly what `url.hasPrefix` cannot be trusted with. Whitespace around a value is dropped,
+    /// so the address can be parsed and matched as it is meant. The Android SDK tolerates all of
+    /// it the same way.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -449,8 +454,8 @@ public struct ChargePaymentResponse: Codable {
         failReason = try container.decodeIfPresent(String.self, forKey: .failReason)
 
         let rawReturnUrl = try container.decodeIfPresent(String.self, forKey: .returnUrl)
-        let isBlank = rawReturnUrl?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-        returnUrl = isBlank ? nil : rawReturnUrl
+        let trimmed = rawReturnUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
+        returnUrl = trimmed?.isEmpty == false ? trimmed : nil
         // Only the charge endpoints are worth a warning. The charge block nested in
         // `GET /payments/{id}` never carries the field, so reporting it there would fire on
         // every single status read. An empty coding path means this is the response body itself

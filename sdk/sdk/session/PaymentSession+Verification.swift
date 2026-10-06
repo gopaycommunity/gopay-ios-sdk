@@ -26,11 +26,27 @@ public extension PaymentSession {
     /// already have answered it, so a later failure surfaces as `CancellationError` like a
     /// dismissal does, and the payment is settled by reading ``getChargeState()``.
     ///
+    /// The verification ends when the challenge navigates to `returnURL`, the address the payment
+    /// was created with (`callback.return_url`), which the charge response repeats as
+    /// ``ChargePaymentResponse/returnUrl``. Pass it from the same response as `redirectURL`.
+    /// Without it the SDK waits for ``GopaySDK/chargeReturnURL`` instead, and then the payment
+    /// has to be created with that address, otherwise the window never closes and the user can
+    /// only cancel.
+    ///
     /// - Parameters:
     ///   - redirectURL: The `action.redirect_url` returned by the charge.
+    ///   - returnURL: The `return_url` returned by the charge. When `nil`, blank, not `http(s)` or
+    ///     without a host, ``GopaySDK/chargeReturnURL`` is used. Scheme and host are matched
+    ///     without case. The return URL should carry no fragment (`#…`): what the gateway appends
+    ///     lands in front of it, and the address no longer matches. On iOS 13 to 16 an address
+    ///     with non-ASCII characters cannot be parsed, so the SDK waits for the constant instead.
     ///   - presenting: The view controller to present from. When `nil`, the SDK finds the topmost
     ///     view controller automatically.
-    func handle3dsVerification(redirectURL: URL, presenting: UIViewController? = nil) async throws {
+    func handle3dsVerification(
+        redirectURL: URL,
+        returnURL: URL? = nil,
+        presenting: UIViewController? = nil
+    ) async throws {
         // Rejected before anything is registered or presented. A redirect URL the WebView cannot
         // load never reaches the navigation decision — that only sees where the page navigates
         // next — so the hand-off suppression downstream would swallow its load failure and the
@@ -42,6 +58,7 @@ public extension PaymentSession {
             Task { @MainActor in
                 self.startVerificationFlow(
                     redirectURL: redirectURL,
+                    returnURL: returnURL,
                     presenting: presenting,
                     continuation: continuation
                 )
@@ -50,11 +67,12 @@ public extension PaymentSession {
     }
 
     /// Presents the verification WebView on the main actor and resolves `continuation` with the
-    /// outcome. Split out of ``handle3dsVerification(redirectURL:presenting:)`` to keep closure
-    /// nesting shallow.
+    /// outcome. Split out of ``handle3dsVerification(redirectURL:returnURL:presenting:)`` to keep
+    /// closure nesting shallow.
     @MainActor
     private func startVerificationFlow(
         redirectURL: URL,
+        returnURL: URL?,
         presenting: UIViewController?,
         continuation: CheckedContinuation<Void, Error>
     ) {
@@ -86,7 +104,7 @@ public extension PaymentSession {
 
         let verificationVC = GopayChargeVerificationViewController(
             redirectURL: redirectURL,
-            returnURLString: GopaySDK.chargeReturnURL
+            returnURL: returnURL
         ) { result in
             guard claimTheOutcome() else { return }
             // The guard drops and the caller resumes before the dismissal, and never inside its

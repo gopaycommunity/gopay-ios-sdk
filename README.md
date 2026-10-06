@@ -175,7 +175,10 @@ guard GopaySDK.canUseApplePay() else { /* hide the Apple Pay button */ return }
 do {
     let charge = try await session.chargeWithApplePay()     // presents the Apple Pay sheet
     if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-        try await session.handle3dsVerification(redirectURL: url)   // presents the 3DS WebView
+        try await session.handle3dsVerification(              // presents the 3DS WebView
+            redirectURL: url,
+            returnURL: charge.returnUrl.flatMap(URL.init(string:))
+        )
         let final = try await session.getChargeState()
         print("Final state:", final.state)
     } else {
@@ -239,7 +242,10 @@ let request = ChargePaymentRequest.cardToken(
 )
 let charge = try await session.charge(request)
 if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-    try await session.handle3dsVerification(redirectURL: url)
+    try await session.handle3dsVerification(
+        redirectURL: url,
+        returnURL: charge.returnUrl.flatMap(URL.init(string:))
+    )
 }
 ```
 
@@ -258,19 +264,29 @@ let request = ChargePaymentRequest.encryptedCard(
 )
 let charge = try await session.charge(request)
 if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-    try await session.handle3dsVerification(redirectURL: url)
+    try await session.handle3dsVerification(
+        redirectURL: url,
+        returnURL: charge.returnUrl.flatMap(URL.init(string:))
+    )
 }
 ```
 
 ### 3DS verification
 
-`handle3dsVerification(redirectURL:presenting:)` opens the challenge in an SDK-managed WebView and
-suspends. It has three ends, not two:
+`handle3dsVerification(redirectURL:returnURL:presenting:)` opens the challenge in an SDK-managed
+WebView and suspends. Pass it `returnUrl` from the same charge response as the redirect URL: it is
+the address your backend created the payment with (`callback.return_url`), and the ACS comes back
+to it when the challenge is done. Without a usable one (`nil`, blank, or not an `http(s)` address
+with a host) the SDK waits for `GopaySDK.chargeReturnURL` instead, and then the payment has to be
+created with that address, otherwise the screen never closes on its own. The return URL should
+carry no fragment (`#…`): what the gateway appends lands in front of it, and the address no longer
+matches.
 
-- **Answered** — the ACS navigates to an address starting with `GopaySDK.chargeReturnURL`,
-  which the WebView intercepts without loading, and the call returns normally. Read the outcome
-  with `getChargeState()`; the SDK does not decide whether the payment went through. The
-  payment has to be created with that return URL for the ACS to come back to it.
+It has three ends, not two:
+
+- **Answered** — the ACS navigates to an address starting with the return URL, which the
+  WebView intercepts without loading, and the call returns normally. Read the outcome with
+  `getChargeState()`; the SDK does not decide whether the payment went through.
 - **Dismissed** — the user closed the screen, which surfaces as `CancellationError`.
 - **Unreachable** — the challenge never reached the user, so there was nothing for them to
   answer: the page never drew, for instance because the redirect URL has already been retired or
@@ -289,8 +305,11 @@ only `getChargeState()` can say whether the issuer authorised the payment. Only 
 runs per process at a time; a second one throws `paymentVerificationInProgress` (`PAYMENT_008`).
 
 ```swift
+// Both from the same charge response.
+guard let url = charge.action?.redirectUrl.flatMap(URL.init(string:)) else { return }
+let returnURL = charge.returnUrl.flatMap(URL.init(string:))
 do {
-    try await session.handle3dsVerification(redirectURL: url)
+    try await session.handle3dsVerification(redirectURL: url, returnURL: returnURL)
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     retryCharge()
 } catch is CancellationError {

@@ -83,6 +83,16 @@ struct ChargeResponseDecodingTests {
         }
     }
 
+    /// Whitespace around the address would end up percent-encoded in the URL and the challenge
+    /// would never match it, so it is dropped while decoding.
+    @Test func aReturnUrlDecodesWithoutSurroundingWhitespace() throws {
+        let json = #"{ "id": "51", "state": "ACTION_REQUIRED", "return_url": " https://shop.example/r " }"#
+
+        let charge = try JSONDecoder().decode(ChargePaymentResponse.self, from: Data(json.utf8))
+
+        #expect(charge.returnUrl == "https://shop.example/r")
+    }
+
     /// The charge block nested in `GET /payments/{id}` never carries the field, so warning there
     /// would fire on every status read and drown out the case worth seeing.
     @Test func decode_missingReturnUrlIsSilentInsideAPaymentDetails() throws {

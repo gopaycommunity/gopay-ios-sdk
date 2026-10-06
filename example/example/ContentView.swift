@@ -22,7 +22,7 @@ struct ContentView: View {
     @State private var session: PaymentSession?
     @State private var cardToken: String = ""
     @State private var jwe: String = ""
-    @State private var pending3dsURL: URL?
+    @State private var pending3ds: Pending3ds?
     @State private var isFormValid: Bool?
     // Flipped true when the user taps submit, revealing the form's inline validation errors.
     @State private var didAttemptSubmit = false
@@ -86,7 +86,7 @@ struct ContentView: View {
                 // Dropped before the call, not after it: a start that throws would otherwise
                 // leave the previous payment's link armed, and the next tap would open the
                 // verification of a long dead payment. Android drops it here too.
-                await MainActor.run { pending3dsURL = nil }
+                await MainActor.run { pending3ds = nil }
                 let started = try await GopaySDK.shared.startPaymentSession(
                     paymentId: paymentId,
                     paymentSecret: paymentSecret
@@ -101,7 +101,7 @@ struct ContentView: View {
                     if let session = session { await session.close() }
                     await MainActor.run {
                         session = nil
-                        pending3dsURL = nil
+                        pending3ds = nil
                     }
                     log("Session closed.")
                 }
@@ -132,18 +132,18 @@ struct ContentView: View {
             button("Get charge state", system: "arrow.clockwise") {
                 let state = try await requireSession().getChargeState()
                 logResponse("getChargeState() -> ChargePaymentResponse", state)
-                if let redirect = state.action?.redirectUrl, let url = URL(string: redirect) {
-                    await MainActor.run { pending3dsURL = url }
+                if let pending = Pending3ds(state) {
+                    await MainActor.run { pending3ds = pending }
                 }
             }
             button("Handle 3DS verification", system: "lock.shield") {
                 // The link stays armed until the verification returns: `handle3ds` drops it on
                 // success, and after a failed or dismissed verification it is kept, because a
                 // refused presentation is exactly the error the SDK invites the caller to retry.
-                guard let url = pending3dsURL else { return }
-                try await handle3ds(url)
+                guard let pending = pending3ds else { return }
+                try await handle3ds(pending)
             }
-            .disabled(pending3dsURL == nil)
+            .disabled(pending3ds == nil)
             button("Get QR payment info", system: "qrcode") {
                 logResponse("getQrPaymentInfo(format: .png) -> QrPaymentDetails",
                             try await requireSession().getQrPaymentInfo(format: .png))
@@ -292,7 +292,7 @@ struct ContentView: View {
         let session = try requireSession()
         // A new charge invalidates the previous charge's 3DS link, whether or not this one
         // produces its own.
-        await MainActor.run { pending3dsURL = nil }
+        await MainActor.run { pending3ds = nil }
         let response = try await charge(session, try await browserDataForCharge(session))
         logResponse("\(label) -> ChargePaymentResponse", response)
         let armed = await arm3dsButton(for: response)
@@ -303,10 +303,8 @@ struct ContentView: View {
 
     /// Arms the 3DS button when the charge already carries a redirect. Returns whether it did.
     private func arm3dsButton(for charge: ChargePaymentResponse) async -> Bool {
-        guard let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) else {
-            return false
-        }
-        await MainActor.run { pending3dsURL = url }
+        guard let pending = Pending3ds(charge) else { return false }
+        await MainActor.run { pending3ds = pending }
         log("3DS required — tap \"Handle 3DS verification\" to continue.")
         return true
     }
@@ -366,8 +364,8 @@ struct ContentView: View {
                 log("// poll \(attempt) -> \(state.state.rawValue)\n"
                     + "Action: \(action.actionType.rawValue) (\(action.state?.rawValue ?? "nil"))\n"
                     + "Redirect: \(action.redirectUrl ?? "N/A")")
-                if let redirect = action.redirectUrl, let url = URL(string: redirect) {
-                    pending3dsURL = url
+                if let pending = Pending3ds(state) {
+                    pending3ds = pending
                     log("3DS required — tap \"Handle 3DS verification\" now, the window is short.")
                 }
                 return true
@@ -383,10 +381,13 @@ struct ContentView: View {
         }
     }
 
-    private func handle3ds(_ url: URL) async throws {
+    private func handle3ds(_ pending: Pending3ds) async throws {
         let session = try requireSession()
-        try await session.handle3dsVerification(redirectURL: url)
-        await MainActor.run { pending3dsURL = nil }
+        try await session.handle3dsVerification(
+            redirectURL: pending.redirectURL,
+            returnURL: pending.returnURL
+        )
+        await MainActor.run { pending3ds = nil }
         let finalState = try await session.getChargeState()
         logResponse("getChargeState() after 3DS -> ChargePaymentResponse", finalState)
         if !Self.isTerminal(finalState.state) {
@@ -506,6 +507,23 @@ struct ContentView: View {
     @MainActor
     private func log(_ message: String) {
         responseText += responseText.isEmpty ? message : "\n\n\(message)"
+    }
+}
+
+/// The 3DS link the console has armed, with the return URL from the same charge response.
+///
+/// Kept together because `handle3dsVerification` needs both: the challenge ends when it navigates
+/// to the address the payment was created with, which the response repeats as `return_url`.
+private struct Pending3ds {
+    let redirectURL: URL
+    let returnURL: URL?
+
+    init?(_ charge: ChargePaymentResponse) {
+        guard let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) else {
+            return nil
+        }
+        redirectURL = url
+        returnURL = charge.returnUrl.flatMap(URL.init(string:))
     }
 }
 

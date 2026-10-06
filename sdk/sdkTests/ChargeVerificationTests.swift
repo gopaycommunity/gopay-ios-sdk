@@ -168,6 +168,79 @@ struct ChargeVerificationNavigationPolicyTests {
         #expect(redirectFailure("file:///etc/passwd") != nil)
         #expect(redirectFailure("javascript:alert(1)") != nil)
     }
+
+    // MARK: - Return URL
+
+    private func completes(_ string: String, returnURL: String?) -> Bool {
+        let prefix = GopayVerificationNavigationPolicy.completionPrefix(
+            forReturnURL: returnURL.flatMap(URL.init(string:))
+        )
+        return GopayVerificationNavigationPolicy.completesVerification(
+            URL(string: string)!,
+            completionPrefix: prefix
+        )
+    }
+
+    /// The merchant's own return URL ends the verification, whatever the gateway appends to it.
+    @Test func theReturnURLFromTheChargeEndsTheVerification() {
+        #expect(completes("https://shop.example/return", returnURL: "https://shop.example/return"))
+        #expect(completes("https://shop.example/return?id=51&state=done", returnURL: "https://shop.example/return"))
+        #expect(completes("https://3ds.example/step", returnURL: "https://shop.example/return") == false)
+    }
+
+    /// Without a return URL the SDK falls back to its own constant.
+    @Test func withoutAReturnURLTheConstantEndsTheVerification() {
+        #expect(completes(GopaySDK.chargeReturnURL, returnURL: nil))
+        #expect(completes(GopaySDK.chargeReturnURL + "?id=51", returnURL: nil))
+        #expect(completes("https://3ds.example/step", returnURL: nil) == false)
+    }
+
+    /// The merchant's address wins: the constant is a fallback, not a second way out.
+    @Test func withAReturnURLTheConstantNoLongerEndsTheVerification() {
+        #expect(completes(GopaySDK.chargeReturnURL, returnURL: "https://shop.example/return") == false)
+    }
+
+    /// An address that cannot be the ACS coming back falls back to the constant. As a prefix,
+    /// `https://` alone would match the challenge's first navigation.
+    @Test func anUnusableReturnURLFallsBackToTheConstant() {
+        let unusable = [
+            "", "   ", "gopaysdk://charge-return", "https://", "shop.example/return",
+            "https://:443", "https://user@/r", "https://@/r"
+        ]
+        for address in unusable {
+            #expect(prefix(address) == GopaySDK.chargeReturnURL, "\(address) should fall back")
+        }
+        #expect(completes("https://3ds.example/step", returnURL: "https://") == false)
+    }
+
+    private func prefix(_ returnURL: String) -> String {
+        GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: URL(string: returnURL))
+    }
+
+    /// WebKit reports a navigation with its scheme and host in lowercase, so the return URL is
+    /// matched in that form whatever case the merchant created the payment with.
+    @Test func theReturnURLIsMatchedWithoutCaseInSchemeAndHost() {
+        #expect(prefix("HTTPS://Shop.Example/return") == "https://shop.example/return")
+        #expect(completes("https://shop.example/return?id=1", returnURL: "HTTPS://Shop.Example/return"))
+    }
+
+    /// The rest of the canonical form: path and query keep their case, a default port and
+    /// trailing whitespace go, an empty path becomes `/`. Same results as the Android SDK.
+    @Test func theReturnURLIsMatchedInItsCanonicalForm() {
+        #expect(prefix("https://Shop.Example/Return?Id=A") == "https://shop.example/Return?Id=A")
+        #expect(prefix("https://shop.example/r ") == "https://shop.example/r")
+        #expect(prefix("https://Shop.Example:443/r") == "https://shop.example/r")
+        #expect(prefix("http://shop.example:80/r") == "http://shop.example/r")
+        #expect(prefix("https://shop.example:8443/r") == "https://shop.example:8443/r")
+        #expect(prefix("https://Shop.Example") == "https://shop.example/")
+        #expect(prefix("https://user@Shop.Example/r") == "https://user@shop.example/r")
+    }
+
+    /// An internationalised host is matched in the punycode form WebKit navigates with. iOS 13 to
+    /// 16 cannot parse such an address at all, which leaves the caller with no URL to pass.
+    @Test func anInternationalisedHostIsMatchedAsPunycode() {
+        #expect(prefix("https://obchod.čz/r") == "https://obchod.xn--z-cia/r")
+    }
 }
 
 @MainActor
@@ -181,7 +254,7 @@ struct ChargeVerificationReportingTests {
     ) -> GopayChargeVerificationViewController {
         GopayChargeVerificationViewController(
             redirectURL: URL(string: "https://3ds.example/step")!,
-            returnURLString: "https://gopay.com/sdk/charge-return",
+            returnURL: nil,
             onResult: onResult
         )
     }
@@ -249,6 +322,44 @@ struct ChargeVerificationReportingTests {
         }
     }
 
+    /// The merchant's return URL from the charge ends the challenge in the controller itself, and
+    /// the SDK constant no longer does.
+    @Test func theControllerEndsTheChallengeOnTheMerchantsReturnURL() {
+        var results: [GopayChargeVerificationResult] = []
+        let controller = GopayChargeVerificationViewController(
+            redirectURL: URL(string: "https://3ds.example/step")!,
+            returnURL: URL(string: "https://shop.example/return"),
+            onResult: { results.append($0) }
+        )
+        controller.viewDidAppear(false)
+
+        let constant = decide(controller, GopaySDK.chargeReturnURL)
+        #expect(constant == .allow)
+        #expect(results.isEmpty)
+
+        let merchant = decide(controller, "https://shop.example/return?id=51")
+        #expect(merchant == .cancel)
+        #expect(results.count == 1)
+        guard case .completed = results.first else {
+            Issue.record("expected the verification to complete, got \(String(describing: results.first))")
+            return
+        }
+    }
+
+    /// Runs the navigation decision for a main-frame navigation to `url`.
+    private func decide(
+        _ controller: GopayChargeVerificationViewController,
+        _ url: String
+    ) -> WKNavigationActionPolicy? {
+        var policy: WKNavigationActionPolicy?
+        controller.webView(
+            stubWebView,
+            decidePolicyFor: StubNavigationAction(url: URL(string: url)!),
+            decisionHandler: { policy = $0 }
+        )
+        return policy
+    }
+
     /// A buffered outcome still blocks the ones behind it, so the flush cannot double-report.
     @Test func aBufferedOutcomeStillBlocksLaterOnes() {
         var results: [GopayChargeVerificationResult] = []
@@ -265,4 +376,25 @@ struct ChargeVerificationReportingTests {
             Issue.record("expected the buffered failure, got \(results[0])")
         }
     }
+}
+
+/// A main-frame navigation to a given URL. WebKit offers no way to build one, so the properties
+/// the navigation decision reads are overridden.
+private final class StubNavigationAction: WKNavigationAction {
+    private let stubRequest: URLRequest
+
+    init(url: URL) {
+        stubRequest = URLRequest(url: url)
+        super.init()
+    }
+
+    override var request: URLRequest { stubRequest }
+    override var targetFrame: WKFrameInfo? { StubMainFrame.shared }
+}
+
+private final class StubMainFrame: WKFrameInfo {
+    /// Never released: a `WKFrameInfo` built outside WebKit traps in its own `dealloc`.
+    static let shared = StubMainFrame()
+
+    override var isMainFrame: Bool { true }
 }
