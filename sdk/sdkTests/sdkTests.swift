@@ -177,14 +177,14 @@ struct ChargeModelsTests {
                 language: "cs-CZ", timezone: -60,
                 screenWidth: 1170, screenHeight: 2532, colorDepth: 24
             ),
-            challengePreference: .auto,
-            returnUrl: "https://merchant.example/return"
+            challengePreference: .auto
         )
 
         let data = try JSONEncoder().encode(request)
         let dict = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 
-        #expect(dict["return_url"] as? String == "https://merchant.example/return")
+        // Payment-Charge-Input carries the instrument only; return_url belongs to the payment.
+        #expect(Set(dict.keys) == ["payment_instrument"])
         let instrument = dict["payment_instrument"] as! [String: Any]
         #expect(instrument["payment_instrument"] as? String == "PAYMENT_CARD")
         #expect(instrument["challenge_preference"] as? String == "AUTO")
@@ -265,6 +265,7 @@ struct ChargeInputEncodingTests {
             browserData: BrowserData(language: "en", timezone: 0, screenWidth: 1, screenHeight: 1, colorDepth: 24)
         )
         let dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
+        #expect(Set(dict.keys) == ["payment_instrument"])
         let input = (dict["payment_instrument"] as! [String: Any])["input"] as! [String: Any]
         #expect(input["input_type"] as? String == "APPLE_PAY")
         #expect(input["version"] as? String == "EC_v1")
@@ -279,8 +280,7 @@ struct ChargeInputEncodingTests {
             challengePreference: .auto
         )
         let dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String: Any]
-        // The deployed gateway rejects a request-level return_url, so charges must not send one.
-        #expect(dict["return_url"] == nil)
+        #expect(Set(dict.keys) == ["payment_instrument"])
         let instrument = dict["payment_instrument"] as! [String: Any]
         #expect(instrument["challenge_preference"] as? String == "AUTO")
 
@@ -438,20 +438,19 @@ struct SessionNetworkTests {
     }
 
     /// A charge is rebuilt around the completed browser data; nothing else may fall out of it.
-    @Test func charge_keepsThePreferenceReturnUrlAndTokenNextToBrowserData() async throws {
+    @Test func charge_keepsThePreferenceAndTokenNextToBrowserData() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
 
         _ = try await session.charge(.cardToken(
             "tok",
             browserData: Self.deviceBrowserData,
-            challengePreference: .noChallengePreferred,
-            returnUrl: "https://shop.example/return"
+            challengePreference: .noChallengePreferred
         ))
 
         let charge = try #require(StubURLProtocol.requests(forPathSuffix: "/charge").first)
         let body = try #require(charge.jsonBody)
-        #expect(body["return_url"] as? String == "https://shop.example/return")
+        #expect(body["return_url"] == nil)
         let instrument = try #require(body["payment_instrument"] as? [String: Any])
         #expect(instrument["payment_instrument"] as? String == "PAYMENT_CARD")
         #expect(instrument["challenge_preference"] as? String == "NO_CHALLENGE_PREFERRED")

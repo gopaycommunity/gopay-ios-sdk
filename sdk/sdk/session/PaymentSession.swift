@@ -82,8 +82,7 @@ public actor PaymentSession {
                 browserData: try await completeBrowserData(instrument.browserData),
                 challengePreference: instrument.challengePreference,
                 paymentInstrument: instrument.paymentInstrument
-            ),
-            returnUrl: request.returnUrl
+            )
         )
         return try await api.charge(paymentId: paymentId, request: completed)
     }

@@ -276,37 +276,27 @@ public struct PaymentChargeInstrument: Encodable {
 /// Use the factories for the common card-token, encrypted-card, and Apple Pay flows.
 public struct ChargePaymentRequest: Encodable {
     public let paymentInstrument: PaymentChargeInstrument
-    /// `return_url` is defined on `Payment-Charge-Input` in the spec, but the deployed Payments 4.0
-    /// gateway rejects it ("Unrecognized field return_url"). Leave `nil` so it's omitted from the
-    /// request — the 3DS redirect comes from the charge response's `action.redirectUrl`, and
-    /// ``PaymentSession/handle3dsVerification(redirectURL:presenting:)`` detects completion using
-    /// ``GopaySDK/chargeReturnURL`` internally.
-    public let returnUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case paymentInstrument = "payment_instrument"
-        case returnUrl = "return_url"
     }
 
-    public init(paymentInstrument: PaymentChargeInstrument, returnUrl: String? = nil) {
+    public init(paymentInstrument: PaymentChargeInstrument) {
         self.paymentInstrument = paymentInstrument
-        self.returnUrl = returnUrl
     }
 
     /// Charge with a permanent card token.
     public static func cardToken(
         _ cardToken: String,
         browserData: BrowserData,
-        challengePreference: ChallengePreference? = nil,
-        returnUrl: String? = nil
+        challengePreference: ChallengePreference? = nil
     ) -> ChargePaymentRequest {
         ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: .cardToken(cardToken),
                 browserData: browserData,
                 challengePreference: challengePreference
-            ),
-            returnUrl: returnUrl
+            )
         )
     }
 
@@ -316,16 +306,14 @@ public struct ChargePaymentRequest: Encodable {
     public static func encryptedCard(
         _ payload: String,
         browserData: BrowserData,
-        challengePreference: ChallengePreference? = nil,
-        returnUrl: String? = nil
+        challengePreference: ChallengePreference? = nil
     ) -> ChargePaymentRequest {
         ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: .encryptedCard(payload),
                 browserData: browserData,
                 challengePreference: challengePreference
-            ),
-            returnUrl: returnUrl
+            )
         )
     }
 
@@ -336,16 +324,14 @@ public struct ChargePaymentRequest: Encodable {
         version: String,
         header: ApplePayHeader,
         browserData: BrowserData,
-        challengePreference: ChallengePreference? = nil,
-        returnUrl: String? = nil
+        challengePreference: ChallengePreference? = nil
     ) -> ChargePaymentRequest {
         ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: .applePay(data: data, signature: signature, version: version, header: header),
                 browserData: browserData,
                 challengePreference: challengePreference
-            ),
-            returnUrl: returnUrl
+            )
         )
     }
 }
