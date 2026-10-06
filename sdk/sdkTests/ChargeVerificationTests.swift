@@ -16,13 +16,13 @@ struct ChargeVerificationFailureMapperTests {
 
     // MARK: - Status boundary
 
-    @Test func status_belowFourHundredIsNotAFailure() {
+    @Test func aStatusBelowFourHundredIsNotAFailure() {
         #expect(GopayVerificationFailureMapper.failure(forStatus: 200) == nil)
         #expect(GopayVerificationFailureMapper.failure(forStatus: 302) == nil)
         #expect(GopayVerificationFailureMapper.failure(forStatus: 399) == nil)
     }
 
-    @Test func status_fourHundredAndAboveIsUnreachable() throws {
+    @Test func aStatusOfFourHundredAndAboveIsUnreachable() throws {
         for status in [400, 404, 499, 500, 503] {
             let failure = try #require(
                 GopayVerificationFailureMapper.failure(forStatus: status),
@@ -34,7 +34,7 @@ struct ChargeVerificationFailureMapperTests {
     }
 
     /// The dead redirect the gateway hands out for part of the charges.
-    @Test func status_deadRedirectCarriesItsStatus() throws {
+    @Test func aDeadRedirectCarriesItsStatus() throws {
         let failure = try #require(GopayVerificationFailureMapper.failure(forStatus: 404))
         #expect(failure.errorDescription?.contains("PAYMENT_010") == true)
         #expect(failure.errorDescription?.contains("404") == true)
@@ -45,7 +45,7 @@ struct ChargeVerificationFailureMapperTests {
     /// Everything the controller cancels from a policy decision comes back as WebKitErrorDomain
     /// 102. The hand-off to a banking app deliberately reports nothing, so without this it would
     /// be reported as a dead challenge instead.
-    @Test func loadError_policyCancelledNavigationIsSuppressed() {
+    @Test func aPolicyCancelledNavigationIsSuppressed() {
         let interrupted = NSError(domain: "WebKitErrorDomain", code: 102)
         #expect(GopayVerificationFailureMapper.failure(
             forLoadError: interrupted, unsupportedSchemeIsExpected: true
@@ -54,7 +54,7 @@ struct ChargeVerificationFailureMapperTests {
 
     /// A load stopped through the URL loading system, e.g. a navigation replaced by the next one
     /// in a redirect chain. Never the first outcome, so reporting it would overwrite the real one.
-    @Test func loadError_cancelledNavigationIsSuppressed() {
+    @Test func aCancelledNavigationIsSuppressed() {
         let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
         #expect(GopayVerificationFailureMapper.failure(
             forLoadError: cancelled, unsupportedSchemeIsExpected: false
@@ -62,7 +62,7 @@ struct ChargeVerificationFailureMapperTests {
     }
 
     /// The suppression is keyed on the domain too: code 102 elsewhere is a real failure.
-    @Test func loadError_sameCodeInAnotherDomainIsStillReported() throws {
+    @Test func theSameCodeInAnotherDomainIsStillReported() throws {
         let other = NSError(domain: NSURLErrorDomain, code: 102)
         let failure = try #require(GopayVerificationFailureMapper.failure(
             forLoadError: other, unsupportedSchemeIsExpected: true
@@ -72,7 +72,7 @@ struct ChargeVerificationFailureMapperTests {
 
     /// A scheme nobody can open, once a hand-off has been attempted, is a hand-off that did not
     /// happen rather than a dead challenge.
-    @Test func loadError_unsupportedSchemeAfterAHandOffIsSuppressed() {
+    @Test func anUnsupportedSchemeAfterAHandOffIsSuppressed() {
         let unsupported = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)
         #expect(GopayVerificationFailureMapper.failure(
             forLoadError: unsupported, unsupportedSchemeIsExpected: true
@@ -82,7 +82,7 @@ struct ChargeVerificationFailureMapperTests {
     /// Before any hand-off there is only one URL the WebView was given, so the same error means
     /// the redirect URL itself is unloadable. Suppressing it here is what would leave the caller
     /// waiting forever.
-    @Test func loadError_unsupportedSchemeOnTheFirstLoadIsUnreachable() throws {
+    @Test func anUnsupportedSchemeOnTheFirstLoadIsUnreachable() throws {
         let unsupported = NSError(domain: NSURLErrorDomain, code: NSURLErrorUnsupportedURL)
         let failure = try #require(GopayVerificationFailureMapper.failure(
             forLoadError: unsupported, unsupportedSchemeIsExpected: false
@@ -90,7 +90,7 @@ struct ChargeVerificationFailureMapperTests {
         #expect(failure.code == .paymentVerificationUnreachable)
     }
 
-    @Test func loadError_deadHostIsUnreachable() throws {
+    @Test func aDeadHostIsUnreachable() throws {
         let offline = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
         let failure = try #require(GopayVerificationFailureMapper.failure(
             forLoadError: offline, unsupportedSchemeIsExpected: false

@@ -174,7 +174,7 @@ extension SessionNetworkTests {
         }
     }
 
-    @Test func submitCardForm_success_runsTheRegisteredWipe() async throws {
+    @Test func aSuccessfulSubmitRunsTheRegisteredWipe() async throws {
         // Only that the wipe is invoked; that it actually empties a live form's fields is covered
         // by CardFormResetTests, which hosts a real GopayCardForm.
         // Clearing the SDK's copy leaves the digits on screen, so the form registers a wipe and
@@ -195,7 +195,7 @@ extension SessionNetworkTests {
         #expect(wiped.value)
     }
 
-    @Test func submitCardForm_encryptionFailure_doesNotRunTheWipe() async throws {
+    @Test func aSubmitThatFailsToEncryptDoesNotRunTheWipe() async throws {
         // The mirror of the rule above: nothing is authorized yet, so the user must not have to
         // retype the card after a network drop. Android resets on success only for the same reason.
         StubURLProtocol.reset { _ in (500, Data()) }

@@ -202,7 +202,7 @@ struct ChargeModelsTests {
         #expect(browser["ip"] == nil)
     }
 
-    @Test func browserData_encodesIpUnderItsSpecName() throws {
+    @Test func browserDataEncodesIpUnderItsSpecName() throws {
         let data = try JSONEncoder().encode(BrowserData(
             language: "cs-CZ", timezone: -60, screenWidth: 1170, screenHeight: 2532, colorDepth: 24,
             userAgent: "ua", acceptHeader: "{\"accept\":\"*/*\"}", javascriptEnabled: true, ip: "192.0.2.42"
@@ -214,14 +214,14 @@ struct ChargeModelsTests {
         #expect(dict["javascript_enabled"] as? Bool == true)
     }
 
-    @Test func browserDataDetected_decodesTheGatewayResponse() throws {
+    @Test func detectedBrowserDataDecodesTheGatewayResponse() throws {
         let detected = try JSONDecoder().decode(BrowserDataDetected.self, from: browserDataDetectedFixture)
         #expect(detected.ip == "192.0.2.42")
         #expect(detected.userAgent == "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
         #expect(detected.acceptHeader == "{\"accept\":\"application/json\",\"accept-language\":\"cs-CZ,cs;q=0.9\"}")
     }
 
-    @Test func browserData_filled_takesOnlyTheMissingFields() throws {
+    @Test func fillingBrowserDataTakesOnlyTheMissingFields() throws {
         let detected = try JSONDecoder().decode(BrowserDataDetected.self, from: browserDataDetectedFixture)
         let own = BrowserData(
             language: "en", timezone: 0, screenWidth: 1, screenHeight: 1, colorDepth: 24,
@@ -237,7 +237,7 @@ struct ChargeModelsTests {
 
     /// The echo is never the source of `user_agent`: a nil one stays nil here, the session fills
     /// it in from the WebView before the fetch.
-    @Test func browserData_filled_neverTakesTheUserAgentFromTheAnswer() throws {
+    @Test func fillingBrowserDataNeverTakesTheUserAgentFromTheAnswer() throws {
         let detected = try JSONDecoder().decode(BrowserDataDetected.self, from: browserDataDetectedFixture)
         let bare = BrowserData(language: "en", timezone: 0, screenWidth: 1, screenHeight: 1, colorDepth: 24)
         let filled = bare.filled(from: detected)
@@ -340,7 +340,7 @@ struct SessionNetworkTests {
         }
     }
 
-    @Test func charge_fetchesBrowserDataWithTheWebViewUserAgentAndSendsItAll() async throws {
+    @Test func aChargeFetchesBrowserDataWithTheWebViewUserAgentAndSendsItAll() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
 
@@ -371,7 +371,7 @@ struct SessionNetworkTests {
         #expect(browser["language"] as? String == "cs-CZ")
     }
 
-    @Test func charge_keepsCallerValuesAndSkipsTheFetchWhenComplete() async throws {
+    @Test func aChargeKeepsCallerValuesAndSkipsTheFetchWhenComplete() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
 
@@ -391,7 +391,7 @@ struct SessionNetworkTests {
         #expect(browser["javascript_enabled"] as? Bool == true)
     }
 
-    @Test func charge_browserDataHttpError_failsTheChargeWithoutSendingIt() async throws {
+    @Test func aBrowserDataHttpErrorFailsTheChargeWithoutSendingIt() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler(browserDataStatus: 503))
         let session = try await makeSession()
 
@@ -407,7 +407,7 @@ struct SessionNetworkTests {
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/charge") == 0)
     }
 
-    @Test func charge_browserDataTransportFailure_failsTheChargeAsNetworkIOError() async throws {
+    @Test func aBrowserDataTransportFailureFailsTheChargeAsNetworkIOError() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler(browserDataStatus: StubURLProtocol.transportFailure))
         let session = try await makeSession()
 
@@ -423,7 +423,7 @@ struct SessionNetworkTests {
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/charge") == 0)
     }
 
-    @Test func charge_withoutShareableKey_failsBeforeAnyRequest() async throws {
+    @Test func aChargeWithoutShareableKeyFailsBeforeAnyRequest() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession(shareableKey: nil)
 
@@ -438,7 +438,7 @@ struct SessionNetworkTests {
     }
 
     /// A charge is rebuilt around the completed browser data; nothing else may fall out of it.
-    @Test func charge_keepsThePreferenceAndTokenNextToBrowserData() async throws {
+    @Test func aChargeKeepsThePreferenceAndTokenNextToBrowserData() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
 
@@ -463,7 +463,7 @@ struct SessionNetworkTests {
     /// A hand-built BrowserData without a User-Agent must not go out under the SDK's HTTP
     /// client's: the gateway would echo that into user_agent and the issuer would see one
     /// browser in the AReq and another in the challenge.
-    @Test func charge_withoutUserAgent_fetchesUnderTheWebViewUserAgent() async throws {
+    @Test func aChargeWithoutUserAgentFetchesUnderTheWebViewUserAgent() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
         let bare = BrowserData(language: "cs-CZ", timezone: -60, screenWidth: 1170, screenHeight: 2532, colorDepth: 24)
@@ -482,7 +482,7 @@ struct SessionNetworkTests {
     /// The fetch is decided after the User-Agent is filled in: ip and accept_header on their own
     /// are enough to skip it, and the charge still goes out under the WebView's User-Agent. The
     /// Android SDK orders the two steps the same way.
-    @Test func charge_withIpAndAcceptHeaderButNoUserAgent_skipsTheFetch() async throws {
+    @Test func aChargeWithIpAndAcceptHeaderButNoUserAgentSkipsTheFetch() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
         let own = BrowserData(
@@ -505,7 +505,7 @@ struct SessionNetworkTests {
     /// The closure is checked before the browser data step, which runs under the shareable key:
     /// otherwise a closed session without that key reports AUTH_011 instead of AUTH_013, after
     /// one more request to the gateway.
-    @Test func charge_onAClosedSession_throwsSessionClosedBeforeAnyRequest() async throws {
+    @Test func aChargeOnAClosedSessionThrowsSessionClosedBeforeAnyRequest() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession(shareableKey: nil)
         await session.close()
@@ -520,7 +520,7 @@ struct SessionNetworkTests {
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/charge") == 0)
     }
 
-    @Test func completeBrowserData_returnsWhatTheChargeWouldSend() async throws {
+    @Test func completeBrowserDataReturnsWhatTheChargeWouldSend() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         let session = try await makeSession()
 
@@ -534,7 +534,7 @@ struct SessionNetworkTests {
         #expect(StubURLProtocol.requestCount(forPathSuffix: "cards/browser-data") == 1)
     }
 
-    @Test func send_keepsTheSdkUserAgentOnEveryOtherRequest() async throws {
+    @Test func everyOtherRequestKeepsTheSdkUserAgent() async throws {
         StubURLProtocol.reset(handler: Self.gatewayHandler())
         _ = try await makeSession()
         let token = try #require(StubURLProtocol.requests(forPathSuffix: "oauth2/token").first)

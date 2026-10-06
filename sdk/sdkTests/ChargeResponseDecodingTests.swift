@@ -19,7 +19,7 @@ struct ChargeResponseDecodingTests {
     /// The shape the gateway actually returns inside `Payment-Details.charge`: no `return_url`,
     /// even though its own spec marks the field required. Decoding has to survive it, because
     /// failing here would take the payment state down with it.
-    @Test func decode_chargeWithoutReturnUrlKeepsTheStateAndNilsTheField() throws {
+    @Test func aChargeWithoutReturnUrlKeepsTheStateAndNilsTheField() throws {
         let json = """
         { "id": "51", "state": "ACTION_REQUIRED", "href": "https://gate.gopay.com/api/payments/1/charge" }
         """
@@ -35,7 +35,7 @@ struct ChargeResponseDecodingTests {
     }
 
     /// A `return_url` that is present still decodes verbatim, so the fallback cannot mask it.
-    @Test func decode_chargeWithReturnUrlKeepsIt() throws {
+    @Test func aChargeWithReturnUrlKeepsIt() throws {
         let json = """
         {
           "id": "51",
@@ -53,7 +53,7 @@ struct ChargeResponseDecodingTests {
     }
 
     /// The substitution is worth telling the integrator about, so the charge endpoints report it.
-    @Test func decode_missingReturnUrlIsReportedOnAChargeResponse() throws {
+    @Test func aMissingReturnUrlIsReportedOnAChargeResponse() throws {
         let json = #"{ "id": "51", "state": "ACTION_REQUIRED" }"#
 
         let reported = withCapturedWarnings {
@@ -67,7 +67,7 @@ struct ChargeResponseDecodingTests {
 
     /// An empty string is the one value the field must never carry: `url.hasPrefix("")` is true
     /// for every URL. It decodes as `nil` like an omission and is reported as its own case.
-    @Test func decode_blankReturnUrlDecodesAsNilAndIsReported() throws {
+    @Test func aBlankReturnUrlDecodesAsNilAndIsReported() throws {
         for blank in ["", "   ", "\\n"] {
             let json = #"{ "id": "51", "state": "ACTION_REQUIRED", "return_url": "\#(blank)" }"#
 
@@ -95,7 +95,7 @@ struct ChargeResponseDecodingTests {
 
     /// The charge block nested in `GET /payments/{id}` never carries the field, so warning there
     /// would fire on every status read and drown out the case worth seeing.
-    @Test func decode_missingReturnUrlIsSilentInsideAPaymentDetails() throws {
+    @Test func aMissingReturnUrlIsSilentInsideAPaymentDetails() throws {
         let json = """
         {
           "id": "9295213404",
@@ -117,7 +117,7 @@ struct ChargeResponseDecodingTests {
     }
 
     /// A present value reports nothing, so the hook cannot become background noise.
-    @Test func decode_presentReturnUrlReportsNothing() throws {
+    @Test func aPresentReturnUrlReportsNothing() throws {
         let json = #"{ "id": "51", "state": "SUCCEEDED", "return_url": "gopaysdk://charge-return" }"#
 
         let reported = withCapturedWarnings {
@@ -140,7 +140,7 @@ struct ChargeResponseDecodingTests {
 
     /// The fields the spec really does require stay required: a charge without `state` is still
     /// a decoding failure rather than a silently half-built value.
-    @Test func decode_chargeWithoutStateStillFails() {
+    @Test func aChargeWithoutStateStillFailsToDecode() {
         let json = #"{ "id": "51" }"#
 
         #expect(throws: DecodingError.self) {
