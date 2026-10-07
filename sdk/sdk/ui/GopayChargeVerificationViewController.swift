@@ -267,6 +267,56 @@ final class GopayChargeVerificationViewController: UIViewController {
         }
     }
 
+    /// Catches the screen being closed by anything other than the SDK, typically the host's
+    /// router dismissing its presented controllers on a return from a banking app. Without an
+    /// outcome the caller would wait forever and every later verification would fail on
+    /// ``GopaySDKError/Code/paymentVerificationInProgress``, so it is reported as a cancellation.
+    ///
+    /// Disappearing under another screen presented on top is not a dismissal and reports
+    /// nothing. A dismissal from lower in the stack may not mark this controller as being
+    /// dismissed, so that case is recognised once the presenter has let go of it.
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard !hasReportedResult else { return }
+        if isBeingDismissed || presentingViewController == nil {
+            reportClosedElsewhere()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, !self.hasReportedResult, self.presentingViewController == nil else { return }
+            self.reportClosedElsewhere()
+        }
+    }
+
+    private func reportClosedElsewhere() {
+        GopaySDK.shared.logWarning(
+            "The 3DS verification screen was closed by something other than the SDK, reporting it as a cancellation"
+        )
+        report(.cancelled)
+    }
+
+    /// Dismisses this screen when it is still up and nothing else is taking it down already.
+    ///
+    /// Through the presenter, so whatever the host has put on top of the screen (an alert after the
+    /// return from the bank, say) goes with it. Asked of the screen itself, UIKit would
+    /// close only that top screen and leave the 3DS one behind with a Cancel that reports nothing.
+    func dismissIfStillPresented() {
+        guard presentingViewController != nil, !isBeingDismissed else { return }
+        presentingViewController?.dismiss(animated: true)
+    }
+
+    /// The last fallback: a screen the host closed together with everything above its presenter
+    /// while something covered it gets no second `viewDidDisappear`. Once it is released, an
+    /// outcome nobody received is delivered as a cancellation, so the caller returns and the
+    /// in-progress guard is freed. A result already delivered is not repeated.
+    deinit {
+        if let pending = pendingResult {
+            onResult(pending)
+        } else if !hasReportedResult {
+            onResult(.cancelled)
+        }
+    }
+
     // MARK: - Layout
 
     private func setupNavigationBar() {

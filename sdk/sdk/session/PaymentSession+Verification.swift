@@ -10,7 +10,9 @@ public extension PaymentSession {
     ///
     /// Only one verification can run per process at a time; a concurrent attempt throws
     /// ``GopaySDKError/Code/paymentVerificationInProgress``. User dismissal surfaces as
-    /// `CancellationError`.
+    /// `CancellationError`, and so does a screen closed by anything other than the SDK, such as
+    /// your own navigation dismissing it after a return from a banking app. Either way the next
+    /// verification can start right away.
     ///
     /// A verification page that cannot be loaded at all throws a ``GopaySDKError`` with
     /// ``GopaySDKError/Code/paymentVerificationUnreachable`` rather than letting the payment lapse
@@ -93,8 +95,8 @@ public extension PaymentSession {
         SheetGuards.verificationInProgress = true
 
         // The controller's own "first outcome wins" rule, extended over the presentation: a
-        // presentation UIKit refuses is settled here, and a controller that somehow reports
-        // afterwards must not resume the continuation a second time.
+        // presentation UIKit refuses is settled here, and the refused controller, which always
+        // reports `.cancelled` from its `deinit`, must not resume the continuation a second time.
         var hasSettled = false
         func claimTheOutcome() -> Bool {
             guard !hasSettled else { return false }
@@ -102,6 +104,7 @@ public extension PaymentSession {
             return true
         }
 
+        weak var shown: GopayChargeVerificationViewController?
         let verificationVC = GopayChargeVerificationViewController(
             redirectURL: redirectURL,
             returnURL: returnURL
@@ -112,7 +115,10 @@ public extension PaymentSession {
             // presenter is gone — would otherwise swallow the return to the caller and leave
             // every later verification failing on ``GopaySDKError/Code/paymentVerificationInProgress``.
             SheetGuards.verificationInProgress = false
-            presenter.dismiss(animated: true)
+            // Only while the SDK's screen is still up, and through its presenter, so anything the
+            // host put on top goes with it. A screen something else closed is left alone: its
+            // presenter may already show the host's next screen.
+            shown?.dismissIfStillPresented()
             switch result {
             case .completed:
                 continuation.resume(returning: ())
@@ -122,6 +128,7 @@ public extension PaymentSession {
                 continuation.resume(throwing: error)
             }
         }
+        shown = verificationVC
         presenter.present(verificationVC, animated: true)
         // UIKit refuses to present while the presenter is still animating something else away and
         // says so only in the console: nothing reaches the screen, no delegate callback ever

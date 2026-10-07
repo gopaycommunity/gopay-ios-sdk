@@ -191,7 +191,9 @@ Never add, rename, or repurpose a code on one platform alone.
 
 Neither path reports a `GopaySDKError`, and the two differ:
 
-- Dismissing the **3DS WebView** throws `CancellationError`.
+- Dismissing the **3DS WebView** throws `CancellationError`, and so does the WebView being closed
+  by anything other than the SDK, such as the app's navigation after the return from the bank.
+  The next verification can start right away.
 - Dismissing the **Apple Pay sheet** throws a `GopaySDK` `NSError` (domain `GopaySDK`, code `-1`)
   carrying "Apple Pay payment was cancelled by the user." — not `CancellationError`.
 

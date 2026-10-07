@@ -10,6 +10,7 @@
 import Testing
 import Foundation
 import WebKit
+import UIKit
 @testable import sdk
 
 struct ChargeVerificationFailureMapperTests {
@@ -272,6 +273,84 @@ struct ChargeVerificationReportingTests {
         #expect(results.count == 1)
     }
 
+    /// The host's router closing the screen, e.g. after a return from a banking app, must end
+    /// the verification; otherwise the caller waits forever with the in-progress guard held.
+    @Test func aScreenClosedByAnythingElseEndsAsACancellation() {
+        var results: [GopayChargeVerificationResult] = []
+        let controller = makeController { results.append($0) }
+        controller.viewDidAppear(false)
+
+        controller.viewDidDisappear(false)
+
+        #expect(results.count == 1)
+        guard case .cancelled = results.first else {
+            Issue.record("expected a cancellation, got \(results)")
+            return
+        }
+    }
+
+    /// The SDK's own dismissal follows an outcome already reported; it must not add a second.
+    @Test func theSdksOwnDismissalReportsNothingMore() {
+        var results: [GopayChargeVerificationResult] = []
+        let controller = makeController { results.append($0) }
+        controller.viewDidAppear(false)
+
+        controller.report(.completed)
+        controller.viewDidDisappear(false)
+
+        #expect(results.count == 1)
+        guard case .completed = results.first else {
+            Issue.record("expected the completion to stand, got \(results)")
+            return
+        }
+    }
+
+    /// A screen released without an outcome, e.g. dismissed with the whole stack while covered,
+    /// still ends the verification as a cancellation.
+    @Test func aScreenReleasedWithoutAnOutcomeEndsAsACancellation() {
+        var results: [GopayChargeVerificationResult] = []
+        do {
+            let controller = makeController { results.append($0) }
+            controller.viewDidAppear(false)
+        }
+
+        #expect(results.count == 1)
+        guard case .cancelled = results.first else {
+            Issue.record("expected a cancellation, got \(results)")
+            return
+        }
+    }
+
+    /// A screen released after its outcome adds nothing.
+    @Test func aScreenReleasedAfterItsOutcomeReportsNothingMore() {
+        var results: [GopayChargeVerificationResult] = []
+        do {
+            let controller = makeController { results.append($0) }
+            controller.viewDidAppear(false)
+            controller.report(.completed)
+        }
+
+        #expect(results.count == 1)
+    }
+
+    /// The SDK closes its screen through the presenter, so a host screen presented on top of it
+    /// goes with it instead of being the only one UIKit closes.
+    @MainActor
+    @Test func theSdkClosesItsScreenThroughThePresenter() {
+        let presenter = DismissRecordingController()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = presenter
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let controller = makeController { _ in }
+        presenter.present(controller, animated: false)
+        #expect(controller.presentingViewController === presenter)
+
+        controller.dismissIfStillPresented()
+
+        #expect(presenter.dismissCalls == 1)
+    }
+
     /// The continuation behind `onResult` would trap on a second resume.
     @Test func onlyTheFirstOutcomeIsForwarded() {
         var results: [GopayChargeVerificationResult] = []
@@ -399,4 +478,14 @@ private final class StubMainFrame: WKFrameInfo {
     static let shared = StubMainFrame()
 
     override var isMainFrame: Bool { true }
+}
+
+/// Counts the dismissals a presenter is asked for.
+private final class DismissRecordingController: UIViewController {
+    var dismissCalls = 0
+
+    override func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
+        dismissCalls += 1
+        super.dismiss(animated: flag, completion: completion)
+    }
 }

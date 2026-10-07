@@ -287,7 +287,9 @@ It has three ends, not two:
 - **Answered** — the ACS navigates to an address starting with the return URL, which the
   WebView intercepts without loading, and the call returns normally. Read the outcome with
   `getChargeState()`; the SDK does not decide whether the payment went through.
-- **Dismissed** — the user closed the screen, which surfaces as `CancellationError`.
+- **Dismissed** — the user closed the screen, which surfaces as `CancellationError`. So does a
+  screen closed by anything other than the SDK, such as your app's navigation after the return
+  from the bank; the next verification can start right away.
 - **Unreachable** — the challenge never reached the user, so there was nothing for them to
   answer: the page never drew, for instance because the redirect URL has already been retired or
   is not an `http(s)` address, the screen could not be presented because the previous one was
