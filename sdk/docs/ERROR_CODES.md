@@ -186,6 +186,7 @@ Never add, rename, or repurpose a code on one platform alone.
   - Gateway returned a payload shape the SDK does not expect
 - **Developer Action**:
   - Check that the SDK version matches the gateway's API version
+- **Note**: a new value in one of the response enums is not a decoding error: it decodes as `unknown` and the original value goes to the debug log
 
 ## Cancellation
 

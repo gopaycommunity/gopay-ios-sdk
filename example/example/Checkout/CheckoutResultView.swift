@@ -162,7 +162,7 @@ struct CheckoutResultView: View {
 
     private var isPending: Bool {
         switch outcome.state {
-        case .requested, .processing, .actionRequired: true
+        case .requested, .processing, .actionRequired, .unknown: true
         case .succeeded, .failed: false
         }
     }

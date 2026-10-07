@@ -167,6 +167,10 @@ let appInfo = try await session.getApplePayInfo()           // GET /payments/{id
 let browserData = try await session.completeBrowserData(await BrowserData.deviceDefault())
 ```
 
+The enums the gateway answers with (`ChargeState`, `ChargeActionType`, `Emv3dsState`, `CardScheme`,
+`PaymentState`, `Currency`) each have an `unknown` case: a value added after this SDK shipped decodes
+as `unknown` instead of failing the response, and the original value goes to the debug log.
+
 ### Charging with Apple Pay
 
 ```swift
@@ -392,6 +396,12 @@ the debug log.
 | 1.x | 2.0 |
 | --- | --- |
 | `getPublicEncryptionKey(forceRefresh:)`, `JweUtils`, `GopayJWK` | Gone or internal: a key fetched ahead of time, or a JWE built outside the SDK, would carry the device's clock. Call `encryptCardData(_:)` or `submitCardForm(formId:)`. |
+
+#### Migrating response enums from 1.x
+
+| 1.x | 2.0 |
+| --- | --- |
+| An exhaustive `switch` over `ChargeState`, `ChargeActionType`, `Emv3dsState`, `CardScheme`, `PaymentState` or `Currency` | Each has an `unknown` case for a value the gateway added later; add a branch; for a state, treat it as not final. |
 
 ### Theming the form
 

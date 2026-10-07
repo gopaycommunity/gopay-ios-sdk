@@ -1,18 +1,75 @@
 import Foundation
 
+/// A string enum the gateway sends in a response, which may gain values after this SDK shipped.
+///
+/// A value the SDK does not know decodes as `unknown` instead of failing the whole response, and
+/// the original value and its place in the response go to the debug log, worded like the Android
+/// warning. Without this a single new state would make ``PaymentSession/getChargeState()`` throw
+/// `INTERNAL_003` even for a paid payment. The Android SDK decodes the same enums the same way,
+/// as `UNKNOWN`.
+protocol GatewayEnum: RawRepresentable, Decodable where RawValue == String {
+    static var unknown: Self { get }
+}
+
+extension GatewayEnum {
+    /// The value in `decoder`, or `unknown` with a warning when this SDK does not know it. Each
+    /// enum's own `init(from:)` calls this; a public conformance cannot take its witness from an
+    /// internal protocol.
+    static func decodingUnknownValues(from decoder: Decoder) throws -> Self {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        if let known = Self(rawValue: raw) { return known }
+        UnknownGatewayValue.report(
+            "Unknown \(Self.self) value \"\(raw)\" at \(jsonPath(decoder.codingPath)) from the gateway, "
+                + "read as UNKNOWN; a newer SDK may know it"
+        )
+        return .unknown
+    }
+
+    /// The value's place in the response in the form Moshi uses on Android, e.g. `$.action.state`
+    /// or `$.items[0]`. The two platforms usually agree on it, but not always: for the charge nested
+    /// in `GET /payments/{payment_id}` the paths can differ.
+    private static func jsonPath(_ codingPath: [CodingKey]) -> String {
+        codingPath.reduce("$") { path, key in
+            key.intValue.map { "\(path)[\($0)]" } ?? "\(path).\(key.stringValue)"
+        }
+    }
+}
+
+/// Where ``GatewayEnum`` reports a value it decoded as `unknown`. The default sends it to the SDK
+/// debug log through `GopaySDK.logWarning(_:)`; tests observe the reports by swapping it, for the
+/// same reason as ``ChargePaymentResponse/reportMissingField``.
+enum UnknownGatewayValue {
+    static var report: (String) -> Void = { message in
+        GopaySDK.shared.logWarning(message)
+    }
+}
+
 /// Card scheme. Maps to `Card-Scheme` in Payments.yaml.
-public enum CardScheme: String, Codable {
+public enum CardScheme: String, Codable, GatewayEnum {
     case visa = "VISA"
     case mastercard = "MASTERCARD"
+    /// A scheme this SDK does not know yet. The raw value is in the debug log.
+    case unknown = "UNKNOWN"
+
+    public init(from decoder: Decoder) throws {
+        self = try Self.decodingUnknownValues(from: decoder)
+    }
 }
 
 /// State of a charge. Maps to `Charge-State`.
-public enum ChargeState: String, Codable {
+public enum ChargeState: String, Codable, GatewayEnum {
     case requested = "REQUESTED"
     case processing = "PROCESSING"
     case actionRequired = "ACTION_REQUIRED"
     case succeeded = "SUCCEEDED"
     case failed = "FAILED"
+    /// A state this SDK does not know yet. It is not a result: keep reading
+    /// ``PaymentSession/getChargeState()``, or settle the payment on your backend.
+    case unknown = "UNKNOWN"
+
+    public init(from decoder: Decoder) throws {
+        self = try Self.decodingUnknownValues(from: decoder)
+    }
 }
 
 /// 3DS challenge preference forwarded to the gateway. Maps to `Payment-Card-Challenge-Preference`.
@@ -24,18 +81,30 @@ public enum ChallengePreference: String, Codable {
 
 /// Follow-up action type required to complete a charge. Maps to the `action_type` of
 /// `Payment-Charge-Action` (currently only `EMV3DS`).
-public enum ChargeActionType: String, Codable {
+public enum ChargeActionType: String, Codable, GatewayEnum {
     case emv3ds = "EMV3DS"
+    /// An action this SDK does not know yet. The raw value is in the debug log.
+    case unknown = "UNKNOWN"
+
+    public init(from decoder: Decoder) throws {
+        self = try Self.decodingUnknownValues(from: decoder)
+    }
 }
 
 /// EMV 3DS sub-state reported on a charge action. Maps to the `state` of `Payment-Charge-Action`.
-public enum Emv3dsState: String, Codable {
+public enum Emv3dsState: String, Codable, GatewayEnum {
     case created = "CREATED"
     case challengeRequired = "CHALLENGE_REQUIRED"
     case authenticatedChallenge = "AUTHENTICATED_CHALLENGE"
     case authenticatedFrictionless = "AUTHENTICATED_FRICTIONLESS"
     case notAuthenticated = "NOT_AUTHENTICATED"
     case failed = "FAILED"
+    /// A 3DS state this SDK does not know yet. The raw value is in the debug log.
+    case unknown = "UNKNOWN"
+
+    public init(from decoder: Decoder) throws {
+        self = try Self.decodingUnknownValues(from: decoder)
+    }
 }
 
 /// Browser data collected for 3DS authentication. Required on every card charge regardless of the

@@ -275,7 +275,8 @@ final class CheckoutViewModel {
             switch response.state {
             case .succeeded, .failed:
                 return response
-            case .requested, .processing, .actionRequired:
+            case .requested, .processing, .actionRequired, .unknown:
+                // A state the SDK does not know is not a result either; keep polling.
                 break
             }
 

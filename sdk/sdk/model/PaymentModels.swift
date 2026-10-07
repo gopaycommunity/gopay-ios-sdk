@@ -1,7 +1,7 @@
 import Foundation
 
 /// Supported currencies. Maps to `Currency`.
-public enum Currency: String, Codable {
+public enum Currency: String, Codable, GatewayEnum {
     case czk = "CZK"
     case eur = "EUR"
     case pln = "PLN"
@@ -9,10 +9,16 @@ public enum Currency: String, Codable {
     case gbp = "GBP"
     case huf = "HUF"
     case ron = "RON"
+    /// A currency this SDK does not know yet. The raw value is in the debug log.
+    case unknown = "UNKNOWN"
+
+    public init(from decoder: Decoder) throws {
+        self = try Self.decodingUnknownValues(from: decoder)
+    }
 }
 
 /// Payment lifecycle state. Maps to `Payment-State`.
-public enum PaymentState: String, Codable {
+public enum PaymentState: String, Codable, GatewayEnum {
     case created = "CREATED"
     case paid = "PAID"
     case canceled = "CANCELED"
@@ -21,6 +27,13 @@ public enum PaymentState: String, Codable {
     case authorized = "AUTHORIZED"
     case refunded = "REFUNDED"
     case partiallyRefunded = "PARTIALLY_REFUNDED"
+    /// A state this SDK does not know yet. It is not a final state: read the payment again, or
+    /// settle it on your backend.
+    case unknown = "UNKNOWN"
+
+    public init(from decoder: Decoder) throws {
+        self = try Self.decodingUnknownValues(from: decoder)
+    }
 }
 
 /// Payment details returned by `GET /payments/{payment_id}`. Maps to `Payment-Details`.
