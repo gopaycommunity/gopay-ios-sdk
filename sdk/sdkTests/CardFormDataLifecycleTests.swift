@@ -87,55 +87,6 @@ private func lifecycleStubbedClient() -> DefaultNetworkClient {
     return DefaultNetworkClient(baseURL: lifecycleStubBaseURL, configuration: config)
 }
 
-/// Generates a throwaway RSA-2048 key and returns its public JWK as JSON, so the full
-/// `submitCardForm` → JWE path can run against the stub without a backend.
-private func freshPublicJWKJSON() throws -> Data {
-    let attrs: [String: Any] = [
-        kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-        kSecAttrKeySizeInBits as String: 2048,
-        kSecAttrIsPermanent as String: false,
-    ]
-    var error: Unmanaged<CFError>?
-    guard let key = SecKeyCreateRandomKey(attrs as CFDictionary, &error),
-          let publicKey = SecKeyCopyPublicKey(key),
-          let der = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
-        throw error?.takeRetainedValue() ?? NSError(domain: "test", code: -1)
-    }
-
-    // PKCS#1: RSAPublicKey ::= SEQUENCE { INTEGER n, INTEGER e }
-    let bytes = [UInt8](der)
-    var i = 0
-    func readLength() -> Int {
-        let first = Int(bytes[i]); i += 1
-        guard first & 0x80 != 0 else { return first }
-        var length = 0
-        for _ in 0..<(first & 0x7F) { length = length << 8 | Int(bytes[i]); i += 1 }
-        return length
-    }
-    func readInteger() -> Data {
-        precondition(bytes[i] == 0x02, "expected DER INTEGER"); i += 1
-        var length = readLength()
-        // Skip the sign padding byte DER adds when the high bit of the value is set.
-        if bytes[i] == 0x00 { i += 1; length -= 1 }
-        defer { i += length }
-        return Data(bytes[i..<(i + length)])
-    }
-    func base64url(_ data: Data) -> String {
-        data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-    precondition(bytes[i] == 0x30, "expected DER SEQUENCE"); i += 1
-    _ = readLength()
-
-    let jwk: [String: Any] = [
-        "kty": "RSA", "kid": "key_test", "use": "enc", "alg": "RSA-OAEP-256",
-        "n": base64url(readInteger()), "e": base64url(readInteger()),
-    ]
-    return try JSONSerialization.data(withJSONObject: jwk)
-}
-
 extension SessionNetworkTests {
 
     private func lifecycleSDK() -> GopaySDK {
@@ -152,7 +103,7 @@ extension SessionNetworkTests {
     }
 
     @Test func submitCardForm_success_returnsJweAndClearsStorage() async throws {
-        let jwkJSON = try freshPublicJWKJSON()
+        let jwkJSON = try TestEncryptionKey().publicJWKJSON
         StubURLProtocol.reset { req in
             (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, jwkJSON) : (404, Data())
         }
@@ -179,7 +130,7 @@ extension SessionNetworkTests {
         // by CardFormResetTests, which hosts a real GopayCardForm.
         // Clearing the SDK's copy leaves the digits on screen, so the form registers a wipe and
         // the card does not outlive the JWE made from it (GPMOB-140; PCI DSS 4.0.1, req. 3.3.1).
-        let jwkJSON = try freshPublicJWKJSON()
+        let jwkJSON = try TestEncryptionKey().publicJWKJSON
         StubURLProtocol.reset { req in
             (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, jwkJSON) : (404, Data())
         }
@@ -217,7 +168,7 @@ extension SessionNetworkTests {
         // The closure holds the form and with it the PAN, so dropping it without firing it would
         // hand the card on rather than clear it. Firing it once is also all that happens: the
         // handler is gone afterwards, so a later submit cannot reach a view that has left.
-        let jwkJSON = try freshPublicJWKJSON()
+        let jwkJSON = try TestEncryptionKey().publicJWKJSON
         StubURLProtocol.reset { req in
             (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, jwkJSON) : (404, Data())
         }

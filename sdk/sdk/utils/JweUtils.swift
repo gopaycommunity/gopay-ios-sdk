@@ -12,8 +12,10 @@ public struct JweUtils {
     ///   - cardData: The card data to encrypt.
     ///   - clientId: The merchant `client_id`, required inside the encrypted payload by the backend.
     ///   - jwk: The JSON Web Key for encryption.
+    ///   - issuedAt: The payload's `iat`; `exp` follows 10 minutes later. The SDK passes the
+    ///     gateway's clock from the public-key response.
     /// - Returns: A Result containing the JWE string or an error.
-    public static func createJWE(cardData: GopayCardData, clientId: String, jwk: GopayJWK) -> Result<String, Error> {
+    public static func createJWE(cardData: GopayCardData, clientId: String, jwk: GopayJWK, issuedAt: Date = Date()) -> Result<String, Error> {
         // Step 1: Create JWE header first (needed for AAD)
         let header: [String: String] = [
             "alg": jwk.alg,
@@ -52,15 +54,15 @@ public struct JweUtils {
         // The backend requires JWT-style replay-protection claims on the encrypted payload:
         // `iat` (issued-at) and `exp` (expiry) in Unix seconds — the payload's own validity window,
         // distinct from the card's `exp_month`/`exp_year` — plus a unique `jti` (JWT ID).
-        let issuedAt = Int(Date().timeIntervalSince1970)
+        let issuedAtSeconds = Int(issuedAt.timeIntervalSince1970)
         let cardDataJSON: [String: Any] = [
             "card_pan": cardData.cardPan,
             "exp_month": cardData.expMonth,
             "exp_year": cardData.expYear,
             "cvv": cardData.cvv,
             "client_id": clientId,
-            "iat": issuedAt,
-            "exp": issuedAt + Int(payloadValiditySeconds),
+            "iat": issuedAtSeconds,
+            "exp": issuedAtSeconds + Int(payloadValiditySeconds),
             "jti": "ios-\(UUID().uuidString)"
         ]
         

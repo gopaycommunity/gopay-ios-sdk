@@ -379,6 +379,12 @@ user abandons checkout while the form is still on screen — call
 `GopaySDK.shared.clearCardFormData()`, which empties the visible fields as well. Discard the JWE
 once your backend has tokenized it.
 
+Every encryption fetches the merchant's public key afresh from `GET /cards/public-key`, and the
+payload's 10 minutes run on the gateway's clock, read from that response's `Date` header, so a
+device with a wrong clock still produces a JWE the gateway accepts. Should the header be missing or
+unreadable, the SDK falls back to the device clock and, with `enableDebugLogging` on, says so in
+the debug log.
+
 ### Theming the form
 
 **An untouched form looks like an iOS form.** The system font and colors, a plain bordered field,
@@ -743,7 +749,8 @@ See [`example/README.md`](example/README.md) for the full walkthrough.
   empties the form's visible fields, so the card is not left on screen holding a reference the SDK
   has already let go of. Swift strings cannot be securely overwritten, so this releases the
   references rather than zeroing bytes.
-- Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key.
+- Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key, fetched for
+  every encryption and never cached.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
   payments and never sees the merchant secret.
 

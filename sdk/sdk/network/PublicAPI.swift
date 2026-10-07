@@ -16,11 +16,20 @@ struct PublicAPI {
         self.shareableKey = shareableKey
     }
 
-    /// `GET /cards/public-key` — fetches the merchant's RSA encryption JWK.
-    func getPublicKey() async throws -> GopayJWK {
-        let request = try jsonGET(path: "cards/public-key")
+    /// `GET /cards/public-key`: the merchant's RSA encryption JWK together with the gateway's
+    /// clock, read from the response's `Date` header. The JWE built from the key takes its `iat`
+    /// from that clock, so a device whose own clock is off still produces a payload the gateway
+    /// accepts.
+    ///
+    /// The request skips `URLCache`: a stored response would bring back the old `Date` with it.
+    func getPublicKey() async throws -> ServedPublicKey {
+        var request = try jsonGET(path: "cards/public-key")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         let result = try await client.send(request)
-        return try decodeOrThrow(GopayJWK.self, from: result, action: "fetch public key")
+        let jwk = try decodeOrThrow(GopayJWK.self, from: result, action: "fetch public key")
+        let response = result.1
+        let serverTime = parseHTTPDate(response.value(forHTTPHeaderField: "Date"))
+        return ServedPublicKey(jwk: jwk, serverTime: serverTime)
     }
 
     /// `GET /cards/browser-data`: the address, User-Agent and Accept headers of this very request,
@@ -63,4 +72,12 @@ struct PublicAPI {
         }
         return gopayBasicAuthHeader(user: clientId, secret: shareableKey)
     }
+}
+
+/// The merchant's encryption key as `GET /cards/public-key` served it.
+struct ServedPublicKey {
+    let jwk: GopayJWK
+    /// The gateway's clock from the response's `Date` header, or `nil` when the header was missing
+    /// or not an IMF-fixdate.
+    let serverTime: Date?
 }

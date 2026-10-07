@@ -46,7 +46,7 @@ Never add, rename, or repurpose a code on one platform alone.
 - **Case**: `authShareableKeyMissing`
 - **Description**: `clientId` / `shareableKey` are absent from `GopaySDKConfig` but required by the requested operation
 - **Common Causes**:
-  - SDK initialized without them, then a public-resource endpoint was called (`GET /cards/public-key`)
+  - SDK initialized without them, then a card was encrypted (`encryptCardData` / `submitCardForm` fetch `GET /cards/public-key` every time); no request is sent
   - A charge, which first fetches `GET /cards/browser-data` with the same credentials; the charge is not sent
 - **Developer Action**:
   - Supply both in `GopaySDKConfig` — they are safe to embed in the app

@@ -457,6 +457,7 @@ public struct ChargePaymentResponse: Codable {
 
     /// Reports a required field the decoder had to substitute. The default sends it to the SDK
     /// debug log through `GopaySDK.logWarning(_:)`; tests observe the reports by swapping it.
+    /// Warnings raised on a ``GopaySDK`` instance can be collected through its `warnSink` instead.
     ///
     /// A swappable hook rather than a call written straight into the decoder: decoding runs on
     /// the URLSession thread, and a test has no other way to see what was substituted without

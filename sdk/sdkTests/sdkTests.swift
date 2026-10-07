@@ -8,6 +8,8 @@
 
 import Testing
 import Foundation
+import CryptoKit
+import Security
 @testable import sdk
 
 // MARK: - Test helpers
@@ -72,12 +74,15 @@ final class StubURLProtocol: URLProtocol {
     private static var recordedRequests: [RecordedRequest] = []
     /// Artificial per-request delay (seconds), to widen single-flight windows.
     private static var storedDelay: TimeInterval = 0
+    /// Extra response headers every answer carries, such as the gateway's `Date`.
+    private static var storedHeaders: [String: String] = [:]
 
-    static func reset(delay: TimeInterval = 0, handler: @escaping Handler) {
+    static func reset(delay: TimeInterval = 0, headers: [String: String] = [:], handler: @escaping Handler) {
         lock.lock(); defer { lock.unlock() }
         storedHandler = handler
         recordedRequests = []
         storedDelay = delay
+        storedHeaders = headers
     }
 
     static func requestCount(forPathSuffix suffix: String) -> Int {
@@ -107,6 +112,7 @@ final class StubURLProtocol: URLProtocol {
         ))
         let handler = StubURLProtocol.storedHandler
         let delay = StubURLProtocol.storedDelay
+        let headers = StubURLProtocol.storedHeaders
         StubURLProtocol.lock.unlock()
 
         if delay > 0 { Thread.sleep(forTimeInterval: delay) }
@@ -122,7 +128,7 @@ final class StubURLProtocol: URLProtocol {
         }
         let response = HTTPURLResponse(
             url: url, statusCode: status, httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: headers.merging(["Content-Type": "application/json"]) { stub, _ in stub }
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body)
@@ -146,6 +152,94 @@ final class StubURLProtocol: URLProtocol {
             data.append(buffer, count: read)
         }
         return data
+    }
+}
+
+// MARK: - Test encryption key
+
+/// A throwaway RSA-2048 key pair: the public half goes to the stub as the merchant's JWK, the
+/// private half opens the JWE the SDK builds from it so the tests can read the claims.
+struct TestEncryptionKey {
+    let privateKey: SecKey
+    let publicJWKJSON: Data
+
+    init() throws {
+        let attrs: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+            kSecAttrKeySizeInBits as String: 2048,
+            kSecAttrIsPermanent as String: false,
+        ]
+        var error: Unmanaged<CFError>?
+        guard let key = SecKeyCreateRandomKey(attrs as CFDictionary, &error),
+              let publicKey = SecKeyCopyPublicKey(key),
+              let der = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
+            throw error?.takeRetainedValue() ?? NSError(domain: "test", code: -1)
+        }
+        privateKey = key
+
+        // PKCS#1: RSAPublicKey ::= SEQUENCE { INTEGER n, INTEGER e }
+        let bytes = [UInt8](der)
+        var i = 0
+        func readLength() -> Int {
+            let first = Int(bytes[i]); i += 1
+            guard first & 0x80 != 0 else { return first }
+            var length = 0
+            for _ in 0..<(first & 0x7F) { length = length << 8 | Int(bytes[i]); i += 1 }
+            return length
+        }
+        func readInteger() -> Data {
+            precondition(bytes[i] == 0x02, "expected DER INTEGER"); i += 1
+            var length = readLength()
+            // Skip the sign padding byte DER adds when the high bit of the value is set.
+            if bytes[i] == 0x00 { i += 1; length -= 1 }
+            defer { i += length }
+            return Data(bytes[i..<(i + length)])
+        }
+        precondition(bytes[i] == 0x30, "expected DER SEQUENCE"); i += 1
+        _ = readLength()
+
+        let jwk: [String: Any] = [
+            "kty": "RSA", "kid": "key_test", "use": "enc", "alg": "RSA-OAEP-256",
+            "n": Self.base64url(readInteger()), "e": Self.base64url(readInteger()),
+        ]
+        publicJWKJSON = try JSONSerialization.data(withJSONObject: jwk)
+    }
+
+    /// Opens a compact JWE (RSA-OAEP-256 + A256GCM) and returns its payload as a JSON object.
+    func decryptClaims(_ jwe: String) throws -> [String: Any] {
+        let parts = jwe.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 5,
+              let encryptedKey = Self.base64urlDecode(parts[1]),
+              let iv = Self.base64urlDecode(parts[2]),
+              let ciphertext = Self.base64urlDecode(parts[3]),
+              let tag = Self.base64urlDecode(parts[4]) else {
+            throw NSError(domain: "test", code: -2)
+        }
+        var error: Unmanaged<CFError>?
+        guard let cek = SecKeyCreateDecryptedData(
+            privateKey, .rsaEncryptionOAEPSHA256, encryptedKey as CFData, &error
+        ) as Data? else {
+            throw error?.takeRetainedValue() ?? NSError(domain: "test", code: -3)
+        }
+        let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: iv), ciphertext: ciphertext, tag: tag)
+        let plaintext = try AES.GCM.open(box, using: SymmetricKey(data: cek), authenticating: Data(parts[0].utf8))
+        return (try JSONSerialization.jsonObject(with: plaintext) as? [String: Any]) ?? [:]
+    }
+
+    private static func base64url(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func base64urlDecode(_ string: String) -> Data? {
+        var base64 = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder > 0 { base64 += String(repeating: "=", count: 4 - remainder) }
+        return Data(base64Encoded: base64)
     }
 }
 
@@ -689,28 +783,5 @@ struct SessionNetworkTests {
         } catch let error as GopaySDKError {
             #expect(error.code == .authShareableKeyMissing)
         }
-    }
-
-    @Test func getPublicEncryptionKey_cachesAndSingleFlights() async throws {
-        let jwkJSON: [String: Any] = [
-            "kty": "RSA", "kid": "key_1", "use": "enc",
-            "alg": "RSA-OAEP-256", "n": "abc", "e": "AQAB"
-        ]
-        StubURLProtocol.reset(delay: 0.1) { req in
-            (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, json(jwkJSON)) : (404, Data())
-        }
-        let sdk = sdk(clientId: "c", shareableKey: "k")
-
-        // Concurrent first fetches single-flight to one network call...
-        async let a = sdk.getPublicEncryptionKey()
-        async let b = sdk.getPublicEncryptionKey()
-        let first = try await a
-        let second = try await b
-        #expect(first.kid == "key_1")
-        #expect(second.kid == "key_1")
-
-        // ...and a later call is served from cache (still one network call total).
-        _ = try await sdk.getPublicEncryptionKey()
-        #expect(StubURLProtocol.requestCount(forPathSuffix: "cards/public-key") == 1)
     }
 }

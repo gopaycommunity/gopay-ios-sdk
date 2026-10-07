@@ -48,8 +48,6 @@ public class GopaySDK {
     private var authAPI: AuthAPI?
     /// Shareable-key endpoints: the public key, and the browser data every charge completes itself with.
     private var publicAPI: PublicAPI?
-    /// In-memory cache of the merchant's encryption JWK.
-    private var publicKeyCache: PublicKeyCache?
     /// Registry of live payment sessions keyed by `payment_id`. Supports concurrent payments.
     private let sessionRegistry = SessionRegistry()
 
@@ -87,7 +85,6 @@ public class GopaySDK {
         self.authAPI = AuthAPI(client: client)
         let publicAPI = PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
         self.publicAPI = publicAPI
-        self.publicKeyCache = PublicKeyCache(publicAPI: publicAPI)
         // Resolve the real WebView User-Agent now, off the critical path, so the first charge's
         // browser_data doesn't pay the WKWebView construction + JS round-trip latency.
         Task { @MainActor in GopayUserAgent.prewarm() }
@@ -111,7 +108,6 @@ public class GopaySDK {
         self.authAPI = AuthAPI(client: client)
         let publicAPI = PublicAPI(client: client, clientId: config?.clientId, shareableKey: config?.shareableKey)
         self.publicAPI = publicAPI
-        self.publicKeyCache = PublicKeyCache(publicAPI: publicAPI)
     }
 
     // MARK: - Payment sessions
@@ -188,18 +184,28 @@ public class GopaySDK {
     // MARK: - Card encryption
 
     /// Fetches the merchant's encryption JWK from `GET /cards/public-key` using the `shareable_key`
-    /// basic-auth scheme. Requires `clientId` and `shareableKey` on ``GopaySDKConfig``. The key is
-    /// cached in memory only.
-    /// - Parameter forceRefresh: Bypass the in-memory cache and fetch fresh.
+    /// basic-auth scheme. Requires `clientId` and `shareableKey` on ``GopaySDKConfig``. Every call
+    /// goes to the gateway; the key is not cached.
+    /// - Parameter forceRefresh: Ignored, every call fetches fresh.
     public func getPublicEncryptionKey(forceRefresh: Bool = false) async throws -> GopayJWK {
-        guard let publicKeyCache = publicKeyCache else {
+        try await fetchPublicKey().jwk
+    }
+
+    /// Logged when the public-key response gives no usable clock. Word for word the Android
+    /// `CardEncryption.MISSING_DATE_WARNING`.
+    static let missingDateWarning =
+        "GET /cards/public-key came back without a usable Date header, using the device clock for the JWE iat"
+
+    /// One `GET /cards/public-key`: the key and the gateway's clock from the same response.
+    private func fetchPublicKey() async throws -> ServedPublicKey {
+        guard let publicAPI = publicAPI else {
             throw GopaySDKError(
                 .sdkNotInitialized,
                 message: "GopaySDK has not been initialized. Call initialize(with:) first."
             )
         }
         do {
-            return try await publicKeyCache.get(forceRefresh: forceRefresh)
+            return try await publicAPI.getPublicKey()
         } catch {
             handleError(error)
             throw error
@@ -210,21 +216,39 @@ public class GopaySDK {
     ///
     /// The mobile SDK never calls `POST /cards/tokens` itself (that endpoint requires merchant
     /// credentials). Instead, the host app forwards the returned JWE to its backend, which submits
-    /// it on the device's behalf. The public key is fetched via ``getPublicEncryptionKey(forceRefresh:)``
-    /// and cached in memory; card data is never persisted.
+    /// it on the device's behalf. Card data is never persisted.
+    ///
+    /// Every call fetches the public key from `GET /cards/public-key` afresh, and the payload's
+    /// `iat` / `exp` follow the gateway's clock from that response's `Date` header rather than the
+    /// device's, so a device with a wrong clock still produces a JWE the gateway accepts. When the
+    /// header is missing or unreadable the device clock is used instead, with a warning in the
+    /// debug log while `GopaySDKConfig.enableDebugLogging` is on.
+    ///
+    /// A task cancelled while the key is on its way gets `CancellationError`, which is not reported
+    /// through `errorCallback`, and no JWE is built.
     ///
     /// - Returns: A JWE compact serialization (RFC 7516) ready to send to the merchant backend.
     /// - Throws: ``GopaySDKError`` if `cardData` fails validation, the public key fetch fails, or
     ///   encryption fails.
     public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
         try validateCardData(cardData)
-        let jwk = try await getPublicEncryptionKey()
+        let served = try await fetchPublicKey()
+        // URLSession's completion API does not notice the task being cancelled, so the fetch
+        // finishes anyway. Stopping here keeps a cancelled submitCardForm from wiping the form.
+        try Task.checkCancellation()
         guard let clientId = config?.clientId, !clientId.isEmpty else {
             let error = GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopaySDKConfig to encrypt card data")
             handleError(error)
             throw error
         }
-        switch JweUtils.createJWE(cardData: cardData, clientId: clientId, jwk: jwk) {
+        let issuedAt: Date
+        if let serverTime = served.serverTime {
+            issuedAt = serverTime
+        } else {
+            issuedAt = Date()
+            logWarning(Self.missingDateWarning)
+        }
+        switch JweUtils.createJWE(cardData: cardData, clientId: clientId, jwk: served.jwk, issuedAt: issuedAt) {
         case .success(let jwe):
             return jwe
         case .failure(let error):
@@ -245,6 +269,10 @@ public class GopaySDK {
     /// `GopaySDKErrors.noCardFormData` while nothing is stored, and with
     /// `GopaySDKErrors.invalidCardFormData` once the emptied form has re-synced (it does so on
     /// appear and on any edit).
+    ///
+    /// Like ``encryptCardData(_:)``, every call fetches the public key afresh and dates the
+    /// payload by the gateway's clock. A task cancelled while the key is on its way gets
+    /// `CancellationError`, not reported through `errorCallback`, and the card stays in the form.
     ///
     /// Forward the returned JWE promptly and use it for a single charge: the gateway accepts each
     /// JWE only once and its payload expires 10 minutes after creation, so a retry needs the user
@@ -407,7 +435,13 @@ public class GopaySDK {
     /// `GopaySDKConfig.enableDebugLogging` is on, and never through `errorCallback`.
     func logWarning(_ message: String) {
         if config?.enableDebugLogging == true {
-            print("[GopaySDK] Warning: \(message)")
+            warnSink(message)
         }
+    }
+
+    /// Where ``logWarning(_:)`` writes. Replaced in tests to collect the warnings instead of
+    /// printing them, like the Android `SdkLog.warnSink`.
+    var warnSink: (String) -> Void = { message in
+        print("[GopaySDK] Warning: \(message)")
     }
 }
