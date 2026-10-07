@@ -740,7 +740,7 @@ struct SessionNetworkTests {
         }
     }
 
-    // MARK: GopaySDK registry + public key
+    // MARK: GopaySDK registry
 
     private func sdk(clientId: String? = nil, shareableKey: String? = nil) -> GopaySDK {
         let config = GopaySDKConfig(
@@ -771,17 +771,5 @@ struct SessionNetworkTests {
         await again.close()
         let gone = await sdk.getPaymentSession("dup")
         #expect(gone == nil)
-    }
-
-    @Test func getPublicEncryptionKey_missingShareableKey_throws() async throws {
-        StubURLProtocol.reset { _ in (200, Data()) }
-        let sdk = sdk() // no clientId / shareableKey
-
-        do {
-            _ = try await sdk.getPublicEncryptionKey()
-            Issue.record("expected failure")
-        } catch let error as GopaySDKError {
-            #expect(error.code == .authShareableKeyMissing)
-        }
     }
 }

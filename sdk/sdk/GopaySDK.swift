@@ -183,20 +183,14 @@ public class GopaySDK {
 
     // MARK: - Card encryption
 
-    /// Fetches the merchant's encryption JWK from `GET /cards/public-key` using the `shareable_key`
-    /// basic-auth scheme. Requires `clientId` and `shareableKey` on ``GopaySDKConfig``. Every call
-    /// goes to the gateway; the key is not cached.
-    /// - Parameter forceRefresh: Ignored, every call fetches fresh.
-    public func getPublicEncryptionKey(forceRefresh: Bool = false) async throws -> GopayJWK {
-        try await fetchPublicKey().jwk
-    }
-
     /// Logged when the public-key response gives no usable clock. Word for word the Android
     /// `CardEncryption.MISSING_DATE_WARNING`.
     static let missingDateWarning =
         "GET /cards/public-key came back without a usable Date header, using the device clock for the JWE iat"
 
-    /// One `GET /cards/public-key`: the key and the gateway's clock from the same response.
+    /// One `GET /cards/public-key`, using the `shareable_key` basic-auth scheme: the merchant's
+    /// encryption key and the gateway's clock from the same response. Never cached; the key is
+    /// fetched only when a card is being encrypted.
     private func fetchPublicKey() async throws -> ServedPublicKey {
         guard let publicAPI = publicAPI else {
             throw GopaySDKError(

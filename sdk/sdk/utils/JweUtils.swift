@@ -4,7 +4,7 @@ import CommonCrypto
 import CryptoKit
 
 /// Utility for JWE (JSON Web Encryption) operations following RFC 7516.
-public struct JweUtils {
+struct JweUtils {
     /// How long the encrypted card payload stays valid. Short by design — tokenize right away.
     private static let payloadValiditySeconds: TimeInterval = 600
     /// Creates a JWE string by encrypting card data using the provided JWK.
@@ -12,10 +12,10 @@ public struct JweUtils {
     ///   - cardData: The card data to encrypt.
     ///   - clientId: The merchant `client_id`, required inside the encrypted payload by the backend.
     ///   - jwk: The JSON Web Key for encryption.
-    ///   - issuedAt: The payload's `iat`; `exp` follows 10 minutes later. The SDK passes the
-    ///     gateway's clock from the public-key response.
+    ///   - issuedAt: The payload's `iat`; `exp` follows 10 minutes later. The gateway's clock from
+    ///     the public-key response, or the device clock when that response carried none.
     /// - Returns: A Result containing the JWE string or an error.
-    public static func createJWE(cardData: GopayCardData, clientId: String, jwk: GopayJWK, issuedAt: Date = Date()) -> Result<String, Error> {
+    static func createJWE(cardData: GopayCardData, clientId: String, jwk: GopayJWK, issuedAt: Date) -> Result<String, Error> {
         // Step 1: Create JWE header first (needed for AAD)
         let header: [String: String] = [
             "alg": jwk.alg,

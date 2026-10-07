@@ -385,6 +385,12 @@ device with a wrong clock still produces a JWE the gateway accepts. Should the h
 unreadable, the SDK falls back to the device clock and, with `enableDebugLogging` on, says so in
 the debug log.
 
+#### Migrating card encryption from 1.x
+
+| 1.x | 2.0 |
+| --- | --- |
+| `getPublicEncryptionKey(forceRefresh:)`, `JweUtils`, `GopayJWK` | Gone or internal: a key fetched ahead of time, or a JWE built outside the SDK, would carry the device's clock. Call `encryptCardData(_:)` or `submitCardForm(formId:)`. |
+
 ### Theming the form
 
 **An untouched form looks like an iOS form.** The system font and colors, a plain bordered field,

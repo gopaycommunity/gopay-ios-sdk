@@ -102,7 +102,8 @@ Never add, rename, or repurpose a code on one platform alone.
 - **Case**: `sdkNotInitialized`
 - **Description**: An API was called before `GopaySDK.shared.initialize(with:)`
 - **Common Causes**:
-  - `startPaymentSession` or `getPublicEncryptionKey` called on app start before initialization
+  - `startPaymentSession` called on app start before initialization
+- **Note**: `encryptCardData` and `submitCardForm` called before initialization fail with `AUTH_011` instead, because `GopaySDK.shared` starts without `clientId` / `shareableKey`
 - **Developer Action**:
   - Initialize once on app start, before any other SDK call
 
