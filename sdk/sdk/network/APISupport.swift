@@ -62,7 +62,8 @@ private let imfFixdateFormatter: DateFormatter = {
 /// failure. The iOS counterpart of the Android `Response<T>.unwrap(action)` helper.
 ///
 /// - Non-2xx → ``GopaySDKError/Code/networkClientError`` (4xx) or
-///   ``GopaySDKError/Code/networkServerError`` (5xx), carrying the HTTP status.
+///   ``GopaySDKError/Code/networkServerError`` (5xx), carrying the HTTP status and the gateway's
+///   error body.
 /// - Decoding failure → ``GopaySDKError/Code/decoding``.
 func decodeOrThrow<T: Decodable>(
     _ type: T.Type,
@@ -70,7 +71,7 @@ func decodeOrThrow<T: Decodable>(
     action: String
 ) throws -> T {
     let (data, http) = result
-    try throwIfNotSuccessful(http, action: action)
+    try throwIfNotSuccessful(http, body: data, action: action)
     do {
         return try JSONDecoder().decode(T.self, from: data)
     } catch {
@@ -82,14 +83,28 @@ func decodeOrThrow<T: Decodable>(
     }
 }
 
-/// Validates an HTTP result without decoding a body, throwing on non-2xx.
-func throwIfNotSuccessful(_ http: HTTPURLResponse, action: String) throws {
+/// Validates an HTTP result without decoding a body, throwing on non-2xx. The gateway's error
+/// body, when `body` holds one, goes into ``GopaySDKError/gatewayError`` and its `message` into
+/// the error's own message, so "HTTP 403" says why.
+func throwIfNotSuccessful(_ http: HTTPURLResponse, body: Data, action: String) throws {
     guard (200..<300).contains(http.statusCode) else {
         let code: GopaySDKError.Code = http.statusCode >= 500 ? .networkServerError : .networkClientError
+        let gatewayError = GopayGatewayError.parse(body)
         throw GopaySDKError(
             code,
-            message: "Failed to \(action): HTTP \(http.statusCode)",
-            httpStatus: http.statusCode
+            message: "Failed to \(action): HTTP \(http.statusCode)" + gatewayError.messageSuffix,
+            httpStatus: http.statusCode,
+            gatewayError: gatewayError
         )
+    }
+}
+
+extension Optional where Wrapped == GopayGatewayError {
+    /// `": <message>"` from the gateway, or nothing when it sent none or only white space.
+    var messageSuffix: String {
+        guard let message = self?.message?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty
+        else { return "" }
+        return ": \(message)"
     }
 }

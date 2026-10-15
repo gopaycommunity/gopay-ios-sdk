@@ -1,9 +1,11 @@
 # Gopay SDK Error Codes Reference (iOS)
 
 `GopaySDKError` carries a stable `code` following the pattern `DOMAIN_XXX`, a human-readable
-`message`, and — for failures originating from an HTTP response — the offending `statusCode`. It
-conforms to `LocalizedError`, so `error.localizedDescription` reads like
-`[AUTH_010] payment_credentials rejected: HTTP 401`.
+`message`, and, for failures originating from an HTTP response, the offending `httpStatus` and
+the gateway's error body as `gatewayError` (`error`, `message`, `detail`, each optional). The
+gateway's `message` is appended to the SDK's own. It conforms to `LocalizedError`, so
+`error.localizedDescription` reads like
+`[AUTH_010] payment_credentials rejected: HTTP 401: Invalid payment_id or payment_secret`.
 
 The codes are a **shared cross-platform contract**: they mirror the Android SDK's `GopayErrorCodes`
 so both platforms report the same code for the same condition. The iOS SDK throws the subset below;
@@ -90,7 +92,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - The operation is not enabled for the merchant (e.g. Apple Pay in-app returns 403)
   - Malformed request or a payment in the wrong state
 - **Developer Action**:
-  - Read `statusCode` and `message`; both come straight from the gateway response
+  - Read `httpStatus` and `gatewayError`; both come straight from the gateway response, and the gateway's `message` is in the error's `message` too
 
 ### NETWORK_003: HTTP Server Error (5xx)
 - **Case**: `networkServerError`

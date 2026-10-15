@@ -140,7 +140,8 @@ public actor PaymentSession {
                 message: "Failed to charge payment: browser data could not be fetched (\(error.message))",
                 httpStatus: error.httpStatus,
                 // The failure itself, e.g. the URLError, not the SDK error already wrapping it.
-                underlying: error.underlying ?? error
+                underlying: error.underlying ?? error,
+                gatewayError: error.gatewayError
             )
         }
     }
@@ -196,16 +197,19 @@ public actor PaymentSession {
                 grantType: Self.grantTypePaymentCredentials,
                 scope: scope
             )
-        } catch let error as GopaySDKError where [400, 401, 403].contains(error.httpStatus) {
+        } catch let error as GopaySDKError {
             // Only the gateway turning the pair down means the payment_id / payment_secret pair
-            // is wrong; a payment_secret past its seven days is refused with a 403, so that one
-            // counts too. Any other 4xx, a 5xx and a transport failure keep their own codes, so a
+            // is wrong. Any other 4xx, a 5xx and a transport failure keep their own codes, so a
             // device that is merely offline is not told to fetch new credentials.
+            guard let status = error.httpStatus, Self.credentialsRejectedStatuses.contains(status) else {
+                throw error
+            }
             throw GopaySDKError(
                 .authPaymentCredentialsInvalid,
-                message: "payment_credentials rejected: HTTP \(error.httpStatus.map(String.init) ?? "?")",
-                httpStatus: error.httpStatus,
-                underlying: error
+                message: "payment_credentials rejected: HTTP \(status)" + error.gatewayError.messageSuffix,
+                httpStatus: status,
+                underlying: error,
+                gatewayError: error.gatewayError
             )
         }
         token = response.accessToken
@@ -241,6 +245,10 @@ public actor PaymentSession {
     // Custom GoPay grant type for the payment-credentials flow (Payments.yaml,
     // components.schemas.Payment-Credentials-Request).
     private static let grantTypePaymentCredentials = "payment_credentials"
+    /// The `/oauth2/token` answers that mean the payment_id / payment_secret pair is wrong, and so
+    /// ``GopaySDKError/Code/authPaymentCredentialsInvalid``. A `payment_secret` past its seven
+    /// days is refused with a 403.
+    private static let credentialsRejectedStatuses: Set<Int> = [400, 401, 403]
 }
 
 extension PaymentSession: SessionTokenProviding {

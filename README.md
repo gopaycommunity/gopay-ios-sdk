@@ -732,6 +732,10 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 }
 ```
 
+When the gateway answered with an error, `httpStatus` carries the status and `gatewayError` its
+error body (`error`, `message`, `detail`); the gateway's `message` is also appended to the SDK's,
+e.g. `Failed to get Apple Pay info: HTTP 403: Apple Pay in-app is not enabled for this merchant`.
+
 An Apple Pay sheet or a 3DS screen that closed before it finished throws `PAYMENT_011`
 (`paymentCancelled`), and so does a 3DS page that failed after it had drawn. That is not a failed
 payment, and not necessarily one that did not happen: the 3DS challenge may have been answered,

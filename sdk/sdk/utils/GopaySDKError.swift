@@ -3,9 +3,11 @@ import Foundation
 /// Structured error type for the per-payment session SDK surface.
 ///
 /// Carries a stable string ``Code`` (mirrors the Android `GopayErrorCodes` catalog so the two
-/// SDKs report the same codes), a human-readable message, and — for failures that originated from
-/// an HTTP response — the offending status code. Conforms to `LocalizedError` so
-/// `error.localizedDescription` reads `"[AUTH_010] payment_credentials rejected: HTTP 401"`.
+/// SDKs report the same codes), a human-readable message and, for failures that originated from
+/// an HTTP response, the status code and the gateway's error body (``gatewayError``). A request
+/// that got no HTTP response is one too, with a `NETWORK_*` code and the `URLError` as
+/// ``underlying``. Conforms to `LocalizedError` so `error.localizedDescription` reads
+/// `"[AUTH_010] payment_credentials rejected: HTTP 401: Invalid payment_id or payment_secret"`.
 public struct GopaySDKError: LocalizedError {
 
     /// Stable error codes, matching the Android SDK's `GopayErrorCodes` so both platforms agree.
@@ -90,15 +92,66 @@ public struct GopaySDKError: LocalizedError {
     public let httpStatus: Int?
     /// The underlying error, when this wraps another failure.
     public let underlying: Error?
+    /// What the gateway said about the failure, when it answered with an error body. Its
+    /// `message` is part of ``message`` too.
+    public let gatewayError: GopayGatewayError?
 
-    public init(_ code: Code, message: String, httpStatus: Int? = nil, underlying: Error? = nil) {
+    public init(
+        _ code: Code,
+        message: String,
+        httpStatus: Int? = nil,
+        underlying: Error? = nil,
+        gatewayError: GopayGatewayError? = nil
+    ) {
         self.code = code
         self.message = message
         self.httpStatus = httpStatus
         self.underlying = underlying
+        self.gatewayError = gatewayError
     }
 
     public var errorDescription: String? { "[\(code.rawValue)] \(message)" }
+}
+
+/// The body the gateway answers a failed request with (`Error-Response-Body` in the GoPay API).
+/// The SDK reads only its three fields below and leaves out `code` (the HTTP status, which is
+/// ``GopaySDKError/httpStatus``), `path` and `timestamp`. Every field is optional: the SDK reads
+/// what is there and does not fail on what is not. The Android SDK carries the same type as
+/// `HttpErrorContext.gatewayError`.
+public struct GopayGatewayError: Decodable, Equatable {
+    /// The error type, which follows the HTTP status, e.g. `BAD_REQUEST` or `FORBIDDEN`. The
+    /// gateway has no finer business codes.
+    public let error: String?
+    /// A human-readable explanation, e.g. `Apple Pay in-app is not enabled for this merchant`.
+    public let message: String?
+    /// Further detail, e.g. which field of the request was wrong.
+    public let detail: String?
+
+    public init(error: String? = nil, message: String? = nil, detail: String? = nil) {
+        self.error = error
+        self.message = message
+        self.detail = detail
+    }
+
+    /// Reads the gateway's error body, or `nil` when there is none or it is not one.
+    static func parse(_ data: Data) -> GopayGatewayError? {
+        guard let body = try? JSONDecoder().decode(GopayGatewayError.self, from: data),
+              body.error != nil || body.message != nil || body.detail != nil
+        else { return nil }
+        return body
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case error, message, detail
+    }
+
+    /// Lenient: a field of another type is skipped rather than failing the whole body.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        error = try? container.decodeIfPresent(String.self, forKey: .error)
+        message = try? container.decodeIfPresent(String.self, forKey: .message)
+        detail = try? container.decodeIfPresent(String.self, forKey: .detail)
+    }
 }
 
 extension GopaySDKError {

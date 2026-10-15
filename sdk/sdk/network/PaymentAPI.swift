@@ -98,10 +98,12 @@ final class PaymentAPI {
             token = try await provider.reauthenticate()
             result = try await client.send(authorized(request, token: token))
             if result.1.statusCode == 401 {
+                let gatewayError = GopayGatewayError.parse(result.0)
                 throw GopaySDKError(
                     .authPaymentTokenExpired,
-                    message: "Payment-scoped token still rejected after re-authentication",
-                    httpStatus: 401
+                    message: "Payment-scoped token still rejected after re-authentication" + gatewayError.messageSuffix,
+                    httpStatus: 401,
+                    gatewayError: gatewayError
                 )
             }
         }
