@@ -127,7 +127,9 @@ public class GopaySDK {
     ///   - paymentId: The payment identifier issued by the merchant backend.
     ///   - paymentSecret: The matching `payment_secret`.
     ///   - scope: OAuth scopes to request. Defaults to ``PaymentSession/defaultScope``
-    ///     (`payment:charge payment:read`). Override only when a wider scope is needed.
+    ///     (`payment:charge payment:read`), which are the only two the gateway grants for payment
+    ///     credentials, so there is no wider one. A scope it does not accept throws
+    ///     ``GopaySDKError/Code/authPaymentCredentialsInvalid``.
     public func startPaymentSession(
         paymentId: String,
         paymentSecret: String,
@@ -200,6 +202,9 @@ public class GopaySDK {
         }
         do {
             return try await publicAPI.getPublicKey()
+        } catch is CancellationError {
+            // A cancelled fetch is not an error, so errorCallback does not hear of it.
+            throw CancellationError()
         } catch {
             handleError(error)
             throw error

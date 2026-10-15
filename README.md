@@ -139,8 +139,11 @@ let session = try await GopaySDK.shared.startPaymentSession(
 ```
 
 `startPaymentSession` authenticates eagerly, so invalid credentials throw right away
-(`GopaySDKError` with code `AUTH_010`). At most one live session per `payment_id` exists at a time;
-reuse it via `await GopaySDK.shared.getPaymentSession(paymentId)`. When done:
+(`GopaySDKError` with code `AUTH_010`, only when the gateway rejects the pair with a 400, 401 or
+403). Any other failure keeps its own code: offline is `NETWORK_004`, a 5xx is `NETWORK_003`, and so on
+(see [Error handling](#error-handling)), so do not ask your backend for a new payment over it.
+At most one live session per `payment_id` exists at a time; reuse it via
+`await GopaySDK.shared.getPaymentSession(paymentId)`. When done:
 
 ```swift
 await session.close() // wipes the in-memory secret + token, unregisters the session
@@ -231,11 +234,10 @@ warning in the debug log, because the SDK's own HTTP User-Agent would fail that 
 fields that are still `nil` are filled: a value you set on `BrowserData` stays, and when `ip` and
 `accept_header` are both set the gateway is not asked. When the fetch fails the charge is not
 sent; the error carries the underlying code (`NETWORK_002` for an HTTP 4xx, `NETWORK_003` for a
-5xx, `NETWORK_007` for a transport failure, `AUTH_011` when the config has no `shareableKey`, or
-whatever else the fetch produced) with the original error as `underlying`. The transport mapping
-to `NETWORK_007` applies to this step only: the charge request itself still surfaces a transport
-failure as the bare `URLError`, as before. `session.completeBrowserData(_:)` runs the same step
-on its own when you want to log what goes out; pass its result to the charge unchanged.
+5xx, one of the transport codes when no response came, `AUTH_011` when the config has no
+`shareableKey`, or whatever else the fetch produced) with the original error as `underlying`.
+`session.completeBrowserData(_:)` runs the same step on its own when you want to log what goes
+out; pass its result to the charge unchanged.
 
 ### Charging with a card token
 
@@ -690,21 +692,25 @@ let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
 ## Error handling
 
 Session and config failures throw `GopaySDKError`, which carries a stable `code` (matching the
-Android SDK) and a message:
+Android SDK) and a message. A request that got no HTTP response is one too, never a bare
+`URLError`, with the original error as `underlying`:
 
 | Code | Meaning |
 |---|---|
 | `AUTH_009` | Payment token expired and couldn't be re-acquired |
-| `AUTH_010` | `payment_id` / `payment_secret` rejected |
+| `AUTH_010` | `payment_id` / `payment_secret` rejected by `/oauth2/token` (HTTP 400, 401 or 403 only) |
 | `AUTH_011` | `clientId` / `shareableKey` missing for a public-endpoint call, including the browser data fetch a charge runs first |
 | `AUTH_012` | A session for this `payment_id` already exists |
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
+| `NETWORK_001` | No HTTP response: the request timed out |
 | `NETWORK_002` | Gateway returned 4xx |
 | `NETWORK_003` | Gateway returned 5xx |
-| `NETWORK_007` | No HTTP response: the connection failed, dropped or timed out (raised for the browser data fetch before a charge) |
+| `NETWORK_004` | No HTTP response: no connection (offline, the host does not resolve, the connection is refused) |
+| `NETWORK_005` | No HTTP response: a certificate failed (any other TLS failure is `NETWORK_007`) |
+| `NETWORK_007` | No HTTP response for any other reason, e.g. the connection dropped |
 | `CONFIG_001` | `initialize(with:)` was never called |
 | `CONFIG_003` | A required configuration parameter is missing |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |

@@ -53,6 +53,10 @@ extension DefaultNetworkClient: AsyncHTTPClient {
     /// the 3DS challenge WebView's, because the gateway echoes the header back as
     /// `browser_data.user_agent` and the issuer expects that value to match the browser it later
     /// sees. Overwriting it here would put the SDK's HTTP client name into the AReq instead.
+    ///
+    /// A request that gets no HTTP response throws a ``GopaySDKError`` from
+    /// ``GopaySDKError/transport(_:)``, never the bare `URLError`; a cancelled one throws
+    /// `CancellationError`.
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         var mutableRequest = request
         if mutableRequest.value(forHTTPHeaderField: "User-Agent") == nil {
@@ -62,7 +66,13 @@ extension DefaultNetworkClient: AsyncHTTPClient {
         return try await withCheckedThrowingContinuation { continuation in
             let task = session.dataTask(with: mutableRequest) { data, response, error in
                 if let error = error {
-                    continuation.resume(throwing: error)
+                    // A cancelled request is not a failed transport. Nothing in the SDK cancels
+                    // its data tasks today, but one that is cancelled must not read as NETWORK_007.
+                    if (error as? URLError)?.code == .cancelled {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        continuation.resume(throwing: GopaySDKError.transport(error))
+                    }
                     return
                 }
                 guard let http = response as? HTTPURLResponse else {

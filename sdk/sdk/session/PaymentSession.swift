@@ -108,11 +108,10 @@ public actor PaymentSession {
     /// - Throws: ``GopaySDKError`` when the fetch fails, with the underlying error's code
     ///   (``GopaySDKError/Code/networkClientError`` for an HTTP 4xx,
     ///   ``GopaySDKError/Code/networkServerError`` for a 5xx,
-    ///   ``GopaySDKError/Code/networkIOError`` for a transport failure,
-    ///   ``GopaySDKError/Code/authShareableKeyMissing`` when the config has no shareable key,
-    ///   or any other code the fetch produced) and the original error as `underlying`. A
-    ///   transport failure is mapped to `networkIOError` in this step only; the charge request
-    ///   itself still surfaces one as the bare `URLError`, as it always has.
+    ///   the transport codes `NETWORK_001`, `NETWORK_004`, `NETWORK_005` or `NETWORK_007` when no
+    ///   response came, ``GopaySDKError/Code/authShareableKeyMissing`` when the config has no
+    ///   shareable key, or any other code the fetch produced) and the original error as
+    ///   `underlying`.
     public func completeBrowserData(_ browserData: BrowserData) async throws -> BrowserData {
         var data = browserData
         if data.userAgent == nil {
@@ -140,13 +139,8 @@ public actor PaymentSession {
                 error.code,
                 message: "Failed to charge payment: browser data could not be fetched (\(error.message))",
                 httpStatus: error.httpStatus,
-                underlying: error
-            )
-        } catch {
-            throw GopaySDKError(
-                .networkIOError,
-                message: "Failed to charge payment: browser data could not be fetched (\(error.localizedDescription))",
-                underlying: error
+                // The failure itself, e.g. the URLError, not the SDK error already wrapping it.
+                underlying: error.underlying ?? error
             )
         }
     }
@@ -202,20 +196,15 @@ public actor PaymentSession {
                 grantType: Self.grantTypePaymentCredentials,
                 scope: scope
             )
-        } catch let error as GopaySDKError where error.code == .networkClientError {
-            // A 4xx from /oauth2/token means the payment_id / payment_secret pair was rejected.
+        } catch let error as GopaySDKError where [400, 401, 403].contains(error.httpStatus) {
+            // Only the gateway turning the pair down means the payment_id / payment_secret pair
+            // is wrong; a payment_secret past its seven days is refused with a 403, so that one
+            // counts too. Any other 4xx, a 5xx and a transport failure keep their own codes, so a
+            // device that is merely offline is not told to fetch new credentials.
             throw GopaySDKError(
                 .authPaymentCredentialsInvalid,
                 message: "payment_credentials rejected: HTTP \(error.httpStatus.map(String.init) ?? "?")",
                 httpStatus: error.httpStatus,
-                underlying: error
-            )
-        } catch let error as GopaySDKError {
-            throw error
-        } catch {
-            throw GopaySDKError(
-                .authPaymentCredentialsInvalid,
-                message: "Failed to acquire payment-scoped token: \(error.localizedDescription)",
                 underlying: error
             )
         }
@@ -244,8 +233,9 @@ public actor PaymentSession {
         return session
     }
 
-    /// Minimal scope sufficient to read a payment and charge it. Override by passing a different
-    /// `scope` to ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)``.
+    /// The scope to read a payment and charge it, and the widest the gateway grants for payment
+    /// credentials: `payment:read` and `payment:charge` are the only two. Pass a narrower one to
+    /// ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` to only read the payment.
     public static let defaultScope = "payment:charge payment:read"
 
     // Custom GoPay grant type for the payment-credentials flow (Payments.yaml,

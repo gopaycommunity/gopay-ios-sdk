@@ -13,7 +13,8 @@ public struct GopaySDKError: LocalizedError {
         // Authentication (AUTH_XXX)
         /// Payment-scoped JWT expired and could not be re-acquired from the cached payment credentials.
         case authPaymentTokenExpired = "AUTH_009"
-        /// `payment_id` / `payment_secret` pair was rejected by `/oauth2/token`.
+        /// `payment_id` / `payment_secret` pair was rejected by `/oauth2/token` with HTTP 400, 401
+        /// or 403.
         case authPaymentCredentialsInvalid = "AUTH_010"
         /// `clientId` / `shareableKey` missing from the config but required by the requested operation.
         case authShareableKeyMissing = "AUTH_011"
@@ -23,11 +24,21 @@ public struct GopaySDKError: LocalizedError {
         case authPaymentSessionClosed = "AUTH_013"
 
         // Network (NETWORK_XXX)
+        /// The request timed out before the gateway answered.
+        case networkTimeout = "NETWORK_001"
         /// HTTP client error (4xx).
         case networkClientError = "NETWORK_002"
         /// HTTP server error (5xx).
         case networkServerError = "NETWORK_003"
-        /// The request never got an HTTP response: the connection failed, dropped, or timed out.
+        /// No connection to the gateway: the device is offline, the host does not resolve, or the
+        /// connection is refused.
+        case networkNoConnection = "NETWORK_004"
+        /// A certificate failed: the server's was not accepted, or the server asked for or refused
+        /// a client certificate. Any other TLS failure, a connection reset mid-handshake included,
+        /// is ``networkIOError``.
+        case networkSSLError = "NETWORK_005"
+        /// The request never got an HTTP response for any other reason, e.g. the connection
+        /// dropped halfway.
         case networkIOError = "NETWORK_007"
 
         // Configuration (CONFIG_XXX)
@@ -76,4 +87,44 @@ public struct GopaySDKError: LocalizedError {
     }
 
     public var errorDescription: String? { "[\(code.rawValue)] \(message)" }
+}
+
+extension GopaySDKError {
+
+    /// The error a request that never got an HTTP response surfaces as. Mirrors the transport
+    /// mapping of the Android SDK, so both report the same code for the same failure:
+    ///
+    /// - a timeout is ``Code/networkTimeout``;
+    /// - no connection (offline, a host that does not resolve, a refused connection) is
+    ///   ``Code/networkNoConnection``;
+    /// - a certificate failure is ``Code/networkSSLError``;
+    /// - anything else is ``Code/networkIOError``.
+    ///
+    /// The original error is kept as `underlying`.
+    static func transport(_ error: Error) -> GopaySDKError {
+        let code: Code
+        switch (error as? URLError)?.code {
+        case URLError.Code.timedOut?:
+            code = .networkTimeout
+        case URLError.Code.notConnectedToInternet?, URLError.Code.cannotFindHost?,
+             URLError.Code.cannotConnectToHost?, URLError.Code.dnsLookupFailed?,
+             URLError.Code.dataNotAllowed?, URLError.Code.internationalRoamingOff?,
+             URLError.Code.callIsActive?:
+            code = .networkNoConnection
+        case URLError.Code.serverCertificateHasBadDate?, URLError.Code.serverCertificateUntrusted?,
+             URLError.Code.serverCertificateHasUnknownRoot?, URLError.Code.serverCertificateNotYetValid?,
+             URLError.Code.clientCertificateRejected?, URLError.Code.clientCertificateRequired?:
+            // Only a certificate. `secureConnectionFailed` says the handshake failed for a reason
+            // Apple does not name, a reset connection included, so it is NETWORK_007, as an
+            // `SSLException` without a certificate cause is on Android.
+            code = .networkSSLError
+        default:
+            code = .networkIOError
+        }
+        return GopaySDKError(
+            code,
+            message: "The request got no HTTP response: \(error.localizedDescription)",
+            underlying: error
+        )
+    }
 }

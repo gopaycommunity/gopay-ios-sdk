@@ -34,13 +34,16 @@ Never add, rename, or repurpose a code on one platform alone.
 
 ### AUTH_010: Invalid Payment Credentials
 - **Case**: `authPaymentCredentialsInvalid`
-- **Description**: The `payment_id` / `payment_secret` pair was rejected by `/oauth2/token`
+- **Description**: The `payment_id` / `payment_secret` pair was rejected by `/oauth2/token`, which answered HTTP 400, 401 or 403
 - **Common Causes**:
   - Pair belongs to a different environment than the SDK is configured for
   - Payment already closed or expired on the gateway
+  - `payment_secret` older than seven days, which the gateway refuses with a 403
+  - A `scope` the gateway does not accept for payment credentials, passed to `startPaymentSession` (only `payment:read` and `payment:charge` are)
 - **Developer Action**:
   - Re-fetch the pair from your merchant backend
   - Confirm the SDK's environment matches the one that created the payment
+- **Note**: any other answer keeps its own code: another 4xx is `NETWORK_002`, a 5xx is `NETWORK_003`, and no response at all is one of the transport codes below. Only this code means the credentials are wrong
 
 ### AUTH_011: Shareable Key Missing
 - **Case**: `authShareableKeyMissing`
@@ -69,6 +72,17 @@ Never add, rename, or repurpose a code on one platform alone.
 
 ## Network Errors (NETWORK_XXX)
 
+A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, `NETWORK_005` or
+`NETWORK_007`, with the `URLError` as `underlying`. The same mapping applies on Android.
+
+### NETWORK_001: Timeout
+- **Case**: `networkTimeout`
+- **Description**: The request timed out before the gateway answered
+- **Common Causes**:
+  - Slow or congested connection
+- **Developer Action**:
+  - Retry with backoff; read `getChargeState()` before charging again, since a charge may have reached the gateway
+
 ### NETWORK_002: HTTP Client Error (4xx)
 - **Case**: `networkClientError`
 - **Description**: The gateway returned a 4xx status
@@ -86,15 +100,31 @@ Never add, rename, or repurpose a code on one platform alone.
 - **Developer Action**:
   - Retry with backoff; surface a transient-failure message to the user
 
+### NETWORK_004: No Connection
+- **Case**: `networkNoConnection`
+- **Description**: No connection to the gateway: the device is offline, the host does not resolve, or the connection is refused
+- **Common Causes**:
+  - Device offline, in flight mode, or without data allowed for the app
+- **Developer Action**:
+  - Tell the user they are offline and let them retry; the request was not delivered
+
+### NETWORK_005: TLS Error
+- **Case**: `networkSSLError`
+- **Description**: A certificate failed: the gateway's was not accepted, or a client certificate was asked for or refused; the `URLError` is the `underlying`. Any other TLS failure, a connection reset during the handshake included, is `NETWORK_007`
+- **Common Causes**:
+  - A captive portal or an intercepting proxy presenting its own certificate
+  - A wrong device clock, which makes a valid certificate look expired
+- **Developer Action**:
+  - Retry on another network; `underlying` carries the `URLError`
+
 ### NETWORK_007: Network I/O Error
 - **Case**: `networkIOError`
-- **Description**: The request never got an HTTP response: the connection failed, dropped, or timed out
+- **Description**: The request never got an HTTP response for any other reason
 - **Common Causes**:
-  - Device offline or the connection interrupted while `GET /cards/browser-data` ran before a charge
+  - The connection dropped halfway through the request
 - **Developer Action**:
-  - Retry the charge; `underlying` carries the `URLError`
-  - The charge itself was not sent, so nothing needs to be checked on the gateway
-- **Note**: raised only for the browser data fetch a charge runs first; other transport failures still surface as the bare `URLError`
+  - Retry; `underlying` carries the `URLError`
+  - When it was a charge, read `getChargeState()` first: the charge may have reached the gateway. When it was the browser data fetch a charge runs first, the charge itself was not sent
 
 ## Configuration Errors (CONFIG_XXX)
 

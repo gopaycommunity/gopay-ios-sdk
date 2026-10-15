@@ -31,19 +31,19 @@ private func makeJWT(exp: TimeInterval?) -> String {
 
 private func validToken() -> String { makeJWT(exp: Date().timeIntervalSince1970 + 3600) }
 
-private func json(_ object: [String: Any]) -> Data {
+func json(_ object: [String: Any]) -> Data {
     (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
 }
 
-private let stubBaseURL = "https://stub.test/"
+let stubBaseURL = "https://stub.test/"
 
-private func stubbedClient() -> DefaultNetworkClient {
+func stubbedClient() -> DefaultNetworkClient {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubURLProtocol.self]
     return DefaultNetworkClient(baseURL: stubBaseURL, configuration: config)
 }
 
-private func tokenResponse() -> (Int, Data) {
+func tokenResponse() -> (Int, Data) {
     (200, json(["access_token": validToken(), "token_type": "bearer", "expires_in": 900]))
 }
 
@@ -65,8 +65,9 @@ struct RecordedRequest {
 final class StubURLProtocol: URLProtocol {
     typealias Handler = (URLRequest) -> (status: Int, body: Data)
 
-    /// Handler status that makes the stub fail the request at the transport level, the way a
-    /// dropped connection would, instead of answering it.
+    /// Handler status that makes the stub fail the request at the transport level instead of
+    /// answering it, with the `transportError` of ``reset(delay:headers:transportError:handler:)``:
+    /// a dropped connection unless a test picks another.
     static let transportFailure = -1
 
     private static let lock = NSLock()
@@ -76,13 +77,21 @@ final class StubURLProtocol: URLProtocol {
     private static var storedDelay: TimeInterval = 0
     /// Extra response headers every answer carries, such as the gateway's `Date`.
     private static var storedHeaders: [String: String] = [:]
+    /// What a ``transportFailure`` fails with.
+    private static var storedTransportError = URLError.Code.networkConnectionLost
 
-    static func reset(delay: TimeInterval = 0, headers: [String: String] = [:], handler: @escaping Handler) {
+    static func reset(
+        delay: TimeInterval = 0,
+        headers: [String: String] = [:],
+        transportError: URLError.Code = .networkConnectionLost,
+        handler: @escaping Handler
+    ) {
         lock.lock(); defer { lock.unlock() }
         storedHandler = handler
         recordedRequests = []
         storedDelay = delay
         storedHeaders = headers
+        storedTransportError = transportError
     }
 
     static func requestCount(forPathSuffix suffix: String) -> Int {
@@ -113,6 +122,7 @@ final class StubURLProtocol: URLProtocol {
         let handler = StubURLProtocol.storedHandler
         let delay = StubURLProtocol.storedDelay
         let headers = StubURLProtocol.storedHeaders
+        let transportError = StubURLProtocol.storedTransportError
         StubURLProtocol.lock.unlock()
 
         if delay > 0 { Thread.sleep(forTimeInterval: delay) }
@@ -123,7 +133,7 @@ final class StubURLProtocol: URLProtocol {
         }
         let (status, body) = handler(request)
         if status == StubURLProtocol.transportFailure {
-            client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+            client?.urlProtocol(self, didFailWithError: URLError(transportError))
             return
         }
         let response = HTTPURLResponse(
@@ -152,6 +162,30 @@ final class StubURLProtocol: URLProtocol {
             data.append(buffer, count: read)
         }
         return data
+    }
+}
+
+/// A flag the stub's handler reads from the URL loading thread.
+final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = false
+
+    var value: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return stored }
+        set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+}
+
+/// A counter the stub's handler can bump from the URL loading thread.
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    /// Adds one and returns the new count.
+    func increment() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        value += 1
+        return value
     }
 }
 
@@ -395,7 +429,7 @@ struct ChargeInputEncodingTests {
 @Suite(.serialized)
 struct SessionNetworkTests {
 
-    private func makeSession(shareableKey: String? = "shareable") async throws -> PaymentSession {
+    func makeSession(shareableKey: String? = "shareable") async throws -> PaymentSession {
         let client = stubbedClient()
         return try await PaymentSession.create(
             paymentId: "p1", paymentSecret: "secret", scope: "payment:charge",
