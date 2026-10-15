@@ -53,14 +53,18 @@ final class GopayApplePayCoordinator: NSObject {
 
         let usableNetworks = paymentRequest.supportedNetworks
         guard !usableNetworks.isEmpty else {
-            completion(.failure(GopaySDKErrors.sdkError(
-                "Apple Pay is not available: backend returned no supported networks that the SDK can map."
+            completion(.failure(GopaySDKError(
+                .paymentMethodUnavailable,
+                message: "Apple Pay is not available: the payment allows no card network the SDK can map"
             )))
             return
         }
 
         guard PKPaymentAuthorizationController.canMakePayments() else {
-            completion(.failure(GopaySDKErrors.sdkError(GopaySDKErrors.applePayUnavailable)))
+            completion(.failure(GopaySDKError(
+                .paymentMethodUnavailable,
+                message: "Apple Pay is not available on this device"
+            )))
             return
         }
 
@@ -72,14 +76,21 @@ final class GopayApplePayCoordinator: NSObject {
         controller.present { [weak self] presented in
             if !presented {
                 guard let self = self else { return }
-                self.finish(with: .failure(GopaySDKErrors.sdkError(
-                    "Apple Pay sheet could not be presented. Enable the Apple Pay capability in Xcode (Signing & Capabilities tab) and ensure a valid Merchant ID is configured in both the entitlement and the merchantIdentifier returned by the backend."
+                self.finish(with: .failure(GopaySDKError(
+                    .paymentMethodUnavailable,
+                    message: "Apple Pay sheet could not be presented. Enable the Apple Pay capability in Xcode (Signing & Capabilities tab) and ensure a valid Merchant ID is configured in both the entitlement and the merchantIdentifier returned by the backend."
                 )))
             }
         }
     }
 
     // MARK: - Helpers
+
+    /// What the call ends with once the sheet has closed: the charge's result, or, when nothing
+    /// was authorized, the user's dismissal.
+    func resultOnceTheSheetCloses() -> Swift.Result<ChargePaymentResponse, Error> {
+        chargeResult ?? .failure(GopaySDKErrors.sdkError(GopaySDKErrors.applePayCancelled))
+    }
 
     private func finish(with result: Swift.Result<ChargePaymentResponse, Error>) {
         let handler = completion
@@ -160,9 +171,18 @@ final class GopayApplePayCoordinator: NSObject {
 
     // MARK: - PKPaymentToken → TokenFields
 
-    private static func mapToken(_ token: PKPaymentToken) -> TokenFields? {
-        guard !token.paymentData.isEmpty,
-              let parsed = try? JSONSerialization.jsonObject(with: token.paymentData, options: []) as? [String: Any],
+    /// Reads the fields the charge needs from the token, or throws
+    /// ``GopaySDKError/Code/paymentProcessingFailed`` when there is nothing usable in it.
+    static func mapToken(_ token: PKPaymentToken) throws -> TokenFields {
+        // The iOS Simulator authorizes the sheet but hands back no payment data, so this is what
+        // a developer trying Apple Pay there runs into first.
+        guard !token.paymentData.isEmpty else {
+            throw GopaySDKError(
+                .paymentProcessingFailed,
+                message: "Apple Pay returned an empty payment token. The iOS Simulator does not produce a real one; test on a device with an Apple Pay sandbox tester account"
+            )
+        }
+        guard let parsed = try? JSONSerialization.jsonObject(with: token.paymentData, options: []) as? [String: Any],
               let version = parsed["version"] as? String,
               let signature = parsed["signature"] as? String,
               let dataField = parsed["data"] as? String,
@@ -171,7 +191,10 @@ final class GopayApplePayCoordinator: NSObject {
               let publicKeyHash = headerDict["publicKeyHash"] as? String,
               let transactionId = headerDict["transactionId"] as? String
         else {
-            return nil
+            throw GopaySDKError(
+                .paymentProcessingFailed,
+                message: "Apple Pay returned a payment token the SDK cannot read"
+            )
         }
 
         return TokenFields(
@@ -196,8 +219,10 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
         didAuthorizePayment payment: PKPayment,
         handler completion: @escaping (PKPaymentAuthorizationResult) -> Void
     ) {
-        guard let fields = Self.mapToken(payment.token) else {
-            let error = GopaySDKErrors.sdkError(GopaySDKErrors.applePayAuthorizationFailed)
+        let fields: TokenFields
+        do {
+            fields = try Self.mapToken(payment.token)
+        } catch {
             self.chargeResult = .failure(error)
             completion(PKPaymentAuthorizationResult(status: .failure, errors: [error]))
             return
@@ -223,9 +248,7 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
     ) {
         controller.dismiss { [weak self] in
             guard let self = self else { return }
-            let result = self.chargeResult
-                ?? .failure(GopaySDKErrors.sdkError(GopaySDKErrors.applePayCancelled))
-            self.finish(with: result)
+            self.finish(with: self.resultOnceTheSheetCloses())
         }
     }
 }

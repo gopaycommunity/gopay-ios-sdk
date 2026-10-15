@@ -50,6 +50,12 @@ public struct GopaySDKError: LocalizedError {
         case invalidBaseURL = "CONFIG_006"
 
         // Payment (PAYMENT_XXX)
+        /// A wallet payment failed: the wallet produced no usable payment token. A failed charge
+        /// keeps the code of its own failure.
+        case paymentProcessingFailed = "PAYMENT_003"
+        /// The wallet cannot be used here: the device cannot pay with it, the payment allows no
+        /// card network it supports, or its sheet could not be shown.
+        case paymentMethodUnavailable = "PAYMENT_004"
         /// A 3DS verification is already in progress; only one can run at a time.
         case paymentVerificationInProgress = "PAYMENT_008"
         /// An Apple Pay sheet is already in progress; only one can run at a time.

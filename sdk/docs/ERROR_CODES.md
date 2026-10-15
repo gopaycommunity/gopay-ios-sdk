@@ -154,6 +154,28 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 
 ## Payment Errors (PAYMENT_XXX)
 
+### PAYMENT_003: Payment Processing Failed
+- **Case**: `paymentProcessingFailed`
+- **Description**: The wallet produced no usable payment token
+- **Common Causes**:
+  - Apple Pay returned a token the SDK cannot read
+  - Apple Pay returned an empty token, which is what the iOS Simulator does
+- **Developer Action**:
+  - Let the user try again or pick another method
+  - Test Apple Pay on a device with an Apple Pay sandbox tester account, not in the Simulator
+- **Note**: a charge that fails after the token was read keeps the code of its own failure. On Android the same code covers a Google Pay error and empty payment data, and also a Google Pay set up wrongly for the app, which on iOS is `PAYMENT_004` (see there)
+
+### PAYMENT_004: Payment Method Unavailable
+- **Case**: `paymentMethodUnavailable`
+- **Description**: The wallet cannot be used for this payment
+- **Common Causes**:
+  - The device cannot pay with Apple Pay
+  - The payment allows no card network the SDK can offer in the sheet
+  - The sheet could not be shown: the Apple Pay capability or the merchant ID is missing from the app
+- **Developer Action**:
+  - Hide the Apple Pay button and offer another method; check the entitlement when it happens on a device that has Apple Pay
+- **Note**: a wallet set up wrongly for the app differs between the platforms. On iOS the sheet then cannot be shown, which is this code; on Android Google Pay answers with an error, which is `PAYMENT_003`. The Android SDK uses this code only when Google Pay itself cannot be used
+
 ### PAYMENT_008: Verification Already In Progress
 - **Case**: `paymentVerificationInProgress`
 - **Description**: A 3DS verification is already running; only one can run at a time
@@ -169,6 +191,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - `chargeWithApplePay` invoked twice, e.g. from a double tap
 - **Developer Action**:
   - Disable the pay button while a charge is in flight
+- **Note**: used only for a sheet that is already up, never for a wallet failure (see `PAYMENT_003` and `PAYMENT_004`)
 
 ### PAYMENT_010: Verification Unreachable
 - **Case**: `paymentVerificationUnreachable`

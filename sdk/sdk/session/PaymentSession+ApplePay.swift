@@ -13,7 +13,11 @@ public extension PaymentSession {
     ///
     /// Only one Apple Pay sheet can be presented per process; a concurrent attempt throws
     /// ``GopaySDKError/Code/paymentApplePayInProgress``. User dismissal is reported as
-    /// `CancellationError`.
+    /// `CancellationError`. When Apple Pay cannot be used, because the device cannot pay with it,
+    /// the payment allows no card network it supports or the sheet cannot be shown, it throws
+    /// ``GopaySDKError/Code/paymentMethodUnavailable``; a payment token the SDK cannot read, or an
+    /// empty one as the iOS Simulator returns, is ``GopaySDKError/Code/paymentProcessingFailed``.
+    /// A failed charge keeps its own code.
     ///
     /// - Parameters:
     ///   - browserData: Optional 3DS browser data. The spec requires it on every card charge; when

@@ -206,7 +206,9 @@ do {
 ```
 
 `chargeWithApplePay` derives the required `browser_data` from the device automatically; pass your
-own `BrowserData` if you have more accurate values.
+own `BrowserData` if you have more accurate values. When Apple Pay cannot be used it throws
+`PAYMENT_004` (hide the button and offer another method); a token the SDK cannot use, such as the
+empty one the iOS Simulator returns, is `PAYMENT_003`. A charge that fails keeps its own code.
 
 ### Browser data / User-Agent
 
@@ -702,6 +704,8 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `AUTH_011` | `clientId` / `shareableKey` missing for a public-endpoint call, including the browser data fetch a charge runs first |
 | `AUTH_012` | A session for this `payment_id` already exists |
 | `AUTH_013` | Operation on a closed session |
+| `PAYMENT_003` | Apple Pay produced no usable payment token (unreadable, or empty as in the iOS Simulator) |
+| `PAYMENT_004` | Apple Pay cannot be used: the device cannot pay with it, no supported card network, or the sheet could not be shown |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
