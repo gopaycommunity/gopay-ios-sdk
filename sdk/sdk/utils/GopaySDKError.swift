@@ -46,7 +46,8 @@ public struct GopaySDKError: LocalizedError {
         // Configuration (CONFIG_XXX)
         /// SDK has not been initialized.
         case sdkNotInitialized = "CONFIG_001"
-        /// Missing required configuration parameter.
+        /// Missing required configuration parameter. The SDK does not throw this code.
+        @available(*, deprecated, message: "The SDK does not throw this code; it will be removed in 3.0")
         case configMissingParameter = "CONFIG_003"
         /// Invalid API base URL.
         case invalidBaseURL = "CONFIG_006"

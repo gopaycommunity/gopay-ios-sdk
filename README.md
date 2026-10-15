@@ -720,7 +720,7 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `NETWORK_005` | No HTTP response: a certificate failed (any other TLS failure is `NETWORK_007`) |
 | `NETWORK_007` | No HTTP response for any other reason, e.g. the connection dropped |
 | `CONFIG_001` | `initialize(with:)` was never called |
-| `CONFIG_003` | A required configuration parameter is missing |
+| `CONFIG_003` | Not thrown by the SDK; deprecated, removed in 3.0 |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |
 | `VALIDATION_007` | Invalid input — empty ids, or card-form validation failed |
 | `INTERNAL_001` | Unexpected internal error |

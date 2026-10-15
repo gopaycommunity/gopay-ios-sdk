@@ -144,6 +144,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Description**: A required configuration parameter is missing
 - **Developer Action**:
   - Check the values passed into `GopaySDKConfig`
+- **Note**: the SDK does not throw this code. The case is deprecated and will be removed in 3.0
 
 ### CONFIG_006: Invalid Base URL
 - **Case**: `invalidBaseURL`
