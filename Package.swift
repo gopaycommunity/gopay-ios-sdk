@@ -15,7 +15,8 @@ let package = Package(
     targets: [
         .target(
             name: "GopaySDK",
-            path: "sdk/sdk"),
+            path: "sdk/sdk",
+            resources: [.copy("PrivacyInfo.xcprivacy")]),
     ],
     swiftLanguageVersions: [.v5]
 ) 

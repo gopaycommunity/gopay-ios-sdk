@@ -12,6 +12,7 @@ Pod::Spec.new do |spec|
   spec.platform     = :ios, "13.0"
   spec.source       = { :git => "https://github.com/gopaycommunity/gopay-ios-sdk.git", :tag => "#{spec.version}" }
   spec.source_files = "sdk/sdk/**/*.{swift,h,m}"
+  spec.resource_bundles = { "GopaySDK_Privacy" => ["sdk/sdk/PrivacyInfo.xcprivacy"] }
   spec.swift_version = "5.5"
   spec.static_framework = true
   spec.requires_arc = true
