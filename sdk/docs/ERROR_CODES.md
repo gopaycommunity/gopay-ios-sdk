@@ -204,7 +204,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - The challenge asked to hand off to a banking app and nothing on the device opened it
 - **Developer Action**:
   - Read the charge state and report the payment as unverified rather than as abandoned
-  - Do not treat it as a user dismissal, which arrives as a cancellation instead
+  - Do not treat it as a user dismissal, which arrives as `PAYMENT_011` instead
   - Charge again to obtain a fresh redirect URL
   - A presentation that was refused can be retried as soon as the screen is free
   - A hand-off nobody took usually means the banking app is not installed; offer the user another way to authorize
@@ -212,6 +212,18 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   presentation is an iOS-only cause: UIKit will not present while the previous screen is still
   animating away, and the Android activity has no such window. The Android SDK reports the same
   code without `httpStatus` and without that cause.
+
+### PAYMENT_011: Payment Cancelled
+- **Case**: `paymentCancelled`
+- **Description**: The payment window closed before it finished: the Apple Pay sheet or the 3DS screen was closed, or the 3DS page failed after it had started rendering
+- **Common Causes**:
+  - The Apple Pay sheet was closed without paying
+  - The 3DS verification screen was closed, by the user or by the app's own navigation, e.g. after the return from a banking app
+  - The 3DS page failed after it had started rendering, when the user may already have answered
+- **Developer Action**:
+  - Not a failed payment, and not necessarily one that did not happen: read `getChargeState()` before offering the payment again. A 3DS challenge may have been answered
+  - When there is no charge (`NETWORK_002`, HTTP 404) or it did not go through, let the user pick a method again
+- **Note**: cancelling the task that awaits the call is not this code, see Cancellation below. The Android SDK reports the same code for Google Pay and its 3DS screen
 
 ## Validation Errors (VALIDATION_XXX)
 
@@ -243,18 +255,20 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 
 ## Cancellation
 
-Neither path reports a `GopaySDKError`, and the two differ:
+Two different things end a payment window early, and they are reported differently:
 
-- Dismissing the **3DS WebView** throws `CancellationError`, and so does the WebView being closed
-  by anything other than the SDK, such as the app's navigation after the return from the bank.
-  The next verification can start right away.
-- Dismissing the **Apple Pay sheet** throws a `GopaySDK` `NSError` (domain `GopaySDK`, code `-1`)
-  carrying "Apple Pay payment was cancelled by the user." — not `CancellationError`.
-
-Treat both as a user action rather than a failure, but catch the Apple Pay case in a general
-`catch`.
+- **The window closed**: the Apple Pay sheet closed without paying, the 3DS screen closed by the
+  user or by anything other than the SDK, or the 3DS page failing after it had started rendering.
+  That throws `PAYMENT_011` (see above). The next verification or sheet can start right away. An
+  Apple Pay sheet that closes while its charge is still running is not this case: the call waits
+  for the charge and returns its result or its error.
+- **Your code cancelled the task** that awaits the call. For `handle3dsVerification` that closes
+  the 3DS screen and throws `CancellationError`, which is not a `GopaySDKError`.
+  `chargeWithApplePay` throws it only when the task is cancelled before the sheet is shown. A
+  sheet already up is not closed: the call waits until the sheet closes and ends with the
+  charge's result or `PAYMENT_011`. The Android SDK differs here, see its `ERROR_CODES.md`.
 
 A 3DS challenge that never reached the user is neither: it throws `PAYMENT_010` (see above), and
 the payment is unverified rather than abandoned. Anything that breaks after the challenge has
-started rendering is reported as a cancellation, because by then the user may already have
+started rendering is reported as `PAYMENT_011`, because by then the user may already have
 answered and only `getChargeState()` can say how the payment ended.

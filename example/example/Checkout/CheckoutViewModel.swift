@@ -104,6 +104,8 @@ final class CheckoutViewModel {
 
     private(set) var paymentId: String?
     private var session: PaymentSession?
+    /// Whether the current attempt's charge has gone out, which decides what a closed window means.
+    private var chargeSent = false
 
     var isBusy: Bool { busyLabel != nil }
 
@@ -124,6 +126,7 @@ final class CheckoutViewModel {
 
     func pay() async {
         banner = nil
+        chargeSent = false
         do {
             switch selectedMethod {
             case .card:        try await payWithNewCard()
@@ -132,14 +135,65 @@ final class CheckoutViewModel {
             case .bankTransfer: try await showBankTransfer()
             }
         } catch is CancellationError {
-            // The shopper backed out of the Apple Pay or 3DS sheet — that is not a failed payment.
-            banner = "Payment cancelled. Pick a method and try again."
+            // The checkout's own task going away, not the shopper: nothing left to show it on.
+        } catch let error as GopaySDKError where error.code == .paymentCancelled {
+            await settleAfterCancellation()
         } catch let error as GopaySDKError {
             fail(message: "[\(error.code.rawValue)] \(error.message)")
         } catch {
             fail(message: error.localizedDescription)
         }
         busyLabel = nil
+    }
+
+    /// PAYMENT_011: the Apple Pay sheet or the 3DS challenge closed before it finished.
+    ///
+    /// An Apple Pay sheet closed before its charge went out sends nothing, so a soft banner is all
+    /// it takes. After the charge went out it is not necessarily a payment that did not happen:
+    /// after a 3DS challenge closed by the app, or one that failed once it was on screen, the
+    /// shopper may already have confirmed the payment at the bank. So the charge is read before a
+    /// new payment is offered: a result is shown, an undecided charge is polled, and only a charge
+    /// the gateway says does not exist, or one that did not go through, gets the soft banner. When
+    /// the charge cannot be read, the pending screen with its Refresh button stays up rather than
+    /// a new payment being offered.
+    private func settleAfterCancellation() async {
+        let pickAgain = "Payment cancelled. Pick a method and try again."
+        guard chargeSent, let session else {
+            banner = pickAgain
+            return
+        }
+        var lastRead: ChargePaymentResponse?
+        do {
+            busyLabel = "Checking the payment…"
+            let charge = try await session.getChargeState()
+            lastRead = charge
+            switch charge.state {
+            case .succeeded:
+                outcome = Outcome(state: charge.state, response: charge, message: charge.failReason)
+            case .requested, .processing, .unknown:
+                let settled = try await settle(session: session, initial: charge)
+                outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
+            case .failed, .actionRequired:
+                // Back to the checkout, also from the pending screen's Refresh.
+                outcome = nil
+                banner = pickAgain
+            }
+        } catch let error as GopaySDKError where error.code == .networkClientError && error.httpStatus == 404 {
+            // The gateway confirms there is no charge on this payment: nothing went out.
+            outcome = nil
+            banner = pickAgain
+        } catch is CancellationError {
+            // The checkout's own task going away, not the shopper: nothing left to show it on.
+        } catch {
+            // The charge may be through, so no new payment: the pending screen and its Refresh.
+            let reason = (error as? GopaySDKError).map { "[\($0.code.rawValue)] \($0.message)" }
+                ?? error.localizedDescription
+            outcome = Outcome(
+                state: lastRead?.state ?? .unknown,
+                response: lastRead,
+                message: "Couldn't check the payment: \(reason)"
+            )
+        }
     }
 
     /// Called from the result screen's "Try another method".
@@ -166,7 +220,9 @@ final class CheckoutViewModel {
             let settled = try await settle(session: session, initial: charge)
             outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
         } catch is CancellationError {
-            banner = "Verification cancelled."
+            // The checkout's own task going away, not the shopper: nothing left to show it on.
+        } catch let error as GopaySDKError where error.code == .paymentCancelled {
+            await settleAfterCancellation()
         } catch let error as GopaySDKError {
             banner = "[\(error.code.rawValue)] \(error.message)"
         } catch {
@@ -242,6 +298,7 @@ final class CheckoutViewModel {
     /// Charge, then settle. Shared by every card-based method.
     private func runCharge(session: PaymentSession, _ charge: () async throws -> ChargePaymentResponse) async throws {
         let response = try await charge()
+        chargeSent = true
         let settled = try await settle(session: session, initial: response)
         outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
     }

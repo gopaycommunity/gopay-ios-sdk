@@ -485,7 +485,9 @@ struct ContentView: View {
         do {
             try await work()
         } catch is CancellationError {
-            log("Cancelled by user.")
+            // The console's own task going away, not the user: nothing left to show it on.
+        } catch let error as GopaySDKError where error.code == .paymentCancelled {
+            log("Closed before it finished [\(error.code.rawValue)]: \(error.message)")
         } catch let error as GopaySDKError {
             log("Error [\(error.code.rawValue)]: \(error.message)")
         } catch {

@@ -12,12 +12,20 @@ public extension PaymentSession {
     /// ``getChargeState()`` for the final result.
     ///
     /// Only one Apple Pay sheet can be presented per process; a concurrent attempt throws
-    /// ``GopaySDKError/Code/paymentApplePayInProgress``. User dismissal is reported as
-    /// `CancellationError`. When Apple Pay cannot be used, because the device cannot pay with it,
-    /// the payment allows no card network it supports or the sheet cannot be shown, it throws
+    /// ``GopaySDKError/Code/paymentApplePayInProgress``. A sheet closed without paying throws
+    /// ``GopaySDKError/Code/paymentCancelled``. A sheet that closes while its charge is still
+    /// running, which PassKit does after a time limit, does not end the call: it waits for the
+    /// charge and returns its result or its error. When Apple Pay
+    /// cannot be used, because the device cannot pay with it, the payment allows no card network
+    /// it supports or the sheet cannot be shown, it throws
     /// ``GopaySDKError/Code/paymentMethodUnavailable``; a payment token the SDK cannot read, or an
     /// empty one as the iOS Simulator returns, is ``GopaySDKError/Code/paymentProcessingFailed``.
     /// A failed charge keeps its own code.
+    ///
+    /// A task cancelled before the sheet is shown throws `CancellationError` and shows nothing.
+    /// Cancelling it later does not close the sheet: the call waits until the sheet closes and
+    /// ends with the charge's result or ``GopaySDKError/Code/paymentCancelled``. The Android SDK
+    /// differs here, its call ends at once.
     ///
     /// - Parameters:
     ///   - browserData: Optional 3DS browser data. The spec requires it on every card charge; when
@@ -36,6 +44,9 @@ public extension PaymentSession {
             resolvedBrowserData = await BrowserData.deviceDefault()
         }
 
+        // A task already cancelled gets no sheet. Once the sheet is up it stays until it closes,
+        // and the call ends with what the sheet ended with.
+        try Task.checkCancellation()
         return try await presentApplePay(
             appInfo: appInfo,
             browserData: resolvedBrowserData,

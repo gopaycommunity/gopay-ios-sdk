@@ -197,11 +197,10 @@ do {
     }
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     print("The 3DS challenge never reached the user; charge again for a fresh redirect")
-} catch is CancellationError {
-    print("User dismissed the 3DS verification")
+} catch let error as GopaySDKError where error.code == .paymentCancelled {
+    print("The user closed the Apple Pay sheet or the 3DS verification")
 } catch {
-    // Dismissing the Apple Pay sheet lands here, not in the CancellationError branch
-    print("Charge failed or Apple Pay was dismissed:", error.localizedDescription)
+    print("Charge failed:", error.localizedDescription)
 }
 ```
 
@@ -299,9 +298,11 @@ It has three ends, not two:
 - **Answered** — the ACS navigates to an address starting with the return URL, which the
   WebView intercepts without loading, and the call returns normally. Read the outcome with
   `getChargeState()`; the SDK does not decide whether the payment went through.
-- **Dismissed** — the user closed the screen, which surfaces as `CancellationError`. So does a
-  screen closed by anything other than the SDK, such as your app's navigation after the return
-  from the bank; the next verification can start right away.
+- **Closed** — the screen closed before the challenge returned, which throws `GopaySDKError` with
+  `paymentCancelled` (`PAYMENT_011`), whether the user closed it or something other than the SDK
+  did, such as your app's navigation after the return from the bank. The user may have answered
+  the challenge first, so read the charge before offering to pay again; the next verification
+  can start right away.
 - **Unreachable** — the challenge never reached the user, so there was nothing for them to
   answer: the page never drew, for instance because the redirect URL has already been retired or
   is not an `http(s)` address, the screen could not be presented because the previous one was
@@ -314,9 +315,11 @@ It has three ends, not two:
   to arrive as a dismissal, so hosts ticked the verification off as handled and let the payment
   lapse.
 
-Anything that breaks *after* the challenge has drawn ends as a dismissal instead, because by then
-only `getChargeState()` can say whether the issuer authorised the payment. Only one verification
-runs per process at a time; a second one throws `paymentVerificationInProgress` (`PAYMENT_008`).
+Anything that breaks *after* the challenge has drawn ends as `PAYMENT_011` too, because by then
+only `getChargeState()` can say whether the issuer authorised the payment. Cancelling the task
+that awaits the call is not `PAYMENT_011`: it closes the screen and throws `CancellationError`.
+Only one verification runs per process at a time; a second one throws
+`paymentVerificationInProgress` (`PAYMENT_008`).
 
 ```swift
 // Both from the same charge response.
@@ -326,9 +329,9 @@ do {
     try await session.handle3dsVerification(redirectURL: url, returnURL: returnURL)
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     retryCharge()
-} catch is CancellationError {
+} catch let error as GopaySDKError where error.code == .paymentCancelled {
     // The user walked away. getChargeState() is still the only source of truth.
-    throw CancellationError()
+    showPaymentCancelled()
 }
 let finalState = try await session.getChargeState()
 ```
@@ -709,6 +712,7 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
+| `PAYMENT_011` | The Apple Pay sheet or the 3DS screen closed before it finished, or the 3DS page failed after it had drawn; read the charge before paying again |
 | `NETWORK_001` | No HTTP response: the request timed out |
 | `NETWORK_002` | Gateway returned 4xx |
 | `NETWORK_003` | Gateway returned 5xx |
@@ -728,9 +732,12 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 }
 ```
 
-Dismissing the 3DS WebView surfaces as `CancellationError`. Dismissing the **Apple Pay** sheet
-does not — it throws a `GopaySDK` `NSError` carrying "Apple Pay payment was cancelled by the
-user.", so a `catch is CancellationError` branch alone will not catch it.
+An Apple Pay sheet or a 3DS screen that closed before it finished throws `PAYMENT_011`
+(`paymentCancelled`), and so does a 3DS page that failed after it had drawn. That is not a failed
+payment, and not necessarily one that did not happen: the 3DS challenge may have been answered,
+so read `getChargeState()` before offering it again.
+`CancellationError` comes only from cancelling the task that awaits the call: that closes the 3DS
+screen, while an Apple Pay sheet already up is not closed, and the call waits for it.
 
 Every code above, with its causes and what to do about it, is in
 [`sdk/docs/ERROR_CODES.md`](sdk/docs/ERROR_CODES.md). The codes are shared with the Android SDK —

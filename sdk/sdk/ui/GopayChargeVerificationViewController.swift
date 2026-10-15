@@ -4,9 +4,12 @@ import UIKit
 /// Outcome of the charge verification WebView flow.
 enum GopayChargeVerificationResult {
     case completed
+    /// The screen closed before the verification finished, which the caller gets as
+    /// ``GopaySDKError/Code/paymentCancelled``, or as `CancellationError` when its own task was
+    /// cancelled.
     case cancelled
     /// The verification page could not be loaded at all, so the user never got a challenge to
-    /// answer. Distinct from ``cancelled``, which is the user walking away from a live page.
+    /// answer. Distinct from ``cancelled``, a screen that closed before it finished.
     case failed(GopaySDKError)
 }
 
@@ -181,8 +184,9 @@ final class GopayChargeVerificationViewController: UIViewController {
     /// Separates "the challenge never came up" from "something went wrong after it did". Once the
     /// user has answered, the ACS redirects towards the return URL and a transient error or a 4xx
     /// on an intermediate step is no reason to call the payment failed: it may well have gone
-    /// through. Past this point a failure is reported as a cancellation so the host reads the
-    /// charge state, which is what the documentation tells it to do.
+    /// through. Past this point a failure is reported as
+    /// ``GopayChargeVerificationResult/cancelled`` (`PAYMENT_011` to the caller) so the host reads
+    /// the charge state, which is what the documentation tells it to do.
     private var hasCommittedNavigation = false
 
     /// True once a navigation has been handed to another app.
@@ -270,7 +274,8 @@ final class GopayChargeVerificationViewController: UIViewController {
     /// Catches the screen being closed by anything other than the SDK, typically the host's
     /// router dismissing its presented controllers on a return from a banking app. Without an
     /// outcome the caller would wait forever and every later verification would fail on
-    /// ``GopaySDKError/Code/paymentVerificationInProgress``, so it is reported as a cancellation.
+    /// ``GopaySDKError/Code/paymentVerificationInProgress``, so it is reported as
+    /// ``GopayChargeVerificationResult/cancelled``, which the caller gets as `PAYMENT_011`.
     ///
     /// Disappearing under another screen presented on top is not a dismissal and reports
     /// nothing. A dismissal from lower in the stack may not mark this controller as being
@@ -290,7 +295,7 @@ final class GopayChargeVerificationViewController: UIViewController {
 
     private func reportClosedElsewhere() {
         GopaySDK.shared.logWarning(
-            "The 3DS verification screen was closed by something other than the SDK, reporting it as a cancellation"
+            "The 3DS verification screen was closed by something other than the SDK, reporting it as PAYMENT_011"
         )
         report(.cancelled)
     }
@@ -307,8 +312,9 @@ final class GopayChargeVerificationViewController: UIViewController {
 
     /// The last fallback: a screen the host closed together with everything above its presenter
     /// while something covered it gets no second `viewDidDisappear`. Once it is released, an
-    /// outcome nobody received is delivered as a cancellation, so the caller returns and the
-    /// in-progress guard is freed. A result already delivered is not repeated.
+    /// outcome nobody received is delivered as ``GopayChargeVerificationResult/cancelled``, so the
+    /// caller returns and the in-progress guard is freed. A result already delivered is not
+    /// repeated.
     deinit {
         if let pending = pendingResult {
             onResult(pending)
@@ -507,9 +513,10 @@ extension GopayChargeVerificationViewController: WKNavigationDelegate {
     /// Reports a load failure as hard only while the challenge has not started rendering.
     ///
     /// Afterwards the user may already have answered and the payment may already be through, so
-    /// the outcome is a cancellation and the host settles it by reading the charge state. The
-    /// degradation is logged rather than silent: to support, an HTTP 404 in the middle of a
-    /// challenge would otherwise be indistinguishable from a tap on Cancel.
+    /// the outcome is ``GopayChargeVerificationResult/cancelled`` (`PAYMENT_011` to the caller) and
+    /// the host settles it by reading the charge state. The degradation is logged rather than
+    /// silent: to support, an HTTP 404 in the middle of a challenge would otherwise be
+    /// indistinguishable from a tap on Cancel.
     private func reportFailure(_ error: GopaySDKError) {
         guard hasCommittedNavigation else {
             report(.failed(error))
@@ -517,7 +524,7 @@ extension GopayChargeVerificationViewController: WKNavigationDelegate {
         }
         let status = error.httpStatus.map { " HTTP \($0)" } ?? ""
         GopaySDK.shared.logWarning(
-            "3DS verification failed after the challenge started rendering, reporting it as a cancellation: "
+            "3DS verification failed after the challenge started rendering, reporting it as PAYMENT_011: "
                 + "[\(error.code.rawValue)]\(status) \(error.message)"
         )
         report(.cancelled)

@@ -107,15 +107,18 @@ public enum GopaySDKErrors {
     public static let invalidApplePayAppInfoURL = "Invalid URL for Apple Pay app-info endpoint."
 
     /// Apple Pay is not available on this device (no provisioned cards or unsupported networks).
+    @available(*, deprecated, message: "The SDK no longer uses it: an unusable Apple Pay throws GopaySDKError with paymentMethodUnavailable (PAYMENT_004)")
     public static let applePayUnavailable = "Apple Pay is not available on this device."
 
     /// Apple Pay is not configured for this merchant.
     public static let applePayNotConfigured = "Apple Pay is not configured for this merchant."
 
     /// Apple Pay payment was cancelled by the user.
+    @available(*, deprecated, message: "The SDK no longer uses it: a closed Apple Pay sheet throws GopaySDKError with paymentCancelled (PAYMENT_011)")
     public static let applePayCancelled = "Apple Pay payment was cancelled by the user."
 
     /// Apple Pay authorization failed.
+    @available(*, deprecated, message: "The SDK no longer uses it: an unusable Apple Pay token throws GopaySDKError with paymentProcessingFailed (PAYMENT_003)")
     public static let applePayAuthorizationFailed = "Apple Pay authorization failed."
 
     /// Apple Pay response from the backend is missing a payment request.
@@ -174,6 +177,7 @@ public enum GopaySDKErrors {
     /// Creates an SDK error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the SDK domain and generic error code.
+    @available(*, deprecated, message: "The SDK no longer throws it: Apple Pay failures are GopaySDKError with PAYMENT_003, PAYMENT_004 or PAYMENT_011")
     public static func sdkError(_ message: String) -> NSError {
         return NSError(
             domain: sdkDomain,

@@ -124,4 +124,124 @@ struct ApplePayErrorTests {
         #expect(fields.version == "EC_v1")
         #expect(fields.header.transactionId == "tx")
     }
+
+    // MARK: PAYMENT_011
+
+    @Test func aSheetClosedWithoutPayingIsPaymentCancelled() throws {
+        let coordinator = GopayApplePayCoordinator(appInfo: try applePayAppInfo(), charge: { _, _ in }, completion: { _ in })
+
+        guard case .failure(let error as GopaySDKError) = coordinator.resultOnceTheSheetCloses() else {
+            Issue.record("expected a GopaySDKError")
+            return
+        }
+        #expect(error.code == .paymentCancelled)
+        #expect(error.message == "The Apple Pay sheet was closed without paying")
+    }
+
+    private static let readableTokenData = Data("""
+    {"version":"EC_v1","data":"d","signature":"s",
+     "header":{"ephemeralPublicKey":"epk","publicKeyHash":"pkh","transactionId":"tx"}}
+    """.utf8)
+
+    private func authorize(_ coordinator: GopayApplePayCoordinator, info: GopayApplePayAppInfoResponse) {
+        coordinator.paymentAuthorizationController(
+            PKPaymentAuthorizationController(paymentRequest: GopayApplePayCoordinator.makePaymentRequest(from: info)),
+            didAuthorizePayment: StubPayment(paymentData: Self.readableTokenData),
+            handler: { _ in }
+        )
+    }
+
+    private func charged(_ id: String) throws -> ChargePaymentResponse {
+        try JSONDecoder().decode(ChargePaymentResponse.self, from: Data(#"{"id":"\#(id)","state":"SUCCEEDED"}"#.utf8))
+    }
+
+    /// PassKit closes the sheet after a time limit a slow charge can outlast. The call then waits
+    /// for the charge, which answers on another thread, and ends with its result.
+    @Test func aSheetClosedWhileItsChargeRunsEndsWithTheChargeResult() async throws {
+        let info = try applePayAppInfo()
+        var pendingCharge: ((Result<ChargePaymentResponse, Error>) -> Void)?
+        var results: [Result<ChargePaymentResponse, Error>] = []
+        let coordinator = GopayApplePayCoordinator(
+            appInfo: info,
+            charge: { _, done in pendingCharge = done },
+            completion: { results.append($0) }
+        )
+        authorize(coordinator, info: info)
+
+        coordinator.sheetDidClose()
+        await drainMainQueue()
+        #expect(results.isEmpty)
+
+        let done = try #require(pendingCharge)
+        let response = try charged("ch")
+        await Task.detached { done(.success(response)) }.value
+        await drainMainQueue()
+        await drainMainQueue()
+
+        #expect(results.count == 1)
+        guard case .success(let result) = results.first else {
+            Issue.record("expected the charge's result, got \(results)")
+            return
+        }
+        #expect(result.id == "ch")
+    }
+
+    /// A charge that failed shows on the sheet and the user can authorize again. The failure must
+    /// not stand in for the second attempt's result.
+    @Test func aSecondAuthorizationAfterAFailedChargeEndsWithItsOwnResult() async throws {
+        let info = try applePayAppInfo()
+        var pendingCharges: [(Result<ChargePaymentResponse, Error>) -> Void] = []
+        var results: [Result<ChargePaymentResponse, Error>] = []
+        let coordinator = GopayApplePayCoordinator(
+            appInfo: info,
+            charge: { _, done in pendingCharges.append(done) },
+            completion: { results.append($0) }
+        )
+
+        authorize(coordinator, info: info)
+        pendingCharges[0](.failure(GopaySDKError(.networkClientError, message: "declined", httpStatus: 400)))
+        await drainMainQueue()
+
+        authorize(coordinator, info: info)
+        // The new attempt starts clean: the earlier failure is no longer what the sheet ends with.
+        if case .failure(let stale as GopaySDKError) = coordinator.resultOnceTheSheetCloses() {
+            #expect(stale.code == .paymentCancelled, "the first charge's failure is still held")
+        }
+        coordinator.sheetDidClose()
+        await drainMainQueue()
+        #expect(results.isEmpty)
+
+        pendingCharges[1](.success(try charged("second")))
+        await drainMainQueue()
+        await drainMainQueue()
+
+        #expect(results.count == 1)
+        guard case .success(let result) = results.first else {
+            Issue.record("expected the second charge's result, got \(results)")
+            return
+        }
+        #expect(result.id == "second")
+    }
+
+    /// Closing the sheet after a failed charge, without trying again, ends with that failure.
+    @Test func aSheetClosedAfterAFailedChargeEndsWithTheFailure() async throws {
+        let info = try applePayAppInfo()
+        var results: [Result<ChargePaymentResponse, Error>] = []
+        let coordinator = GopayApplePayCoordinator(
+            appInfo: info,
+            charge: { _, done in done(.failure(GopaySDKError(.networkClientError, message: "declined", httpStatus: 400))) },
+            completion: { results.append($0) }
+        )
+        authorize(coordinator, info: info)
+        await drainMainQueue()
+
+        coordinator.sheetDidClose()
+        await drainMainQueue()
+
+        guard case .failure(let error as GopaySDKError) = results.first else {
+            Issue.record("expected the charge's failure, got \(results)")
+            return
+        }
+        #expect(error.code == .networkClientError)
+    }
 }

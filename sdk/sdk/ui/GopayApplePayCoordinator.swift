@@ -28,8 +28,15 @@ final class GopayApplePayCoordinator: NSObject {
 
     private var authorizationController: PKPaymentAuthorizationController?
     /// Result of the charge call, produced inside `didAuthorizePayment` and consumed from
-    /// `didFinish` to dispatch the final completion.
+    /// `didFinish` to dispatch the final completion. Main thread only.
     private var chargeResult: Swift.Result<ChargePaymentResponse, Error>?
+    /// True from the moment the token goes to the charge until its result is back. Main thread
+    /// only. PassKit closes the sheet on its own after a time limit, which a slow charge can
+    /// outlast, so the sheet can finish while the charge is still running.
+    private var isChargeInFlight = false
+    /// Set when the sheet closed while the charge was still running: the call then ends with the
+    /// charge's result as soon as it is back. Main thread only.
+    private var finishesWhenTheChargeReturns = false
     /// Self-retain to survive the async Apple Pay callback chain.
     private var selfReference: GopayApplePayCoordinator?
 
@@ -86,10 +93,24 @@ final class GopayApplePayCoordinator: NSObject {
 
     // MARK: - Helpers
 
-    /// What the call ends with once the sheet has closed: the charge's result, or, when nothing
-    /// was authorized, the user's dismissal.
+    /// What the call ends with once the sheet has closed and no charge is running: the last
+    /// charge's result, or ``GopaySDKError/Code/paymentCancelled`` when nothing was charged.
     func resultOnceTheSheetCloses() -> Swift.Result<ChargePaymentResponse, Error> {
-        chargeResult ?? .failure(GopaySDKErrors.sdkError(GopaySDKErrors.applePayCancelled))
+        chargeResult ?? .failure(GopaySDKError(
+            .paymentCancelled,
+            message: "The Apple Pay sheet was closed without paying"
+        ))
+    }
+
+    /// The sheet is gone. With a charge still running the call waits for it and ends with its
+    /// result, so a charge that goes through is never reported as a closed sheet; otherwise it
+    /// ends now. Main thread only.
+    func sheetDidClose() {
+        if isChargeInFlight {
+            finishesWhenTheChargeReturns = true
+        } else {
+            finish(with: resultOnceTheSheetCloses())
+        }
     }
 
     private func finish(with result: Swift.Result<ChargePaymentResponse, Error>) {
@@ -219,6 +240,9 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
         didAuthorizePayment payment: PKPayment,
         handler completion: @escaping (PKPaymentAuthorizationResult) -> Void
     ) {
+        // A new authorization after a failed one starts over: the earlier failure is not this
+        // attempt's result.
+        chargeResult = nil
         let fields: TokenFields
         do {
             fields = try Self.mapToken(payment.token)
@@ -228,17 +252,26 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
             return
         }
 
+        isChargeInFlight = true
         charge(fields) { [weak self] result in
-            guard let self = self else {
-                completion(PKPaymentAuthorizationResult(status: .failure, errors: nil))
-                return
-            }
-            self.chargeResult = result
-            switch result {
-            case .success:
-                completion(PKPaymentAuthorizationResult(status: .success, errors: nil))
-            case .failure(let error):
-                completion(PKPaymentAuthorizationResult(status: .failure, errors: [error]))
+            // The charge answers on whatever thread its task ran on; the state it lands in is read
+            // on the main thread, where PassKit calls `didFinish`.
+            DispatchQueue.main.async {
+                guard let self = self else {
+                    completion(PKPaymentAuthorizationResult(status: .failure, errors: nil))
+                    return
+                }
+                self.isChargeInFlight = false
+                self.chargeResult = result
+                switch result {
+                case .success:
+                    completion(PKPaymentAuthorizationResult(status: .success, errors: nil))
+                case .failure(let error):
+                    completion(PKPaymentAuthorizationResult(status: .failure, errors: [error]))
+                }
+                if self.finishesWhenTheChargeReturns {
+                    self.finish(with: result)
+                }
             }
         }
     }
@@ -247,8 +280,7 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
         _ controller: PKPaymentAuthorizationController
     ) {
         controller.dismiss { [weak self] in
-            guard let self = self else { return }
-            self.finish(with: self.resultOnceTheSheetCloses())
+            self?.sheetDidClose()
         }
     }
 }

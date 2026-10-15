@@ -9,10 +9,11 @@ public extension PaymentSession {
     /// final charge result.
     ///
     /// Only one verification can run per process at a time; a concurrent attempt throws
-    /// ``GopaySDKError/Code/paymentVerificationInProgress``. User dismissal surfaces as
-    /// `CancellationError`, and so does a screen closed by anything other than the SDK, such as
-    /// your own navigation dismissing it after a return from a banking app. Either way the next
-    /// verification can start right away.
+    /// ``GopaySDKError/Code/paymentVerificationInProgress``. User dismissal throws
+    /// ``GopaySDKError/Code/paymentCancelled``, and so does a screen closed by anything other than
+    /// the SDK, such as your own navigation dismissing it after a return from a banking app.
+    /// Cancelling the task that awaits this call closes the screen and throws `CancellationError`.
+    /// Either way the next verification can start right away.
     ///
     /// A verification page that cannot be loaded at all throws a ``GopaySDKError`` with
     /// ``GopaySDKError/Code/paymentVerificationUnreachable`` rather than letting the payment lapse
@@ -25,8 +26,8 @@ public extension PaymentSession {
     /// presented at all.
     ///
     /// This applies only while the challenge has not started rendering. Once it has, the user may
-    /// already have answered it, so a later failure surfaces as `CancellationError` like a
-    /// dismissal does, and the payment is settled by reading ``getChargeState()``.
+    /// already have answered it, so a later failure throws ``GopaySDKError/Code/paymentCancelled``
+    /// like a dismissal does, and the payment is settled by reading ``getChargeState()``.
     ///
     /// The verification ends when the challenge navigates to `returnURL`, the address the payment
     /// was created with (`callback.return_url`), which the charge response repeats as
@@ -56,15 +57,22 @@ public extension PaymentSession {
         if let unloadable = GopayVerificationNavigationPolicy.loadFailure(forRedirect: redirectURL) {
             throw unloadable
         }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            Task { @MainActor in
-                self.startVerificationFlow(
-                    redirectURL: redirectURL,
-                    returnURL: returnURL,
-                    presenting: presenting,
-                    continuation: continuation
-                )
+        try Task.checkCancellation()
+        let cancellation = HostCancellation()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                Task { @MainActor in
+                    self.startVerificationFlow(
+                        redirectURL: redirectURL,
+                        returnURL: returnURL,
+                        presenting: presenting,
+                        cancellation: cancellation,
+                        continuation: continuation
+                    )
+                }
             }
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 
@@ -76,8 +84,13 @@ public extension PaymentSession {
         redirectURL: URL,
         returnURL: URL?,
         presenting: UIViewController?,
+        cancellation: HostCancellation,
         continuation: CheckedContinuation<Void, Error>
     ) {
+        if cancellation.isCancelled {
+            continuation.resume(throwing: CancellationError())
+            return
+        }
         if SheetGuards.verificationInProgress {
             continuation.resume(throwing: GopaySDKError(
                 .paymentVerificationInProgress,
@@ -122,13 +135,20 @@ public extension PaymentSession {
             switch result {
             case .completed:
                 continuation.resume(returning: ())
-            case .cancelled:
+            case .cancelled where cancellation.isCancelled:
+                // The host cancelled the awaiting task; that is its own decision, not the user's.
                 continuation.resume(throwing: CancellationError())
+            case .cancelled:
+                continuation.resume(throwing: GopaySDKError(
+                    .paymentCancelled,
+                    message: "The 3DS verification was closed before it finished; read the charge state for the outcome"
+                ))
             case .failed(let error):
                 continuation.resume(throwing: error)
             }
         }
         shown = verificationVC
+        cancellation.onCancel { [weak verificationVC] in verificationVC?.report(.cancelled) }
         presenter.present(verificationVC, animated: true)
         // UIKit refuses to present while the presenter is still animating something else away and
         // says so only in the console: nothing reaches the screen, no delegate callback ever

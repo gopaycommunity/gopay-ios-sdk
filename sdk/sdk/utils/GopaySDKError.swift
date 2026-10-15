@@ -64,6 +64,12 @@ public struct GopaySDKError: LocalizedError {
         /// redirect URL is dead or is not a web address, the verification screen could not be
         /// presented, or no app on the device took the hand-off the challenge asked for.
         case paymentVerificationUnreachable = "PAYMENT_010"
+        /// The payment window closed before it finished: the Apple Pay sheet or the 3DS screen was
+        /// closed, or the 3DS page failed after it had started rendering. Not a failed payment, and
+        /// not necessarily one that did not happen: read ``PaymentSession/getChargeState()`` before
+        /// offering it again. Cancelling the task that awaits the call is not this code; that stays
+        /// `CancellationError`.
+        case paymentCancelled = "PAYMENT_011"
 
         // Validation (VALIDATION_XXX)
         /// Invalid input data provided.
