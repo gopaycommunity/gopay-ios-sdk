@@ -18,15 +18,20 @@ let environment: GopayEnvironment = .sandbox // or .development(baseURL: "https:
 
 ## Step 3: Configure the SDK
 
-Create a configuration object. You can also enable debug logging and provide an error callback if needed:
+Create a configuration object with your `clientId` and `shareableKey`. They are safe to embed in
+the app and cannot charge by themselves, but encrypting a card needs them, and so does every charge
+whose ``BrowserData`` does not already carry both `ip` and `acceptHeader`. You can also enable
+debug logging and provide an error callback if needed:
 
 ```swift
 let config = GopaySDKConfig(
     environment: environment,
+    clientId: "<your-client-id>",
+    shareableKey: "<your-shareable-key>",
     enableDebugLogging: true, // Optional
     errorCallback: { error in // Optional
         print("GopaySDK Error: \(error)")
-    },
+    }
 )
 ```
 
@@ -45,6 +50,8 @@ import GopaySDK
 
 let config = GopaySDKConfig(
     environment: .sandbox, // or .development(baseURL: "https://your-dev-url.com"), .production
+    clientId: "<your-client-id>",
+    shareableKey: "<your-shareable-key>",
     enableDebugLogging: true,
     errorCallback: { error in
         print("GopaySDK Error: \(error)")

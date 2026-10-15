@@ -100,12 +100,47 @@ never sees the merchant secret and cannot create payments. The example app inclu
 
 ---
 
+## Your backend
+
+The SDK charges a payment your server has created and settles nothing on its own. What your server
+does, as the GoPay guide describes it
+([Security and credentials](https://api-docs.gopay.com/en/docs/01-security.md),
+[Payment states and lifecycle](https://api-docs.gopay.com/en/docs/02-payment-lifecycle.md),
+[Saved cards](https://api-docs.gopay.com/en/docs/05-saved-cards.md)):
+
+1. **Create the payment** with `POST /eshops/{goid}/payments`, under a merchant access token with
+   the `payment:write` scope. The body needs `amount`, `currency`, `order_number`, `customer` and
+   `callback`. `amount` is an integer in the currency's minor unit: 100.00 CZK is `10000`.
+2. **Set both callback URLs.** `callback.return_url` and `callback.notification_url` are required.
+   According to the GoPay guide both must be absolute HTTPS URLs; in production a `return_url`
+   that is not HTTPS gets a 403 when the payment is created, the sandbox is more tolerant. The
+   3DS screen closes when the challenge comes back to `return_url` (see
+   [3DS verification](#3ds-verification)), so the URL does not have to serve anything to the app.
+   `notification_url` must be reachable from GoPay's servers.
+3. **Give the app `id` and `payment_secret`**, nothing else; the app passes them to
+   `startPaymentSession`. According to the GoPay guide, `payment_secret` must not be stored,
+   logged or put in a URL, and it is valid for seven days, after which the gateway refuses it
+   with a 403.
+4. **Settle the payment on the server.** What the app reports is not proof of payment. GoPay
+   sends a `GET` to `notification_url` with the payment `id` on every state change; answer `204`
+   and read the payment with `GET /payments/{id}`. The GoPay guide treats this webhook as the
+   authoritative signal. A payment nobody charges times out, after one hour by default.
+5. **Save a card, if you need to,** by exchanging the JWE from the card form for a permanent token
+   with `POST /cards/tokens` (merchant scope `card:write`). Tokenisation is off until GoPay enables
+   it for you through `integration@gopay.com`. A JWE is single-use: it pays one charge or makes one
+   token, not both. An Apple Pay payload cannot be tokenised.
+
+---
+
 ## Quick start
 
 ### Initialize
 
-Initialize once on app start. `clientId` + `shareableKey` are safe to embed — they only authorize
-the public `GET /cards/public-key` endpoint, never charging.
+Initialize once on app start. `clientId` + `shareableKey` are safe to embed: they authorize only the
+public endpoints (`GET /cards/public-key`, `GET /cards/browser-data`) and cannot charge by
+themselves. They are still needed to encrypt a card and for every charge whose `BrowserData` does
+not already carry both `ip` and `acceptHeader`, because the charge fetches those first; without
+them it throws `AUTH_011`.
 
 ```swift
 import GopaySDK
@@ -190,17 +225,26 @@ do {
             redirectURL: url,
             returnURL: charge.returnUrl.flatMap(URL.init(string:))
         )
-        let final = try await session.getChargeState()
-        print("Final state:", final.state)
-    } else {
-        print("Charge state:", charge.state)
     }
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     print("The 3DS challenge never reached the user; charge again for a fresh redirect")
+    return
 } catch let error as GopaySDKError where error.code == .paymentCancelled {
-    print("The user closed the Apple Pay sheet or the 3DS verification")
+    // The sheet or the 3DS screen closed early, but a charge may already be through:
+    // the state below says how it ended.
 } catch {
     print("Charge failed:", error.localizedDescription)
+    return
+}
+
+do {
+    let result = try await settle(session)                   // see Reading the result
+    print("Charge state:", result.state)
+} catch let error as GopaySDKError where error.httpStatus == 404 {
+    print("No charge went out; the payment can be offered again")
+} catch {
+    // PaymentStillPending, or the state could not be read: the charge may be through.
+    print("Ask your backend for the payment's state before offering it again")
 }
 ```
 
@@ -208,6 +252,23 @@ do {
 own `BrowserData` if you have more accurate values. When Apple Pay cannot be used it throws
 `PAYMENT_004` (hide the button and offer another method); a token the SDK cannot use, such as the
 empty one the iOS Simulator returns, is `PAYMENT_003`. A charge that fails keeps its own code.
+
+#### Setting up Apple Pay
+
+The sheet works only once your app and GoPay are set up for it. The steps are in the GoPay guide,
+[Apple Pay, App setup](https://api-docs.gopay.com/en/docs/06-apple-pay.md); in short, you create
+an Apple Merchant ID, enable the Apple Pay capability for the app with that ID, and exchange the
+Payment Processing Certificate with GoPay through `integration@gopay.com` (GoPay supplies the CSR,
+you send back the certificate and the Merchant ID).
+
+The SDK has no Apple Pay settings of its own: the Merchant ID, the card networks and the amounts
+on the sheet come from the gateway for each payment (`GET /payments/{id}/apple-pay/app-info`). The
+Merchant ID the gateway sends has to be one of those in your app's Apple Pay entitlement, otherwise
+the sheet cannot be shown and the call throws `PAYMENT_004`.
+
+In the iOS Simulator the sheet comes back without a usable payment token, so the call ends with
+`PAYMENT_003`. Test on a device signed in with an Apple Pay sandbox tester account, see Apple's
+[Apple Pay sandbox testing](https://developer.apple.com/apple-pay/sandbox-testing/).
 
 ### Browser data / User-Agent
 
@@ -329,12 +390,49 @@ do {
     try await session.handle3dsVerification(redirectURL: url, returnURL: returnURL)
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     retryCharge()
+    return
 } catch let error as GopaySDKError where error.code == .paymentCancelled {
-    // The user walked away. getChargeState() is still the only source of truth.
-    showPaymentCancelled()
+    // Closed before it returned. The challenge may still have been answered, so the charge
+    // below, not this error, says how the payment ended.
 }
-let finalState = try await session.getChargeState()
+let result = try await settle(session)   // see Reading the result
 ```
+
+### Reading the result
+
+After a charge, and again after `handle3dsVerification` returns or throws `PAYMENT_011`, ask for
+the state with `getChargeState()`. Only `succeeded` and `failed` are results; `actionRequired`
+means a 3DS challenge is waiting. `requested` and `processing` mean the gateway has not decided
+yet, which can take a while after a 3DS challenge, so keep asking; the GoPay guide recommends once
+a second ([Payment states and lifecycle](https://api-docs.gopay.com/en/docs/02-payment-lifecycle.md)).
+`unknown` is a state this SDK does not know, so treat it like `processing`. Stop after a limit of
+your own and leave the payment to your backend then.
+
+```swift
+func settle(_ session: PaymentSession) async throws -> ChargePaymentResponse {
+    for _ in 0..<60 {
+        let charge = try await session.getChargeState()
+        switch charge.state {
+        case .succeeded, .failed, .actionRequired:
+            return charge
+        case .requested, .processing, .unknown:
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+    }
+    throw PaymentStillPending()   // your own error: ask your backend later
+}
+```
+
+A charge that comes back in `actionRequired` with `action?.redirectUrl` needs
+`handle3dsVerification`; call `settle` again once it returns. When no charge went out, for
+instance after an Apple Pay sheet closed without paying, `getChargeState()` throws `NETWORK_002`
+with HTTP 404. Your backend, not the app, decides whether the order is paid (see
+[Your backend](#your-backend)).
+
+The SDK keeps nothing on disk, and a payment in progress does not survive the app being
+terminated, which happens above all while the user is away in a banking app during 3DS. Keep only
+the payment `id`, never `payment_secret`, and when the app comes back with an `id` but no result,
+ask your backend for the payment's state before offering to pay again.
 
 ---
 
@@ -401,18 +499,6 @@ payload's 10 minutes run on the gateway's clock, read from that response's `Date
 device with a wrong clock still produces a JWE the gateway accepts. Should the header be missing or
 unreadable, the SDK falls back to the device clock and, with `enableDebugLogging` on, says so in
 the debug log.
-
-#### Migrating card encryption from 1.x
-
-| 1.x | 2.0 |
-| --- | --- |
-| `getPublicEncryptionKey(forceRefresh:)`, `JweUtils`, `GopayJWK` | Gone or internal: a key fetched ahead of time, or a JWE built outside the SDK, would carry the device's clock. Call `encryptCardData(_:)` or `submitCardForm(formId:)`. |
-
-#### Migrating response enums from 1.x
-
-| 1.x | 2.0 |
-| --- | --- |
-| An exhaustive `switch` over `ChargeState`, `ChargeActionType`, `Emv3dsState`, `CardScheme`, `PaymentState` or `Currency` | Each has an `unknown` case for a value the gateway added later; add a branch; for a state, treat it as not final. |
 
 ### Theming the form
 
@@ -569,45 +655,8 @@ Neither platform marks the active field with its frame. A native text field mark
 caret and the keyboard, and any more than that is something the SDK would have to paint itself, so
 it does not. There is no theme parameter for it on either.
 
-#### Migrating a 1.x theme
-
-Version 2.0 renamed every parameter and split the composite ones. There are no aliases: a 1.x theme
-stops compiling, and the table below says what to write instead. The values carry over as they are,
-and 2.0 keeps almost all of the platform defaults 1.x had, so a mechanical rename leaves the form
-looking much as it did. **One default changed**: `inputBackgroundColor` is now `.clear` where 1.x
-filled the inputs with `Color(.systemBackground)`, so the surface behind the form shows through.
-Set it back explicitly if your layout relied on the opaque fill.
-
-| 1.x | 2.0 |
-| --- | --- |
-| `textColor` | `labelColor` and `inputTextColor` |
-| `backgroundColor` | `inputBackgroundColor` |
-| `borderColor` | `inputBorderColor` |
-| `focusedBorderColor` | removed — the border no longer changes color on focus |
-| `errorColor` | `errorTextColor` |
-| `borderWidth` | `inputBorderWidth` |
-| `cornerRadius` | `inputBorderRadius` |
-| `labelFont` | `labelFontSize` and `labelFontWeight` (and `fontFamily`) |
-| `font` | removed — it never reached the inputs; `fontFamily`, `inputFontSize` and `inputFontWeight` style them now |
-| `spacing` | `groupSpacing` |
-| `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
-
-The cut to native rendering removed eight keys that 1.x never had but the 2.0 branch did carry for
-a while. They are gone from the type, so setting one is a compile error rather than a surprise.
-
-| Removed in 2.0 | Instead |
-| --- | --- |
-| `inputBorderCollapse` | nothing: adjacent native fields cannot share a border |
-| `inputBorderStyle` | nothing: every field renders bordered, and the web's `underline` is a shape the SDK would have to paint itself |
-| `focusRingWidth`, `focusRingColor` | nothing: marking the active field is something the SDK would have to paint, so neither platform marks it |
-| `focusGradientStart`, `focusGradientEnd` | nothing: marking the active field is something the SDK would have to paint, so neither platform marks it |
-| `inputLetterSpacing` | `labelLetterSpacing` still applies to labels |
-| `inputLineHeight` | `inputHeight` to set a minimum height |
-
-Two behaviors change. An invalid field now takes `inputErrorBorderColor` on its border, which an
-integration only sees while it renders inline errors; on the default `validation: .hidden` nothing
-changes. And a focused field no longer recolors its border at all, which 1.x did through
-`focusedBorderColor`.
+A 1.x theme stops compiling in 2.0; what to write instead is under
+[Card form theme](#card-form-theme) in [Migrating from 1.x](#migrating-from-1x).
 
 ### Localizing the form
 
@@ -749,6 +798,76 @@ the iOS surface throws the subset listed there.
 
 ---
 
+## Migrating from 1.x
+
+What 2.0 changes for code written against 1.x, in four parts: the error contract, card encryption,
+the response enums and the card form theme.
+
+### Error contract
+
+| 1.x | 2.0 |
+| --- | --- |
+| A transport failure (offline, timeout, TLS) reached you bare (`URLError`) | `GopaySDKError` with `NETWORK_001`, `NETWORK_004`, `NETWORK_005` or `NETWORK_007`; the original error is the `underlying` |
+| A 4xx or a transport failure of the token request in `startPaymentSession` was `AUTH_010` | `AUTH_010` only when the gateway turns the pair down (HTTP 400, 401 or 403); anything else keeps its `NETWORK_*` code |
+| An Apple Pay failure was a `GopaySDK` `NSError` | Apple Pay unavailable or its sheet not shown: `PAYMENT_004`; a token the SDK cannot use: `PAYMENT_003` |
+| `GopaySDKErrors.applePayUnavailable`, `applePayCancelled`, `applePayAuthorizationFailed`, `sdkError(_:)` | Deprecated, the SDK no longer uses them: match `GopaySDKError.code` against `PAYMENT_004`, `PAYMENT_011` and `PAYMENT_003` instead |
+| Closing the Apple Pay sheet threw a `GopaySDK` `NSError`, closing the 3DS screen threw `CancellationError` | `paymentCancelled` (`PAYMENT_011`); a `CancellationError` now comes only from cancelling your own task, which also closes the 3DS screen |
+| `configMissingParameter` (`CONFIG_003`) | Deprecated: the SDK never throws it, and 3.0 removes it |
+
+### Card encryption
+
+| 1.x | 2.0 |
+| --- | --- |
+| `getPublicEncryptionKey(forceRefresh:)`, `JweUtils`, `GopayJWK` | Gone or internal: a key fetched ahead of time, or a JWE built outside the SDK, would carry the device's clock. Call `encryptCardData(_:)` or `submitCardForm(formId:)`. |
+
+### Response enums
+
+| 1.x | 2.0 |
+| --- | --- |
+| An exhaustive `switch` over `ChargeState`, `ChargeActionType`, `Emv3dsState`, `CardScheme`, `PaymentState` or `Currency` | Each has an `unknown` case for a value the gateway added later; add a branch; for a state, treat it as not final. |
+
+### Card form theme
+
+Version 2.0 renamed every parameter and split the composite ones. There are no aliases: a 1.x theme
+stops compiling, and the table below says what to write instead. The values carry over as they are,
+and 2.0 keeps almost all of the platform defaults 1.x had, so a mechanical rename leaves the form
+looking much as it did. **One default changed**: `inputBackgroundColor` is now `.clear` where 1.x
+filled the inputs with `Color(.systemBackground)`, so the surface behind the form shows through.
+Set it back explicitly if your layout relied on the opaque fill.
+
+| 1.x | 2.0 |
+| --- | --- |
+| `textColor` | `labelColor` and `inputTextColor` |
+| `backgroundColor` | `inputBackgroundColor` |
+| `borderColor` | `inputBorderColor` |
+| `focusedBorderColor` | removed — the border no longer changes color on focus |
+| `errorColor` | `errorTextColor` |
+| `borderWidth` | `inputBorderWidth` |
+| `cornerRadius` | `inputBorderRadius` |
+| `labelFont` | `labelFontSize` and `labelFontWeight` (and `fontFamily`) |
+| `font` | removed — it never reached the inputs; `fontFamily`, `inputFontSize` and `inputFontWeight` style them now |
+| `spacing` | `groupSpacing` |
+| `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
+
+The cut to native rendering removed eight keys that 1.x never had but the 2.0 branch did carry for
+a while. They are gone from the type, so setting one is a compile error rather than a surprise.
+
+| Removed in 2.0 | Instead |
+| --- | --- |
+| `inputBorderCollapse` | nothing: adjacent native fields cannot share a border |
+| `inputBorderStyle` | nothing: every field renders bordered, and the web's `underline` is a shape the SDK would have to paint itself |
+| `focusRingWidth`, `focusRingColor` | nothing: marking the active field is something the SDK would have to paint, so neither platform marks it |
+| `focusGradientStart`, `focusGradientEnd` | nothing: marking the active field is something the SDK would have to paint, so neither platform marks it |
+| `inputLetterSpacing` | `labelLetterSpacing` still applies to labels |
+| `inputLineHeight` | `inputHeight` to set a minimum height |
+
+Two behaviors change. An invalid field now takes `inputErrorBorderColor` on its border, which an
+integration only sees while it renders inline errors; on the default `validation: .hidden` nothing
+changes. And a focused field no longer recolors its border at all, which 1.x did through
+`focusedBorderColor`.
+
+---
+
 ## Example app
 
 ```bash
@@ -798,6 +917,19 @@ See [`example/README.md`](example/README.md) for the full walkthrough.
   every encryption and never cached.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
   payments and never sees the merchant secret.
+
+### App Store privacy and PCI DSS
+
+- The SDK ships a privacy manifest (`PrivacyInfo.xcprivacy`) that declares Payment Info, used for
+  app functionality and not for tracking. Xcode adds it to your app's privacy report. What you
+  declare for your app in App Store Connect is yours to decide, see Apple's
+  [App Privacy details](https://developer.apple.com/app-store/app-privacy-details/), Payment Info
+  in particular.
+- According to the GoPay guide
+  ([PCI DSS scope](https://api-docs.gopay.com/en/docs/01-security.md)), an integration where the
+  GoPay SDK collects and encrypts the card and your code handles only the resulting JWE or card
+  token qualifies for SAQ-A; if your code collects the card itself and builds the JWE, it is in
+  SAQ-D scope. Confirm your own scope with GoPay at `integration@gopay.com`.
 
 ## Testing
 

@@ -34,14 +34,17 @@ public struct GopaySDKConfig {
     public let environment: GopayEnvironment
 
     /// Merchant `client_id`. Required together with ``shareableKey`` to call the public-resource
-    /// endpoints (`GET /cards/public-key`) authenticated with `shareable_key` basic auth. Safe to
-    /// embed in the mobile app — it is paired with the shareable key, never with the merchant
-    /// secret.
+    /// endpoints (`GET /cards/public-key`, `GET /cards/browser-data`) authenticated with
+    /// `shareable_key` basic auth. Safe to embed in the mobile app — it is paired with the
+    /// shareable key, never with the merchant secret.
     public let clientId: String?
 
     /// Merchant `shareable_key`. Required together with ``clientId`` for public-resource
-    /// endpoints. Optional if the SDK is only used to charge existing payments through a
-    /// ``PaymentSession``.
+    /// endpoints: encrypting a card, and every ``PaymentSession/charge(_:)`` whose ``BrowserData``
+    /// does not already carry both `ip` and `acceptHeader`, since the charge then fetches them
+    /// from `GET /cards/browser-data` first. That includes ``PaymentSession/chargeWithApplePay(browserData:challengePreference:)``
+    /// with the device default. Without the key such a call throws
+    /// ``GopaySDKError/Code/authShareableKeyMissing``. The key cannot authorize a charge by itself.
     public let shareableKey: String?
 
     /// Whether to enable debug logging.

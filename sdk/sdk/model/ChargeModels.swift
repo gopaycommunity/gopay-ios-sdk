@@ -57,14 +57,24 @@ public enum CardScheme: String, Codable, GatewayEnum {
 }
 
 /// State of a charge. Maps to `Charge-State`.
+///
+/// Only ``succeeded`` and ``failed`` are results. Read ``PaymentSession/getChargeState()`` again
+/// while it is ``requested``, ``processing`` or ``unknown``; the GoPay guide recommends once a
+/// second.
 public enum ChargeState: String, Codable, GatewayEnum {
+    /// The gateway accepted the charge and has queued it. Not a result yet.
     case requested = "REQUESTED"
+    /// The charge is with the payment processor. Not a result yet.
     case processing = "PROCESSING"
+    /// A 3DS challenge is waiting: pass `action?.redirectUrl` to
+    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)``.
     case actionRequired = "ACTION_REQUIRED"
+    /// The charge went through. A result.
     case succeeded = "SUCCEEDED"
+    /// The charge did not go through; `failReason` says why. A result.
     case failed = "FAILED"
-    /// A state this SDK does not know yet. It is not a result: keep reading
-    /// ``PaymentSession/getChargeState()``, or settle the payment on your backend.
+    /// A state this SDK does not know yet. It is not a result: treat it like ``processing`` and
+    /// keep reading ``PaymentSession/getChargeState()``, or settle the payment on your backend.
     case unknown = "UNKNOWN"
 
     public init(from decoder: Decoder) throws {
