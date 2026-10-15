@@ -647,8 +647,10 @@ GopayCardForm(locale: "cs", validation: .live, isValid: $isCardValid)
 ```
 
 `.onSubmit` shows the localized required/pattern message for every invalid field while `attempted`
-is `true`; `.live` shows a field's error once it holds non-empty, invalid content. The default is
-`.hidden` — the form renders nothing and you display errors yourself from the resolved locale:
+is `true`. The form sets `attempted` back to `false` whenever it empties its fields, e.g. after a
+successful `submitCardForm()`, so the emptied fields do not light up as required. `.live` shows a
+field's error once it holds non-empty, invalid content. The default is `.hidden` — the form
+renders nothing and you display errors yourself from the resolved locale:
 
 ```swift
 let strings = GopaySDK.shared.currentLocaleStrings(preferred: "cs")

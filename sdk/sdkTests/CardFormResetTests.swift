@@ -42,7 +42,7 @@ struct CardFormResetTests {
     /// its validity. Without `resetFields` writing the binding this stays `nil`.
     @Test func runningTheWipeReportsTheFormAsInvalid() {
         GopaySDK.shared.clearCardFormData()
-        let validity = ValidityBox()
+        let validity = Box<Bool?>(nil)
         let window = host(
             GopayCardForm(isValid: validity.binding, formId: "reset-binding")
         )
@@ -69,13 +69,31 @@ struct CardFormResetTests {
         let stored = GopaySDK.shared.internalCardFormData["reset-resync"]
         #expect(stored?.isValid != true)
     }
+
+    /// An `.onSubmit` form left at `attempted == true` would show "required" under every emptied
+    /// field, also during the 3DS challenge that follows a submit, so the wipe resets it.
+    @Test func runningTheWipeSetsAttemptedBackToFalse() {
+        GopaySDK.shared.clearCardFormData()
+        let attempted = Box(false)
+        let window = host(
+            GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "reset-attempted")
+        )
+        defer { window.isHidden = true }
+
+        attempted.value = true
+        GopaySDK.shared.clearCardFormData(formId: "reset-attempted")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+
+        #expect(attempted.value == false)
+    }
 }
 
-/// Holds the value behind an `isValid` binding so a test can read what the form wrote.
+/// Holds the value behind a binding the form writes, so a test can read what it wrote.
 @MainActor
-private final class ValidityBox {
-    var value: Bool?
-    var binding: Binding<Bool?> {
+private final class Box<Value> {
+    var value: Value
+    init(_ value: Value) { self.value = value }
+    var binding: Binding<Value> {
         Binding(get: { self.value }, set: { self.value = $0 })
     }
 }

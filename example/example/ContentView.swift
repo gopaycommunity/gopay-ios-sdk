@@ -209,12 +209,8 @@ struct ContentView: View {
                 await MainActor.run { didAttemptSubmit = true }
                 guard isFormValid != false else { return }
                 let encrypted = try await GopaySDK.shared.submitCardForm()
-                // The SDK empties the fields on success; the submit flag goes back with them,
-                // otherwise the emptied fields light up with "This field is required".
-                await MainActor.run {
-                    jwe = encrypted
-                    didAttemptSubmit = false
-                }
+                // The SDK empties the fields on success and sets didAttemptSubmit back to false.
+                await MainActor.run { jwe = encrypted }
                 log("// submitCardForm() -> JWE (filled into the field below)\n\(encrypted)")
             }
 

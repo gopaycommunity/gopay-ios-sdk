@@ -88,6 +88,8 @@ public enum GopayCardFormValidationDisplay {
     case live
     /// Show errors only while `attempted` is `true`. Flip it (e.g. when the user taps your submit
     /// button) to reveal errors for all invalid fields; set it back to `false` to hide them again.
+    /// The form sets it back to `false` itself whenever it empties its fields, e.g. after a
+    /// successful ``GopaySDK/submitCardForm(formId:)``.
     case onSubmit(attempted: Binding<Bool>)
 }
 
@@ -540,7 +542,9 @@ public struct GopayCardForm: View {
     ///
     /// The edited flags go with the digits, so the emptied fields come back pristine instead of
     /// lit up with validation errors, and so do the focus flags, which closes the keyboard if the
-    /// user was still typing.
+    /// user was still typing. For the same reason an ``GopayCardFormValidationDisplay/onSubmit(attempted:)``
+    /// binding is set back to `false`: left at `true`, every emptied field would show the
+    /// "required" message, also while the 3DS challenge runs.
     ///
     /// The SDK's own copy is already gone by this point and this does not re-sync an empty one,
     /// so a second submit fails until a new card is typed: with `noCardFormData` while nothing is
@@ -554,6 +558,9 @@ public struct GopayCardForm: View {
         isCardNumberFocused = false
         isExpirationFocused = false
         isCvvFocused = false
+        if case .onSubmit(let attempted) = validation {
+            attempted.wrappedValue = false
+        }
         updateValidationBinding()
     }
 
