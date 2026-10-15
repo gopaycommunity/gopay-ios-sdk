@@ -27,8 +27,12 @@ Swift **async/await**.
 ## Requirements
 
 - **iOS**: 13.0 or later
-- **Swift**: 5.5 or later (async/await)
-- **Xcode**: 13.2 or later
+- **Swift**: 5.7 or later
+- **Xcode**: 14 or later, the first with Swift 5.7
+
+To ship to the App Store you need Xcode 26 anyway: App Store Connect has accepted only apps built
+with it since April 28, 2026 ([Apple](https://developer.apple.com/news/upcoming-requirements/)).
+The SDK is built and tested with Xcode 26.
 
 ---
 

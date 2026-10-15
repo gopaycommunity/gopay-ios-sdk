@@ -5,7 +5,9 @@ shows the SDK two ways: as a realistic e-shop checkout, and as a raw call-by-cal
 
 ## Prerequisites
 
-- Xcode 16+ and an iOS 18.2+ simulator.
+- Xcode 16.2 or later and an iOS 18.2+ simulator: the demo's project format and its iOS 18.2
+  deployment target need them. The SDK itself needs only Xcode 14 (Swift 5.7); for the App Store
+  you need Xcode 26, see the [main README](../README.md#requirements).
 - Merchant credentials for the gateway you point the demo at.
 
 ## Running
