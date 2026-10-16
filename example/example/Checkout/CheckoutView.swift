@@ -144,6 +144,7 @@ struct CheckoutView: View {
 
                 totalRow("Subtotal", model.cart.formatted(model.cart.subtotal), emphasized: false)
                 totalRow("Shipping", model.cart.formatted(model.cart.shipping), emphasized: false)
+                totalRow("Demo discount", "−" + model.cart.formatted(model.cart.discount), emphasized: false)
                 totalRow("Total", model.cart.formatted(model.cart.total), emphasized: true)
             }
         }
