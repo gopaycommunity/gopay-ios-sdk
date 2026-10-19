@@ -96,8 +96,9 @@ selectable there.
 Four sections, top to bottom. Sections 3 and 4 only appear once a session is live.
 
 1. **Merchant backend (simulated)** — *Create payment on "server"* acquires a merchant token and
-   creates a 1 CZK payment (`amount: 100`, minor units), filling in `payment_id` and
-   `payment_secret`.
+   creates a 1 CZK payment (`amount: 100`, minor units), filling in `payment_id`,
+   `payment_secret` and `return_url`, the address the payment was created with, which 3DS
+   verification watches for.
 2. **Payment session** — *Start session* exchanges that pair for a payment-scoped JWT.
    *Close session* wipes the secret and token.
 3. **Operations** — *Get status*, *Get Apple Pay info*, *Charge with Apple Pay*,

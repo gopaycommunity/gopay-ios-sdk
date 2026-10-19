@@ -99,13 +99,12 @@ enum GopayVerificationNavigationPolicy {
 
     /// The address whose arrival ends the verification.
     ///
-    /// The ACS finishes by sending the browser to the `return_url` the payment was created with,
-    /// which the charge response repeats. That is the merchant's own address, so it wins. Without
-    /// a usable one the SDK falls back to ``GopaySDK/chargeReturnURL``, which only works when the
-    /// payment was created with it. A blank address, one that is not `http(s)` and one without a
-    /// host are not usable: as a prefix, `https://` would match the challenge's own first
-    /// navigation and end the verification before the user saw it. The Android SDK applies the
-    /// same conditions.
+    /// The ACS finishes by sending the browser to the `return_url` the payment was created with.
+    /// That is the merchant's own address, so it wins. Without a usable one the SDK falls back to
+    /// ``GopaySDK/chargeReturnURL``, which only works when the payment was created with it. A
+    /// blank address, one that is not `http(s)` and one without a host are not usable: as a
+    /// prefix, `https://` would match the challenge's own first navigation and end the
+    /// verification before the user saw it. The Android SDK applies the same conditions.
     ///
     /// The address is matched in a form close to the one WebKit reports a navigation in: scheme
     /// and host in lowercase, no default port, `/` for an empty path, no whitespace at the end.
@@ -230,8 +229,8 @@ final class GopayChargeVerificationViewController: UIViewController {
 
     /// - Parameters:
     ///   - redirectURL: The URL to load in the WebView (from the charge action).
-    ///   - returnURL: The `return_url` from the charge response. Navigation to it signals that
-    ///     verification is complete. `nil` or an unusable one falls back to
+    ///   - returnURL: The `callback.return_url` the payment was created with. Navigation to it
+    ///     signals that verification is complete. `nil` or an unusable one falls back to
     ///     ``GopaySDK/chargeReturnURL``.
     ///   - onResult: Called exactly once with the verification outcome.
     init(

@@ -19,6 +19,9 @@ enum MerchantBackendSimulator {
     struct CreatedPayment {
         let paymentId: String
         let paymentSecret: String
+        /// The `callback.return_url` the payment was created with. A real backend hands it to the
+        /// app together with the pair, and the app passes it to `handle3dsVerification`.
+        let returnURL: URL?
     }
 
     /// Authenticates as the merchant and creates a payment, returning the pair the SDK needs.
@@ -74,6 +77,9 @@ enum MerchantBackendSimulator {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // A real backend puts its own address here; the SDK constant is also what the 3DS WebView
+        // falls back to without one. The gateway accepts only an absolute http(s) return_url.
+        let returnURL = GopaySDK.chargeReturnURL
         let body: [String: Any] = [
             "amount": amount,
             "currency": currency,
@@ -82,11 +88,7 @@ enum MerchantBackendSimulator {
             "customer": ["email": "demo@example.com"],
             "callback": [
                 "notification_url": "https://example.com/gopay/notify",
-                // The charge response echoes this as return_url, and the demo passes it to
-                // handle3dsVerification. A real backend puts its own address here; the SDK
-                // constant is also what the WebView falls back to without one. The gateway
-                // accepts only an absolute http(s) return_url.
-                "return_url": GopaySDK.chargeReturnURL
+                "return_url": returnURL
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -100,7 +102,7 @@ enum MerchantBackendSimulator {
         guard let paymentId = id, let secret = json["payment_secret"] as? String else {
             throw error("Missing id / payment_secret in payment response")
         }
-        return CreatedPayment(paymentId: paymentId, paymentSecret: secret)
+        return CreatedPayment(paymentId: paymentId, paymentSecret: secret, returnURL: URL(string: returnURL))
     }
 
     // MARK: - Helpers

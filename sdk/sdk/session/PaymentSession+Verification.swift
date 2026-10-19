@@ -29,20 +29,21 @@ public extension PaymentSession {
     /// already have answered it, so a later failure throws ``GopaySDKError/Code/paymentCancelled``
     /// like a dismissal does, and the payment is settled by reading ``getChargeState()``.
     ///
-    /// The verification ends when the challenge navigates to `returnURL`, the address the payment
-    /// was created with (`callback.return_url`), which the charge response repeats as
-    /// ``ChargePaymentResponse/returnUrl``. Pass it from the same response as `redirectURL`.
-    /// Without it the SDK waits for ``GopaySDK/chargeReturnURL`` instead, and then the payment
-    /// has to be created with that address, otherwise the window never closes and the user can
-    /// only cancel.
+    /// The verification ends when the challenge navigates to `returnURL`, the address your backend
+    /// created the payment with (`callback.return_url`). The app gets it from its backend together
+    /// with `payment_id` and `payment_secret`; GoPay is removing it from the charge response, so
+    /// do not take it from there. Without it the SDK waits for ``GopaySDK/chargeReturnURL``
+    /// instead, and then the payment has to be created with that address, otherwise the window
+    /// never closes and the user can only cancel.
     ///
     /// - Parameters:
     ///   - redirectURL: The `action.redirect_url` returned by the charge.
-    ///   - returnURL: The `return_url` returned by the charge. When `nil`, blank, not `http(s)` or
-    ///     without a host, ``GopaySDK/chargeReturnURL`` is used. Scheme and host are matched
-    ///     without case. The return URL should carry no fragment (`#…`): what the gateway appends
-    ///     lands in front of it, and the address no longer matches. On iOS 13 to 16 an address
-    ///     with non-ASCII characters cannot be parsed, so the SDK waits for the constant instead.
+    ///   - returnURL: The `callback.return_url` the payment was created with. When `nil`, blank,
+    ///     not `http(s)` or without a host, ``GopaySDK/chargeReturnURL`` is used. Scheme and host
+    ///     are matched without case. The return URL should carry no fragment (`#…`): what the
+    ///     gateway appends lands in front of it, and the address no longer matches. On iOS 13 to 16
+    ///     an address with non-ASCII characters cannot be parsed, so the SDK waits for the
+    ///     constant instead.
     ///   - presenting: The view controller to present from. When `nil`, the SDK finds the topmost
     ///     view controller automatically.
     func handle3dsVerification(

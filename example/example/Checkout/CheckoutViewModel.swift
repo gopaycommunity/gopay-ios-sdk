@@ -104,6 +104,8 @@ final class CheckoutViewModel {
 
     private(set) var paymentId: String?
     private var session: PaymentSession?
+    /// The `callback.return_url` the current payment was created with; the 3DS challenge ends there.
+    private var returnURL: URL?
     /// Whether the current attempt's charge has gone out, which decides what a closed window means.
     private var chargeSent = false
 
@@ -325,7 +327,7 @@ final class CheckoutViewModel {
                 busyLabel = "Verifying with your bank…"
                 try await session.handle3dsVerification(
                     redirectURL: url,
-                    returnURL: response.returnUrl.flatMap(URL.init(string:))
+                    returnURL: returnURL
                 )
             }
 
@@ -372,6 +374,7 @@ final class CheckoutViewModel {
         )
         session = started
         paymentId = created.paymentId
+        returnURL = created.returnURL
         return started
     }
 

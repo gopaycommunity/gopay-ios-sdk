@@ -34,9 +34,10 @@ public class GopaySDK {
     /// Fallback return URL for the 3DS verification.
     ///
     /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` watches for the
-    /// `returnURL` it is given, the `return_url` from the charge response. Only without a usable
-    /// one does it wait for this address instead, and then the payment has to be created with it
-    /// as `callback.return_url`. The 3DS WebView intercepts it and never actually loads it.
+    /// `returnURL` it is given, the address your backend created the payment with
+    /// (`callback.return_url`). Only without a usable one does it wait for this address instead,
+    /// and then the payment has to be created with it as `callback.return_url`. The 3DS WebView
+    /// intercepts it and never actually loads it.
     public static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
 
     /// The current configuration for the SDK.

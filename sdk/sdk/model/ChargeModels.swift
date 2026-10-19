@@ -36,8 +36,8 @@ extension GatewayEnum {
 }
 
 /// Where ``GatewayEnum`` reports a value it decoded as `unknown`. The default sends it to the SDK
-/// debug log through `GopaySDK.logWarning(_:)`; tests observe the reports by swapping it, for the
-/// same reason as ``ChargePaymentResponse/reportMissingField``.
+/// debug log through `GopaySDK.logWarning(_:)`; tests observe the reports by swapping it, because
+/// decoding runs on the URLSession thread and a test has no other way to see what was reported.
 enum UnknownGatewayValue {
     static var report: (String) -> Void = { message in
         GopaySDK.shared.logWarning(message)
@@ -463,34 +463,30 @@ public struct ChargeAction: Codable {
 /// Response for POST/GET `/payments/{payment_id}/charge`, and the value of `Payment-Details.charge`
 /// returned by `GET /payments/{payment_id}`. Maps to `Payment-Charge-Status-Response`.
 ///
-/// Per the spec only `id`, `state`, and `return_url` are required; instrument details and the
-/// follow-up action are absent in early states, and `fail_reason` is only present when
-/// `state == failed`. The charge block inside `GET /payments/{payment_id}` comes without
-/// `return_url`, hence its optionality below.
+/// Per the spec `id`, `state` and `return_url` are required; instrument details and the follow-up
+/// action are absent in early states, and `fail_reason` is only present when `state == failed`.
+/// GoPay is removing `return_url` from the charge response, so ``returnUrl`` is optional and
+/// deprecated.
 public struct ChargePaymentResponse: Codable {
     public let id: String
     public let state: ChargeState
 
-    /// Where the gateway sends the browser once verification finishes.
+    /// The `return_url` the gateway repeats with a charge. GoPay is removing it from the charge
+    /// response, so do not rely on it: it may be `nil`, and the property goes away in 3.0.
     ///
-    /// Optional because it is not always there: the charge block nested in
-    /// `GET /payments/{payment_id}` arrives as just `{id, state, href}`. The type says so rather
-    /// than substituting an empty string, which silently broke the obvious use:
-    /// `url.hasPrefix(charge.returnUrl)` matches every URL against `""`, so the first navigation
-    /// of a challenge page reads as a finished verification, and `URL(string: "")` is `nil`. For
-    /// the same reason a blank `return_url` from the gateway decodes as `nil` rather than as the
-    /// string that breaks that check.
-    ///
-    /// On the charge endpoints it is the address the backend created the payment with
-    /// (`callback.return_url`). Pass it to
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` together with
-    /// `action.redirectUrl`: the verification ends when the challenge navigates there. Without it
-    /// the SDK waits for ``GopaySDK/chargeReturnURL``, and then the payment has to be created with
-    /// that address.
-    public let returnUrl: String?
+    /// The address to pass to
+    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` is the one your
+    /// backend created the payment with (`callback.return_url`), which the app gets from its
+    /// backend together with `payment_id` and `payment_secret`.
+    @available(*, deprecated, message: "GoPay is removing return_url from the charge response, so do not rely on it. Pass handle3dsVerification the callback.return_url your backend created the payment with.")
+    public var returnUrl: String? { gatewayReturnUrl }
     public let paymentInstrument: PaymentInstrumentData?
     public let action: ChargeAction?
     public let failReason: String?
+
+    /// `return_url` as decoded, without surrounding white space, and `nil` when it is missing or
+    /// blank: an empty string as a prefix would match every URL.
+    let gatewayReturnUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -501,15 +497,9 @@ public struct ChargePaymentResponse: Codable {
         case failReason = "fail_reason"
     }
 
-    /// Decodes the charge, tolerating a missing `return_url`.
-    ///
-    /// The spec marks `return_url` required, but the charge block nested in `GET /payments/{id}`
-    /// arrives as just `{id, state, href}`. Failing the whole decode over it would take the
-    /// payment state with it, so the field decodes to `nil` and the omission is reported through
-    /// ``reportMissingField``. A blank value is treated as missing too, since an empty string is
-    /// exactly what `url.hasPrefix` cannot be trusted with. Whitespace around a value is dropped,
-    /// so the address can be parsed and matched as it is meant. The Android SDK tolerates all of
-    /// it the same way.
+    /// Decodes the charge, tolerating a missing or blank `return_url` without a word: GoPay is
+    /// removing it from the charge response, and the charge block nested in `GET /payments/{id}`
+    /// never carried it. The Android SDK decodes it the same way.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -518,30 +508,18 @@ public struct ChargePaymentResponse: Codable {
         action = try container.decodeIfPresent(ChargeAction.self, forKey: .action)
         failReason = try container.decodeIfPresent(String.self, forKey: .failReason)
 
-        let rawReturnUrl = try container.decodeIfPresent(String.self, forKey: .returnUrl)
-        let trimmed = rawReturnUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
-        returnUrl = trimmed?.isEmpty == false ? trimmed : nil
-        // Only the charge endpoints are worth a warning. The charge block nested in
-        // `GET /payments/{id}` never carries the field, so reporting it there would fire on
-        // every single status read. An empty coding path means this is the response body itself
-        // rather than a value inside another one.
-        if returnUrl == nil, decoder.codingPath.isEmpty {
-            ChargePaymentResponse.reportMissingField(
-                rawReturnUrl == nil
-                    ? "charge \(id) came back without the required return_url, decoding it as nil"
-                    : "charge \(id) came back with a blank return_url, decoding it as nil"
-            )
-        }
+        let trimmed = try container.decodeIfPresent(String.self, forKey: .returnUrl)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        gatewayReturnUrl = trimmed?.isEmpty == false ? trimmed : nil
     }
 
-    /// Reports a required field the decoder had to substitute. The default sends it to the SDK
-    /// debug log through `GopaySDK.logWarning(_:)`; tests observe the reports by swapping it.
-    /// Warnings raised on a ``GopaySDK`` instance can be collected through its `warnSink` instead.
-    ///
-    /// A swappable hook rather than a call written straight into the decoder: decoding runs on
-    /// the URLSession thread, and a test has no other way to see what was substituted without
-    /// turning on debug logging and reading stdout.
-    static var reportMissingField: (String) -> Void = { message in
-        GopaySDK.shared.logWarning(message)
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(state, forKey: .state)
+        try container.encodeIfPresent(gatewayReturnUrl, forKey: .returnUrl)
+        try container.encodeIfPresent(paymentInstrument, forKey: .paymentInstrument)
+        try container.encodeIfPresent(action, forKey: .action)
+        try container.encodeIfPresent(failReason, forKey: .failReason)
     }
 }

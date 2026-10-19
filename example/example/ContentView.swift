@@ -19,6 +19,8 @@ import GopaySDK
 struct ContentView: View {
     @State private var paymentId = ""
     @State private var paymentSecret = ""
+    // The callback.return_url the payment was created with; handle3dsVerification watches for it.
+    @State private var returnURL = ""
     @State private var session: PaymentSession?
     @State private var cardToken: String = ""
     @State private var jwe: String = ""
@@ -71,11 +73,13 @@ struct ContentView: View {
                 await MainActor.run {
                     paymentId = created.paymentId
                     paymentSecret = created.paymentSecret
+                    returnURL = created.returnURL?.absoluteString ?? ""
                 }
-                log("// merchant backend created a payment (1 CZK)\npayment_id: \(created.paymentId)\npayment_secret: \(created.paymentSecret)")
+                log("// merchant backend created a payment (1 CZK)\npayment_id: \(created.paymentId)\npayment_secret: \(created.paymentSecret)\nreturn_url: \(created.returnURL?.absoluteString ?? "")")
             }
             labeledField("payment_id", text: $paymentId)
             labeledField("payment_secret", text: $paymentSecret)
+            labeledField("return_url", text: $returnURL)
         }
     }
 
@@ -381,7 +385,7 @@ struct ContentView: View {
         let session = try requireSession()
         try await session.handle3dsVerification(
             redirectURL: pending.redirectURL,
-            returnURL: pending.returnURL
+            returnURL: URL(string: returnURL.trimmingCharacters(in: .whitespacesAndNewlines))
         )
         await MainActor.run { pending3ds = nil }
         let finalState = try await session.getChargeState()
@@ -508,20 +512,16 @@ struct ContentView: View {
     }
 }
 
-/// The 3DS link the console has armed, with the return URL from the same charge response.
-///
-/// Kept together because `handle3dsVerification` needs both: the challenge ends when it navigates
-/// to the address the payment was created with, which the response repeats as `return_url`.
+/// The 3DS link the console has armed. The challenge ends at the `return_url` the payment was
+/// created with, which the console keeps next to `payment_id` and `payment_secret`.
 private struct Pending3ds {
     let redirectURL: URL
-    let returnURL: URL?
 
     init?(_ charge: ChargePaymentResponse) {
         guard let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) else {
             return nil
         }
         redirectURL = url
-        returnURL = charge.returnUrl.flatMap(URL.init(string:))
     }
 }
 

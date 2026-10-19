@@ -117,10 +117,11 @@ does, as the GoPay guide describes it
    3DS screen closes when the challenge comes back to `return_url` (see
    [3DS verification](#3ds-verification)), so the URL does not have to serve anything to the app.
    `notification_url` must be reachable from GoPay's servers.
-3. **Give the app `id` and `payment_secret`**, nothing else; the app passes them to
-   `startPaymentSession`. According to the GoPay guide, `payment_secret` must not be stored,
-   logged or put in a URL, and it is valid for seven days, after which the gateway refuses it
-   with a 403.
+3. **Give the app `id`, `payment_secret` and the `callback.return_url`** you created the payment
+   with, nothing else. The app passes the pair to `startPaymentSession` and the return URL to
+   `handle3dsVerification`; GoPay is removing it from the charge response. According to the
+   GoPay guide, `payment_secret` must not be stored, logged or put in a URL, and it is valid for
+   seven days, after which the gateway refuses it with a 403.
 4. **Settle the payment on the server.** What the app reports is not proof of payment. GoPay
    sends a `GET` to `notification_url` with the payment `id` on every state change; answer `204`
    and read the payment with `GET /payments/{id}`. The GoPay guide treats this webhook as the
@@ -165,7 +166,8 @@ than an Info.plist lookup, since under SPM the SDK links statically into the hos
 ### Start a session and charge
 
 ```swift
-// `paymentId` and `paymentSecret` come from your backend after it created the payment.
+// `paymentId`, `paymentSecret` and the `returnURL` the payment was created with
+// (`callback.return_url`) come from your backend after it created the payment.
 let session = try await GopaySDK.shared.startPaymentSession(
     paymentId: paymentId,
     paymentSecret: paymentSecret
@@ -223,7 +225,7 @@ do {
     if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
         try await session.handle3dsVerification(              // presents the 3DS WebView
             redirectURL: url,
-            returnURL: charge.returnUrl.flatMap(URL.init(string:))
+            returnURL: returnURL                               // callback.return_url, from your backend
         )
     }
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
@@ -316,7 +318,7 @@ let charge = try await session.charge(request)
 if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
     try await session.handle3dsVerification(
         redirectURL: url,
-        returnURL: charge.returnUrl.flatMap(URL.init(string:))
+        returnURL: returnURL   // callback.return_url, from your backend
     )
 }
 ```
@@ -338,7 +340,7 @@ let charge = try await session.charge(request)
 if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
     try await session.handle3dsVerification(
         redirectURL: url,
-        returnURL: charge.returnUrl.flatMap(URL.init(string:))
+        returnURL: returnURL   // callback.return_url, from your backend
     )
 }
 ```
@@ -346,13 +348,14 @@ if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
 ### 3DS verification
 
 `handle3dsVerification(redirectURL:returnURL:presenting:)` opens the challenge in an SDK-managed
-WebView and suspends. Pass it `returnUrl` from the same charge response as the redirect URL: it is
-the address your backend created the payment with (`callback.return_url`), and the ACS comes back
-to it when the challenge is done. Without a usable one (`nil`, blank, or not an `http(s)` address
-with a host) the SDK waits for `GopaySDK.chargeReturnURL` instead, and then the payment has to be
-created with that address, otherwise the screen never closes on its own. The return URL should
-carry no fragment (`#…`): what the gateway appends lands in front of it, and the address no longer
-matches.
+WebView and suspends. Pass it the address your backend created the payment with
+(`callback.return_url`), which the app gets from its backend together with `payment_id` and
+`payment_secret`; the ACS comes back to it when the challenge is done. GoPay is removing it from the
+charge response, so do not rely on `ChargePaymentResponse.returnUrl`, which is deprecated. Without a
+usable one (`nil`, blank, or not an `http(s)` address with a host) the SDK waits for
+`GopaySDK.chargeReturnURL` instead, and then the payment has to be created with that address,
+otherwise the screen never closes on its own. The return URL should carry no fragment (`#…`): what
+the gateway appends lands in front of it, and the address no longer matches.
 
 It has three ends, not two:
 
@@ -383,9 +386,8 @@ Only one verification runs per process at a time; a second one throws
 `paymentVerificationInProgress` (`PAYMENT_008`).
 
 ```swift
-// Both from the same charge response.
+// The redirect from the charge response, the return URL from your backend.
 guard let url = charge.action?.redirectUrl.flatMap(URL.init(string:)) else { return }
-let returnURL = charge.returnUrl.flatMap(URL.init(string:))
 do {
     try await session.handle3dsVerification(redirectURL: url, returnURL: returnURL)
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
@@ -812,6 +814,7 @@ the response enums and the card form theme.
 | An Apple Pay failure was a `GopaySDK` `NSError` | Apple Pay unavailable or its sheet not shown: `PAYMENT_004`; a token the SDK cannot use: `PAYMENT_003` |
 | `GopaySDKErrors.applePayUnavailable`, `applePayCancelled`, `applePayAuthorizationFailed`, `sdkError(_:)` | Deprecated, the SDK no longer uses them: match `GopaySDKError.code` against `PAYMENT_004`, `PAYMENT_011` and `PAYMENT_003` instead |
 | Closing the Apple Pay sheet threw a `GopaySDK` `NSError`, closing the 3DS screen threw `CancellationError` | `paymentCancelled` (`PAYMENT_011`); a `CancellationError` now comes only from cancelling your own task, which also closes the 3DS screen |
+| `charge.returnUrl` was the address to pass `handle3dsVerification` | Deprecated: GoPay is removing `return_url` from the charge response. Pass the `callback.return_url` your backend created the payment with |
 | `configMissingParameter` (`CONFIG_003`) | Deprecated: the SDK never throws it, and 3.0 removes it |
 
 ### Card encryption

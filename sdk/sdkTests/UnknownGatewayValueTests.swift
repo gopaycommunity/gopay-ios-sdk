@@ -33,7 +33,7 @@ struct UnknownGatewayValueTests {
 
         #expect(charge.state == .unknown)
         #expect(charge.id == "51")
-        #expect(charge.returnUrl == "https://shop.example/back")
+        #expect(charge.gatewayReturnUrl == "https://shop.example/back")
         #expect(reports.count == 1)
         #expect(reports.first?.contains("ChargeState") == true)
         #expect(reports.first == "Unknown ChargeState value \"PARTIALLY_SETTLED\" at $.state from the gateway, read as UNKNOWN; a newer SDK may know it")
