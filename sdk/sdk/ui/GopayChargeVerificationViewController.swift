@@ -149,14 +149,22 @@ enum GopayVerificationNavigationPolicy {
     /// thing at the same place and for the same reason.
     static func loadFailure(forRedirect url: URL) -> GopaySDKError? {
         guard let scheme = url.scheme?.lowercased(), redirectSchemes.contains(scheme) else {
-            let named = url.scheme.map { "\($0):" } ?? "no scheme at all"
-            return GopaySDKError(
-                .paymentVerificationUnreachable,
-                message: "The 3DS redirect URL is not a web address the verification WebView can load: \(named)"
-            )
+            return unloadableRedirect(reason: url.scheme.map { "\($0):" } ?? "no scheme at all")
         }
         return nil
     }
+
+    /// The error for a redirect URL the verification WebView cannot load, worded the same
+    /// wherever it is found: here on the way into the manual call, and in `awaitChargeState`
+    /// for a `redirect_url` that is not a URL at all.
+    static func unloadableRedirect(reason: String) -> GopaySDKError {
+        GopaySDKError(
+            .paymentVerificationUnreachable,
+            message: "\(unloadableRedirectMessage): \(reason)"
+        )
+    }
+
+    static let unloadableRedirectMessage = "The 3DS redirect URL is not a web address the verification WebView can load"
 }
 
 /// Internal view controller that presents a WKWebView for 3DS / PSD2 / bank

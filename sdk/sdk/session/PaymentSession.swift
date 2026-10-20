@@ -36,6 +36,17 @@ public actor PaymentSession {
     /// Set once by ``attach(client:)`` immediately after construction.
     private var api: PaymentAPI!
 
+    /// The clock, the sleep and the 3DS step ``awaitChargeState(_:)`` runs on. The live ones
+    /// unless a test replaces them with ``useAwaitChargeHooks(_:)``.
+    private(set) var awaitChargeHooks = AwaitChargeHooks.live
+
+    /// Replaces the hooks for the tests, which run the polling on virtual time and stand in for
+    /// the verification screen. Takes effect for the next ``awaitChargeState(_:)`` call; one
+    /// already running keeps the hooks it started with.
+    func useAwaitChargeHooks(_ hooks: AwaitChargeHooks) {
+        awaitChargeHooks = hooks
+    }
+
     init(
         paymentId: String,
         scope: String,

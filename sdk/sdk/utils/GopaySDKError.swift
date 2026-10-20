@@ -59,6 +59,16 @@ public struct GopaySDKError: LocalizedError {
         /// The wallet cannot be used here: the device cannot pay with it, the payment allows no
         /// card network it supports, or its sheet could not be shown.
         case paymentMethodUnavailable = "PAYMENT_004"
+        /// The charge ended `FAILED`. Thrown only by ``PaymentSession/awaitChargeState(_:)``:
+        /// ``GopaySDKError/chargeState`` carries the charge and `message` its `fail_reason`. The
+        /// payment is over; a retry needs a new payment.
+        case paymentDeclined = "PAYMENT_006"
+        /// The charge stayed undecided, in `requested`, `processing` or `unknown`, for the whole
+        /// initial timeout of ``PaymentSession/awaitChargeState(_:)``. Not a result: the charge is
+        /// still with the gateway, and ``GopaySDKError/chargeState`` carries it as last read. Read
+        /// ``PaymentSession/getChargeState()`` or wait for the notification on your backend
+        /// before offering a new payment.
+        case paymentTimeout = "PAYMENT_007"
         /// A 3DS verification is already in progress; only one can run at a time.
         case paymentVerificationInProgress = "PAYMENT_008"
         /// An Apple Pay sheet is already in progress; only one can run at a time.
@@ -96,19 +106,26 @@ public struct GopaySDKError: LocalizedError {
     /// What the gateway said about the failure, when it answered with an error body. Its
     /// `message` is part of ``message`` too.
     public let gatewayError: GopayGatewayError?
+    /// The charge as ``PaymentSession/awaitChargeState(_:)`` last read it. Set on
+    /// ``Code/paymentDeclined``, where its `state` is `failed` and `failReason` says why, and on
+    /// ``Code/paymentTimeout``, where it is the undecided state the deadline read found. `nil`
+    /// for every other error. The Android SDK carries the same field as `chargeState`.
+    public let chargeState: ChargePaymentResponse?
 
     public init(
         _ code: Code,
         message: String,
         httpStatus: Int? = nil,
         underlying: Error? = nil,
-        gatewayError: GopayGatewayError? = nil
+        gatewayError: GopayGatewayError? = nil,
+        chargeState: ChargePaymentResponse? = nil
     ) {
         self.code = code
         self.message = message
         self.httpStatus = httpStatus
         self.underlying = underlying
         self.gatewayError = gatewayError
+        self.chargeState = chargeState
     }
 
     public var errorDescription: String? { "[\(code.rawValue)] \(message)" }

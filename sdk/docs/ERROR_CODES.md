@@ -179,6 +179,30 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Hide the Apple Pay button and offer another method; check the entitlement when it happens on a device that has Apple Pay
 - **Note**: a wallet set up wrongly for the app differs between the platforms. On iOS the sheet then cannot be shown, which is this code; on Android Google Pay answers with an error, which is `PAYMENT_003`. The Android SDK uses this code only when Google Pay itself cannot be used
 
+### PAYMENT_006: Charge Failed
+- **Case**: `paymentDeclined`
+- **Description**: The charge ended `failed`. Thrown by `awaitChargeState()` only, which polls the charge for you; the manual path reads the same state from `getChargeState()` without an error
+- **Common Causes**:
+  - The issuer declined the card
+  - 3DS authentication failed or was refused
+  - Fraud prevention
+- **Developer Action**:
+  - Read the charge on `GopaySDKError.chargeState`; its `failReason`, when the gateway gives one, is also in the message
+  - Inform the user and offer another payment method
+  - Create a new payment to try again: a payment is charged once, so a retry means a new `payment_id`
+- **Note**: thrown by both SDKs since 2.1; `chargeState` is set on `PAYMENT_006` and `PAYMENT_007`, and the Android SDK exposes the same field
+
+### PAYMENT_007: Charge Timeout
+- **Case**: `paymentTimeout`
+- **Description**: The charge stayed undecided, in `requested` / `processing` / `unknown`, for the whole initial timeout of `awaitChargeState()` (`initialTimeout`, 30 s by default), counted from the call. The first `actionRequired` with a redirect URL lifts the timeout, because a 3DS challenge takes as long as the user needs; in `ThreeDSMode.automatic` it starts again once the challenge returns, in `ThreeDSMode.manual` it stays lifted
+- **Common Causes**:
+  - A slow issuer or acquirer
+  - Gateway load
+- **Developer Action**:
+  - Not a failed payment: the gateway may still decide it. Do not offer a new payment right away
+  - Read the charge as last read on `GopaySDKError.chargeState`, then `getChargeState()` again, or call `awaitChargeState()` again, or wait for the notification GoPay sends your backend (`notification_url`), which the GoPay guide treats as the authoritative signal
+- **Note**: thrown by both SDKs since 2.1 and not reported through `errorCallback` on either platform: on iOS no `PaymentSession` call reports there, on Android the code is excluded like `PAYMENT_011`. The read on the deadline decides: a charge still undecided there is this code, one that moved is handled as that state
+
 ### PAYMENT_008: Verification Already In Progress
 - **Case**: `paymentVerificationInProgress`
 - **Description**: A 3DS verification is already running; only one can run at a time
@@ -236,6 +260,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Common Causes**:
   - Empty `paymentId` / `paymentSecret`
   - `submitCardForm` or `encryptCardData` called with data that fails validation
+  - `awaitChargeState()` called with an `interval` or `initialTimeout` that is not positive; nothing is sent
 - **Developer Action**:
   - Validate before calling, and drive the submit button from `GopayCardForm`'s `isValid` binding
 
