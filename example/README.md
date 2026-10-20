@@ -82,10 +82,12 @@ shop, with a real cart total, that exercises every payment method the SDK offers
   `UIActivityViewController`.
 
 **Pay** creates a fresh payment, then runs every card-based method through the same tail: charge,
-and if the response carries a 3DS `action.redirectUrl`, present the verification WebView and poll
-`getChargeState()` until the gateway reports a terminal state. The result screen shows success,
-failure (with "Try another method"), or pending (with a manual refresh), plus a collapsible
-"Developer details" JSON dump of the last `ChargePaymentResponse`.
+then `awaitChargeState()`, which polls `getChargeState()` once a second, presents the verification
+WebView whenever the charge carries a new 3DS `action.redirectUrl`, and returns the charge once it
+is `SUCCEEDED`. A charge that ended `FAILED` arrives as `PAYMENT_006` with the charge attached;
+one still undecided after 30 seconds as `PAYMENT_007`. The result screen shows success, failure
+(with "Try another method"), or pending (with a manual refresh that waits again), plus a
+collapsible "Developer details" JSON dump of the last `ChargePaymentResponse`.
 
 The **language picker** for the card form's labels sits inside the "Credit or debit card" row.
 Twenty built-in languages plus a custom locale (`"xx"`, registered in `exampleApp.swift`) are
@@ -102,7 +104,7 @@ Four sections, top to bottom. Sections 3 and 4 only appear once a session is liv
 2. **Payment session** — *Start session* exchanges that pair for a payment-scoped JWT.
    *Close session* wipes the secret and token.
 3. **Operations** — *Get status*, *Get Apple Pay info*, *Charge with Apple Pay*,
-   *Get test card token (server)*, *Charge a payment*, *Get charge state*,
+   *Get test card token (server)*, *Charge a payment*, *Get charge state*, *Await charge state*,
    *Handle 3DS verification*, *Get QR payment info*.
 4. **Card form → JWE** — a **Theme** picker, a locale picker, `GopayCardForm`,
    *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*.
@@ -115,6 +117,10 @@ is logged and the watch carries on. After the verification returns, the gateway 
 `PROCESSING` for a while, so the console polls the same way until the charge reaches `SUCCEEDED`
 or `FAILED`, with the same cap. The link stays armed after a failed or dismissed verification, so
 a refused presentation can be retried.
+
+**Await charge state** is the SDK's own polling, `awaitChargeState()`, with the 3DS challenge run
+automatically: every state read goes to the console, and so does the result, or `PAYMENT_006`
+for a charge that ended `FAILED` and `PAYMENT_007` for one still undecided after 30 seconds.
 
 The **Theme** picker switches between the themes in
 [`ThemeShowcase.swift`](example/ThemeShowcase.swift). `Dark` and `Red` carry the palettes the web

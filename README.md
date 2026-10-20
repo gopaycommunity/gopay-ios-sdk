@@ -89,8 +89,9 @@ pod install
       │ 3. GopaySDK.shared.startPaymentSession(paymentId:paymentSecret:)
       ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ PaymentSession  →  getStatus / chargeWithApplePay /                    │
-│                    handle3dsVerification / getChargeState / getQrInfo  │
+│ PaymentSession  →  getStatus / charge / chargeWithApplePay /           │
+│                    awaitChargeState / getChargeState /                 │
+│                    handle3dsVerification / getQrPaymentInfo            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -175,6 +176,26 @@ let session = try await GopaySDK.shared.startPaymentSession(
 )
 ```
 
+Then charge the payment and wait for the result. `awaitChargeState` polls the charge once a
+second, as GoPay recommends, opens the 3DS challenge in an SDK-managed WebView when the gateway
+asks for one, and returns the charge once it is `succeeded`:
+
+```swift
+// A saved card; see below for the card form, Apple Pay and the other inputs.
+_ = try await session.charge(.cardToken(token, browserData: await BrowserData.deviceDefault()))
+do {
+    let charge = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
+    // charge.state == .succeeded
+} catch let error as GopaySDKError where error.code == .paymentDeclined {
+    // The charge ended failed: error.chargeState?.failReason says why. A retry needs a new payment.
+} catch let error as GopaySDKError where error.code == .paymentTimeout {
+    // Still undecided after 30 s: not a result, error.chargeState is the last state read. Read getChargeState() later or wait for the notification.
+}
+```
+
+The manual path, `getChargeState()` and `handle3dsVerification`, stays available; both are in
+[Reading the result](#reading-the-result).
+
 `startPaymentSession` authenticates eagerly, so invalid credentials throw right away
 (`GopaySDKError` with code `AUTH_010`, only when the gateway rejects the pair with a 400, 401 or
 403). Any other failure keeps its own code: offline is `NETWORK_004`, a 5xx is `NETWORK_003`, and so on
@@ -201,6 +222,9 @@ print(details.state, details.amount, details.currency)
 // Charge state
 let charge = try await session.getChargeState()             // GET /payments/{id}/charge
 
+// Charge state polled to a result, with the 3DS challenge run on the way (see Reading the result)
+let result = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
+
 // QR (bank transfer) info
 let qr = try await session.getQrPaymentInfo(format: .png)   // GET /payments/{id}/qr-payment/info
 
@@ -221,32 +245,22 @@ as `unknown` instead of failing the response, and the original value goes to the
 guard GopaySDK.canUseApplePay() else { /* hide the Apple Pay button */ return }
 
 do {
-    let charge = try await session.chargeWithApplePay()     // presents the Apple Pay sheet
-    if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-        try await session.handle3dsVerification(              // presents the 3DS WebView
-            redirectURL: url,
-            returnURL: returnURL                               // callback.return_url, from your backend
-        )
-    }
+    _ = try await session.chargeWithApplePay()               // presents the Apple Pay sheet
+    let result = try await session.awaitChargeState(         // polls; presents the 3DS WebView
+        AwaitChargeOptions(returnURL: returnURL)             // callback.return_url, from your backend
+    )
+    print("Charge state:", result.state)                     // succeeded
+} catch let error as GopaySDKError where error.code == .paymentDeclined {
+    print("The charge failed:", error.chargeState?.failReason ?? error.message)
+} catch let error as GopaySDKError where error.code == .paymentTimeout {
+    print("Still undecided; ask your backend for the payment's state before offering it again")
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     print("The 3DS challenge never reached the user; charge again for a fresh redirect")
-    return
 } catch let error as GopaySDKError where error.code == .paymentCancelled {
     // The sheet or the 3DS screen closed early, but a charge may already be through:
-    // the state below says how it ended.
+    // read getChargeState() before offering the payment again (see Reading the result).
 } catch {
     print("Charge failed:", error.localizedDescription)
-    return
-}
-
-do {
-    let result = try await settle(session)                   // see Reading the result
-    print("Charge state:", result.state)
-} catch let error as GopaySDKError where error.httpStatus == 404 {
-    print("No charge went out; the payment can be offered again")
-} catch {
-    // PaymentStillPending, or the state could not be read: the charge may be through.
-    print("Ask your backend for the payment's state before offering it again")
 }
 ```
 
@@ -314,13 +328,10 @@ let request = ChargePaymentRequest.cardToken(
     browserData: await BrowserData.deviceDefault(),
     challengePreference: .auto
 )
-let charge = try await session.charge(request)
-if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-    try await session.handle3dsVerification(
-        redirectURL: url,
-        returnURL: returnURL   // callback.return_url, from your backend
-    )
-}
+_ = try await session.charge(request)
+let result = try await session.awaitChargeState(   // polls, runs the 3DS challenge, returns succeeded
+    AwaitChargeOptions(returnURL: returnURL)       // callback.return_url, from your backend
+)
 ```
 
 ### Charging with an encrypted card (JWE)
@@ -336,14 +347,14 @@ let request = ChargePaymentRequest.encryptedCard(
     browserData: await BrowserData.deviceDefault(),
     challengePreference: .auto
 )
-let charge = try await session.charge(request)
-if let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) {
-    try await session.handle3dsVerification(
-        redirectURL: url,
-        returnURL: returnURL   // callback.return_url, from your backend
-    )
-}
+_ = try await session.charge(request)
+let result = try await session.awaitChargeState(   // polls, runs the 3DS challenge, returns succeeded
+    AwaitChargeOptions(returnURL: returnURL)       // callback.return_url, from your backend
+)
 ```
+
+Both return the first charge state, which you can read instead of waiting: a `redirect_url` in
+`action` is the 3DS challenge for `handle3dsVerification`, the manual path below.
 
 ### 3DS verification
 
@@ -397,18 +408,62 @@ do {
     // Closed before it returned. The challenge may still have been answered, so the charge
     // below, not this error, says how the payment ended.
 }
-let result = try await settle(session)   // see Reading the result
+let result = try await settle(session)   // the manual path, see Reading the result
 ```
 
 ### Reading the result
 
-After a charge, and again after `handle3dsVerification` returns or throws `PAYMENT_011`, ask for
-the state with `getChargeState()`. Only `succeeded` and `failed` are results; `actionRequired`
-means a 3DS challenge is waiting. `requested` and `processing` mean the gateway has not decided
-yet, which can take a while after a 3DS challenge, so keep asking; the GoPay guide recommends once
-a second ([Payment states and lifecycle](https://api-docs.gopay.com/en/docs/02-payment-lifecycle.md)).
-`unknown` is a state this SDK does not know, so treat it like `processing`. Stop after a limit of
-your own and leave the payment to your backend then.
+A charge is decided only once its state is `succeeded` or `failed`; `actionRequired` means a 3DS
+challenge is waiting, and `requested` and `processing` mean the gateway has not decided yet, which
+can take a while after a 3DS challenge. `unknown` is a state this SDK does not know, so treat it
+like `processing`. GoPay recommends reading the state once a second and treating the notification
+it sends your backend (`notification_url`) as the authoritative signal
+([Polling and notifications](https://api-docs.gopay.com/en/api)). There are two ways to wait:
+
+**`awaitChargeState`**, the SDK's own polling, mirrored on Android. It reads
+`GET /payments/{id}/charge` at once and then `interval` after each answer (1 s by default), runs
+the 3DS challenge when the gateway asks for one, and returns the charge once it is `succeeded`:
+
+```swift
+do {
+    let charge = try await session.awaitChargeState(AwaitChargeOptions(
+        returnURL: returnURL,                    // callback.return_url, for the 3DS challenge
+        onStateChange: { charge in show(charge.state) }
+    ))
+    // charge.state == .succeeded
+} catch let error as GopaySDKError where error.code == .paymentDeclined {
+    // PAYMENT_006: the charge ended failed. error.chargeState is the charge, its failReason
+    // is in the message. The payment is over; a retry means a new payment.
+} catch let error as GopaySDKError where error.code == .paymentTimeout {
+    // PAYMENT_007: still requested / processing / unknown after initialTimeout (30 s by
+    // default). Not a result: error.chargeState is the last state read. Read getChargeState()
+    // later, or wait for the notification on your backend, before offering a new payment.
+} catch let error as GopaySDKError where error.code == .paymentCancelled {
+    // PAYMENT_011: the 3DS screen closed before it finished. The challenge may still have
+    // been answered, so read getChargeState() before offering the payment again.
+}
+```
+
+`AwaitChargeOptions` has the matching options on both platforms (milliseconds on Android):
+`interval` (1 s) and `initialTimeout` (30 s), in seconds; `threeDSMode`, `.automatic` by default,
+where the SDK opens `handle3dsVerification` with the options' `returnURL` and `presenting` (`nil`
+finds the topmost view controller) and polls on once it returns, or `.manual`, where the SDK only
+reports the redirect and polls on while you run the challenge; `onStateChange`, called on the
+main actor with every state read, the last one included; and `onActionRequired`, called once per
+new `redirect_url`. The initial timeout covers `requested`, `processing` and `unknown` and is
+lifted the first time the charge reports `actionRequired` with a redirect URL, because a
+challenge takes as long as the user needs; in `.automatic` it starts again once the challenge
+returns, so a gateway that never decides after it still ends in `PAYMENT_007`, while in `.manual`
+it stays lifted. A failed read or a failed challenge ends the call with that error unchanged
+(`NETWORK_*`, `PAYMENT_010`, `PAYMENT_011`, `AUTH_013`), and cancelling the awaiting task stops
+the polling, closes a challenge that is up and throws `CancellationError`. Two calls on the same
+session poll independently; only one of them can open the challenge, the other ends with
+`PAYMENT_008`.
+
+**The manual path**: after a charge, and again after `handle3dsVerification` returns or throws
+`PAYMENT_011`, read the state with `getChargeState()`. Keep asking while it is `requested`,
+`processing` or `unknown`; stop after a limit of your own and leave the payment to your backend
+then.
 
 ```swift
 func settle(_ session: PaymentSession) async throws -> ChargePaymentResponse {
@@ -428,7 +483,7 @@ func settle(_ session: PaymentSession) async throws -> ChargePaymentResponse {
 A charge that comes back in `actionRequired` with `action?.redirectUrl` needs
 `handle3dsVerification`; call `settle` again once it returns. When no charge went out, for
 instance after an Apple Pay sheet closed without paying, `getChargeState()` throws `NETWORK_002`
-with HTTP 404. Your backend, not the app, decides whether the order is paid (see
+with HTTP 404, on either path. Your backend, not the app, decides whether the order is paid (see
 [Your backend](#your-backend)).
 
 The SDK keeps nothing on disk, and a payment in progress does not survive the app being
@@ -760,6 +815,8 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_003` | Apple Pay produced no usable payment token (unreadable, or empty as in the iOS Simulator) |
 | `PAYMENT_004` | Apple Pay cannot be used: the device cannot pay with it, no supported card network, or the sheet could not be shown |
+| `PAYMENT_006` | `awaitChargeState` only: the charge ended `failed`; the charge is in `chargeState`, its `failReason` in the message |
+| `PAYMENT_007` | `awaitChargeState` only: the charge stayed `requested` / `processing` / `unknown` for the whole `initialTimeout` (30 s); not a result, the last state read is in `chargeState`, read the charge again or wait for the notification |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
@@ -773,7 +830,7 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `CONFIG_001` | `initialize(with:)` was never called |
 | `CONFIG_003` | Not thrown by the SDK; deprecated, removed in 3.0 |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |
-| `VALIDATION_007` | Invalid input — empty ids, or card-form validation failed |
+| `VALIDATION_007` | Invalid input — empty ids, card-form validation failed, or `awaitChargeState` options that are not positive |
 | `INTERNAL_001` | Unexpected internal error |
 | `INTERNAL_003` | Response could not be decoded |
 
@@ -885,8 +942,8 @@ The app opens on a launcher with two destinations and an environment badge:
 
 - **Demo checkout** — a realistic e-shop checkout (`CheckoutView`/`CheckoutViewModel`) that
   exercises every payment method — card form, Apple Pay, a saved card token, and bank transfer —
-  through one consistent flow: create a payment, charge, and drive any 3DS challenge automatically
-  as part of polling the charge to a terminal state. Each pay attempt creates a **fresh** payment,
+  through one consistent flow: create a payment, charge, and `awaitChargeState`, which polls the
+  charge to a result and runs any 3DS challenge on the way. Each pay attempt creates a **fresh** payment,
   since a payment is single-use and a retry after a decline needs a new one.
 - **Developer sandbox** (`ContentView`) — the original four-section console described below, for
   poking at each `PaymentSession` method individually and reading the raw JSON response.
