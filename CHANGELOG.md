@@ -1,3 +1,91 @@
+# [2.0.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.5.0...2.0.0) (2026-10-20)
+
+
+* feat!: read gateway enum values the SDK does not know as unknown GPMOB-156 ([15b410b](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/15b410b07846ba10cf18548afc08c900316313af))
+* feat!: report a closed payment window as PAYMENT_011 GPMOB-158 ([27640ee](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/27640eeca829c765d6a0cec7348210a6aee7b828))
+* fix!: give network failures SDK codes GPMOB-158 ([5ddc778](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/5ddc77860ccdc55c028d4fa3dbb7937d5dadcda0))
+* fix!: stop offering return_url on the charge request GPMOB-149 ([0d2439c](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/0d2439c8bca879268a42db23645379a74490c54f))
+* fix!: type the Apple Pay failures GPMOB-158 ([3fcd09d](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/3fcd09d1027ad76f3fe20493f50a59665b6d03ef))
+* refactor!: drop getPublicEncryptionKey and hide the card encryption GPMOB-155 ([80e33ba](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/80e33ba0cced5604db477ed6631601ee15941607))
+* refactor!: drop inputBorderStyle from the theme GPMOB-145 ([d36f21d](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/d36f21d68cc3a0016d40069ebf2be834b7dc04ff))
+* refactor!: drop the JSON theme from the SDK, its tests and the docs GPMOB-145 ([faa6991](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/faa6991cdf113f27a549e57bc19b9567b9a13de7))
+* refactor!: settle the theme defaults and drop the standard factory GPMOB-145 ([c54384c](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/c54384ca5c0baba1a6c042644745e57bbb3f8a5b))
+
+
+### Bug Fixes
+
+* analyze commits and release by hand GPMOB-153 ([2ebe5ba](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/2ebe5ba473df60168951a7deb3120f0a2e1e4fed))
+* charge 1 Kč in the demo checkout GPMOB-158 ([164c597](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/164c5973b0dfc86ff4dc0963c38a188c2dc92864))
+* clamp the themed lengths and font sizes the decoder used to guard GPMOB-145 ([6eac3fc](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/6eac3fc91902b398dce72ac6344c984f7a81e197))
+* clear card form data from memory after submit GPMOB-140 ([aa2cada](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/aa2cada740bdd27358c640bb9b1240c4fb3258ed))
+* clear the card form after a successful encryption GPMOB-149 ([9eab32d](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/9eab32df78fe6ddabb3a74ccb1c49516859a4c54))
+* complete browser_data from the gateway before a charge GPMOB-149 ([eb04826](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/eb04826bdb019f0dc73ad1d85b808e6f36338216))
+* date the card JWE by the gateway's clock GPMOB-155 ([d88e930](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/d88e93075a2d6b449c1ba84f359daa41d5eb920d))
+* default the card form to the platform's own appearance GPMOB-145 ([8939831](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/89398312d5493705e2c22693b0033f6cf7fac6a9))
+* end a 3DS screen closed elsewhere GPMOB-156 ([394aad7](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/394aad7d5d7f6a317df051cff99480945a439288))
+* end the 3DS verification on the charge's return URL GPMOB-149 ([5108cf7](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/5108cf776e11178dd7c62226504c3b9b4db792fc))
+* fail clearly when the selected environment has no base URL GPMOB-146 ([3f5096e](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/3f5096e9c309dfabb8d77429abaf3ea1eb8e59d5))
+* give the demo's dark themes a readable placeholder GPMOB-145 ([8584f93](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/8584f93dd8fd11e176e4f781c8bb92a06ea1ebb0))
+* hide the required errors once the form empties itself GPMOB-158 ([eecde95](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/eecde958d559e343550d40b835be35b17eda4415))
+* keep an input's content and border inside the field GPMOB-145 ([55aecc8](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/55aecc837c18146c7b7ea7e26c036d9f58397d5a))
+* keep the demo's themed text off the input border GPMOB-145 ([c79d1a9](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/c79d1a9194d8981a2af9a33ef1cdc72bffe41d94))
+* keep the expiration and CVV inputs on one line GPMOB-145 ([275d8d8](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/275d8d89698fa93c646aec99caa3dafadeb1969d))
+* name built-in gateways in the demo badge and charge 1 CZK GPMOB-146 ([3dacb76](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/3dacb76919b4c36e45066a5fd28d84a2731b93df))
+* read inputHeight as the minimum height of the whole field GPMOB-145 ([c682b5e](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/c682b5e17deed756cda07ac6f743fc461e7d6818))
+* report an unreachable 3DS challenge as PAYMENT_010 GPMOB-149 ([a9ce820](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/a9ce8203fa37cd11fa1ce639cbe0d203b8e2218c))
+* report the theme keys the cut retired GPMOB-145 ([e1e6148](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/e1e614898b53a996c762408b5f4b2c2b02254d7b))
+* require fresh card entry on checkout retry GPMOB-140 ([a69545a](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/a69545a2047ffe29ec4087a19eba53f4271b9e83))
+* restore the expiration label from GoPay's own translations GPMOB-145 ([c970795](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/c97079504c26e6278cd0699696b8658321229c70))
+* scale the input text with the same text size as its field GPMOB-145 ([6fd35f4](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/6fd35f40d7083dcdbe48a282020df7717485e96d))
+* shorten the expiration label where it crowded its column GPMOB-145 ([55ab190](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/55ab190ce7000920bc22b83b0d01aa523c1d00d9))
+* take the 3DS return URL from the backend, not the charge GPMOB-158 ([de7f1be](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/de7f1bea2b8560ab182584edf02e89acbe678429))
+* validate demo base URL override against its consumer GPMOB-146 ([ba23703](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/ba23703fea3b9c3f0e84a1d9eb92e7d9dff409fd))
+
+
+### Features
+
+* add demo checkout page GPMOB-138 ([83553dc](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/83553dc87557d52c55d6bafe25aaf40f27957b78))
+* add the underline border style with a focus gradient GPMOB-145 ([a0abbf6](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/a0abbf6d742ae97c0ea881871835e428204ceff7))
+* allow overriding demo gateway at launch GPMOB-146 ([eee2d64](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/eee2d6469266931a472eba8f8b80201ebde4fbcf))
+* example checkout page GPMOB-138 ([b9c7018](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/b9c701814a04c272d960af4cf5e0a896f9731507))
+* keep the gateway's error body on GopaySDKError GPMOB-158 ([386d0aa](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/386d0aa441b16e08b2adb5d633094af01561c80a))
+* let a 3DS challenge hand off to a banking app GPMOB-149 ([109cdef](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/109cdef115a0d1335da321765fcf3982f0f700ea))
+* make ChargePaymentResponse.returnUrl optional GPMOB-149 ([eccabb9](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/eccabb9c3d477436b103db3a53f4b04f2fd693be))
+* rebuild the card form theme around the cc-v4 parameter set GPMOB-145 ([d095902](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/d09590207087421f210ee2059f2855f9f52addd2))
+* render the typography and input text theme params GPMOB-145 ([4e0d975](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/4e0d9752fdea510726fd6fba190795281bd23d8f))
+* run the demo app from a gitignored .env GPMOB-146 ([37695e3](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/37695e3d3194c6696f0f383b1bdc92409f89bfc4))
+* ship a privacy manifest with the SDK GPMOB-158 ([d0ad60f](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/d0ad60fb9a801f6a6d5b53ba78b597f2e259e53d))
+* support collapsed input borders as one block GPMOB-145 ([f0e9684](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/f0e9684636a15ebe787a3267ce469678a825d4b5))
+* theme the demo card form from JSON documents GPMOB-145 ([1c20945](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/1c209452811e0c40a84b4f98bcfc1228ef3f6f1e))
+* unify focus and error border semantics GPMOB-145 ([e0debf1](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/e0debf1ff3cc7f7bdbe844624bce6552fbd0a0e6))
+* watch the charge for a 3DS action in the demo console GPMOB-149 ([8767d5c](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/8767d5ccb0f155540ff82e830dce571d5dae8d2f))
+
+
+### BREAKING CHANGES
+
+* closing the wallet sheet or the 3DS screen throws PAYMENT_011; a cancellation comes only from the caller cancelling
+* Apple Pay failures are GopaySDKError PAYMENT_003/004 instead of a GopaySDK NSError
+* transport failures are GopaySDKError NETWORK_001/004/005/007, AUTH_010 only on HTTP 400/401/403
+* response enums gain an unknown case for values the gateway adds later
+* getPublicEncryptionKey removed; encryption utilities and key models are internal
+* ChargePaymentRequest no longer takes returnUrl
+* ChargePaymentResponse.returnUrl is now String? instead of String; read nil as "the gateway did not say" and fall back to GopaySDK.chargeReturnURL. Android mirrors the same shape.
+* GopayCardFormTheme.inputBorderStyle and the GopayCardFormBorderStyle enum are
+gone. Drop the argument; the form already rendered every value as a bordered field.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+* GopayCardFormTheme.standard is gone; GopayCardFormTheme() is the same value.
+The inputBorderRadius default changes from 8 to 5 and groupSpacing from 12 to 16, so a theme
+that relied on either default renders a point tighter and a row further apart than before.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+* GopayCardFormTheme and GopayCardFormBorderStyle are no longer Codable.
+GopayCardFormTheme.init(from:), encode(to:) and both applying(_:) overloads are gone, along with
+the Color(gopayHex:) and Color.gopayHex bridge. Build a theme with its memberwise initialiser.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+* GopayCardFormTheme is rebuilt around cc-v4 params, see README migration table.
+
 # [1.5.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.4.0...1.5.0) (2026-07-28)
 
 
