@@ -1,3 +1,11 @@
+# [2.1.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/2.0.0...2.1.0) (2026-10-20)
+
+
+### Features
+
+* add awaitChargeState with PAYMENT_006 and PAYMENT_007 GPMOB-159 ([3709403](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/3709403ce9d7c4b72520304e398d2c6db6484fdb))
+* await the charge in the demo checkout and sandbox GPMOB-159 ([d3a1189](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/d3a11898f31e8decb8a072c71733bf9be5393d6f))
+
 # [2.0.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/1.5.0...2.0.0) (2026-10-20)
 
 A major release with a new error contract, a rebuilt card form theme and a changed 3DS flow; see [Migrating from 1.x](README.md#migrating-from-1x) in the README before upgrading.
