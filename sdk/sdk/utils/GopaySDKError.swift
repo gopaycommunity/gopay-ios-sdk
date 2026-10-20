@@ -63,8 +63,9 @@ public struct GopaySDKError: LocalizedError {
         /// ``GopaySDKError/chargeState`` carries the charge and `message` its `fail_reason`. The
         /// payment is over; a retry needs a new payment.
         case paymentDeclined = "PAYMENT_006"
-        /// The charge stayed undecided, in `requested`, `processing` or `unknown`, for the whole
-        /// initial timeout of ``PaymentSession/awaitChargeState(_:)``. Not a result: the charge is
+        /// The charge stayed undecided, in `requested`, `processing`, `unknown` or `actionRequired`
+        /// without a new address, for the whole initial timeout of
+        /// ``PaymentSession/awaitChargeState(_:)``. Not a result: the charge is
         /// still with the gateway, and ``GopaySDKError/chargeState`` carries it as last read. Read
         /// ``PaymentSession/getChargeState()`` or wait for the notification on your backend
         /// before offering a new payment.

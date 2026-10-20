@@ -194,7 +194,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 
 ### PAYMENT_007: Charge Timeout
 - **Case**: `paymentTimeout`
-- **Description**: The charge stayed undecided, in `requested` / `processing` / `unknown`, for the whole initial timeout of `awaitChargeState()` (`initialTimeout`, 30 s by default), counted from the call. The first `actionRequired` with a redirect URL lifts the timeout, because a 3DS challenge takes as long as the user needs; in `ThreeDSMode.automatic` it starts again once the challenge returns, in `ThreeDSMode.manual` it stays lifted
+- **Description**: The charge stayed undecided, in `requested` / `processing` / `unknown`, or in `actionRequired` without a new address (no `redirect_url`, an empty one, or one already reported), for the whole initial timeout of `awaitChargeState()` (`initialTimeout`, 30 s by default), counted from the call. The first `actionRequired` with a redirect URL lifts the timeout, because a 3DS challenge takes as long as the user needs; in `ThreeDSMode.automatic` it starts again once the challenge returns, in `ThreeDSMode.manual` it stays lifted
 - **Common Causes**:
   - A slow issuer or acquirer
   - Gateway load

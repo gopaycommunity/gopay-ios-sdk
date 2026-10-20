@@ -21,8 +21,9 @@ public struct AwaitChargeOptions {
     /// How long after one answer the next `GET /payments/{id}/charge` goes out, in seconds.
     /// Defaults to 1 second, the cadence GoPay recommends.
     public var interval: TimeInterval
-    /// How long the charge may stay undecided, in `requested`, `processing` or `unknown`, before
-    /// the call gives up with ``GopaySDKError/Code/paymentTimeout``, in seconds. Defaults to 30
+    /// How long the charge may stay undecided, in `requested`, `processing`, `unknown` or
+    /// `actionRequired` without a new address, before the call gives up with
+    /// ``GopaySDKError/Code/paymentTimeout``, in seconds. Defaults to 30
     /// seconds, counted from the call. Lifted the first time the charge reports `actionRequired`
     /// with a redirect URL: a 3DS challenge takes as long as the user needs. In
     /// ``ThreeDSMode/automatic`` the same timeout starts again once the challenge returns, so the
@@ -119,7 +120,8 @@ public extension PaymentSession {
     /// - `succeeded` returns the charge.
     /// - `failed` throws ``GopaySDKError/Code/paymentDeclined`` with the charge as
     ///   ``GopaySDKError/chargeState`` and its `failReason` in the message.
-    /// - `requested`, `processing` and `unknown` are waited out. When they last past
+    /// - `requested`, `processing` and `unknown` are waited out, and so is `actionRequired`
+    ///   without a new address. When they last past
     ///   ``AwaitChargeOptions/initialTimeout``, counted from the call, the read on the deadline
     ///   decides: a charge still undecided there throws ``GopaySDKError/Code/paymentTimeout``,
     ///   with that read as ``GopaySDKError/chargeState``. The charge is not over then; read
@@ -133,7 +135,8 @@ public extension PaymentSession {
     ///   gateway that never decides after the challenge still ends in `paymentTimeout`; in
     ///   ``ThreeDSMode/manual`` it polls on at once, without a timeout, and the challenge is yours
     ///   to run. The same address reported again is not opened again, and an `actionRequired`
-    ///   without an address is waited out like `processing`.
+    ///   without an address is waited out like `processing`: either can end in `paymentTimeout`
+    ///   with that state as ``GopaySDKError/chargeState``.
     ///
     /// A failed read ends the call with that read's own error, unchanged: `NETWORK_*` for a
     /// transport or HTTP failure, ``GopaySDKError/Code/authPaymentSessionClosed`` for a closed

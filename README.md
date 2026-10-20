@@ -435,9 +435,10 @@ do {
     // PAYMENT_006: the charge ended failed. error.chargeState is the charge, its failReason
     // is in the message. The payment is over; a retry means a new payment.
 } catch let error as GopaySDKError where error.code == .paymentTimeout {
-    // PAYMENT_007: still requested / processing / unknown after initialTimeout (30 s by
-    // default). Not a result: error.chargeState is the last state read. Read getChargeState()
-    // later, or wait for the notification on your backend, before offering a new payment.
+    // PAYMENT_007: still requested / processing / unknown, or actionRequired without a new
+    // address, after initialTimeout (30 s by default). Not a result: error.chargeState is the
+    // last state read. Read getChargeState() later, or wait for the notification on your
+    // backend, before offering a new payment.
 } catch let error as GopaySDKError where error.code == .paymentCancelled {
     // PAYMENT_011: the 3DS screen closed before it finished. The challenge may still have
     // been answered, so read getChargeState() before offering the payment again.
@@ -816,7 +817,7 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `PAYMENT_003` | Apple Pay produced no usable payment token (unreadable, or empty as in the iOS Simulator) |
 | `PAYMENT_004` | Apple Pay cannot be used: the device cannot pay with it, no supported card network, or the sheet could not be shown |
 | `PAYMENT_006` | `awaitChargeState` only: the charge ended `failed`; the charge is in `chargeState`, its `failReason` in the message |
-| `PAYMENT_007` | `awaitChargeState` only: the charge stayed `requested` / `processing` / `unknown` for the whole `initialTimeout` (30 s); not a result, the last state read is in `chargeState`, read the charge again or wait for the notification |
+| `PAYMENT_007` | `awaitChargeState` only: the charge stayed `requested` / `processing` / `unknown`, or `actionRequired` without a new address, for the whole `initialTimeout` (30 s); not a result, the last state read is in `chargeState`, read the charge again or wait for the notification |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
