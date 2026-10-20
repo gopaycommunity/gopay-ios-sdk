@@ -7,7 +7,8 @@
 //  Demonstrates the per-payment session flow:
 //   1. (server-side, simulated here) create a payment -> payment_id + payment_secret
 //   2. startPaymentSession(paymentId:paymentSecret:)
-//   3. session.getStatus / chargeWithApplePay / handle3dsVerification / getChargeState / getQrPaymentInfo
+//   3. session.getStatus / chargeWithApplePay / handle3dsVerification / getChargeState /
+//      awaitChargeState / getQrPaymentInfo
 //   4. card form -> JWE (which your server tokenizes)
 //   5. session.close()
 //
@@ -139,6 +140,9 @@ struct ContentView: View {
                 if let pending = Pending3ds(state) {
                     await MainActor.run { pending3ds = pending }
                 }
+            }
+            button("Await charge state", system: "hourglass") {
+                try await awaitChargeState()
             }
             button("Handle 3DS verification", system: "lock.shield") {
                 // The link stays armed until the verification returns: `handle3ds` drops it on
@@ -381,6 +385,23 @@ struct ContentView: View {
         }
     }
 
+    /// The SDK's own polling: `awaitChargeState()` reads the charge once a second, opens the 3DS
+    /// challenge itself when the gateway asks for one, and returns the charge once it is
+    /// `succeeded`. A charge that ended `failed` is `PAYMENT_006`, one still undecided after 30
+    /// seconds `PAYMENT_007`; both land in the console through `run`, with the charge they carry.
+    /// The Android demo has the same button.
+    private func awaitChargeState() async throws {
+        let session = try requireSession()
+        // The SDK runs the challenge itself here, so the manual link is dropped.
+        await MainActor.run { pending3ds = nil }
+        let result = try await session.awaitChargeState(AwaitChargeOptions(
+            returnURL: URL(string: returnURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+            onStateChange: { charge in log("// awaitChargeState: \(charge.state.rawValue)") },
+            onActionRequired: { redirect in log("// awaitChargeState: 3DS required, opening \(redirect)") }
+        ))
+        logResponse("awaitChargeState() -> ChargePaymentResponse", result)
+    }
+
     private func handle3ds(_ pending: Pending3ds) async throws {
         let session = try requireSession()
         try await session.handle3dsVerification(
@@ -492,6 +513,10 @@ struct ContentView: View {
             // The console's own task going away, not the user: nothing left to show it on.
         } catch let error as GopaySDKError where error.code == .paymentCancelled {
             log("Closed before it finished [\(error.code.rawValue)]: \(error.message)")
+        } catch let error as GopaySDKError where error.chargeState != nil {
+            // PAYMENT_006 and PAYMENT_007 carry the charge as awaitChargeState last read it.
+            log("Error [\(error.code.rawValue)]: \(error.message)")
+            logResponse("error.chargeState -> ChargePaymentResponse", error.chargeState)
         } catch let error as GopaySDKError {
             log("Error [\(error.code.rawValue)]: \(error.message)")
         } catch {

@@ -5,10 +5,11 @@
 //  Owns the whole checkout flow. This is the file to read if you want to see, in one place, how an
 //  integration wires the SDK together:
 //
-//    create payment (your server) -> startPaymentSession -> charge(...) -> 3DS -> final state
+//    create payment (your server) -> startPaymentSession -> charge(...) -> awaitChargeState -> result
 //
 //  Every payment method funnels into the same `runCharge` tail, because 3DS and result handling
-//  are identical regardless of how the card data arrived.
+//  are identical regardless of how the card data arrived: `awaitChargeState` polls the charge and
+//  runs the 3DS challenge on the way.
 //
 //  Each tap of the pay button starts that sequence from the top with a brand-new payment — a
 //  payment is single-use, so a retry after a decline needs a new one.
@@ -138,8 +139,8 @@ final class CheckoutViewModel {
             }
         } catch is CancellationError {
             // The checkout's own task going away, not the shopper: nothing left to show it on.
-        } catch let error as GopaySDKError where error.code == .paymentCancelled {
-            await settleAfterCancellation()
+        } catch let error as GopaySDKError where error.code == .paymentCancelled || chargeSent {
+            await settleAfterInterruption(error)
         } catch let error as GopaySDKError {
             fail(message: "[\(error.code.rawValue)] \(error.message)")
         } catch {
@@ -148,7 +149,9 @@ final class CheckoutViewModel {
         busyLabel = nil
     }
 
-    /// PAYMENT_011: the Apple Pay sheet or the 3DS challenge closed before it finished.
+    /// The payment was interrupted: PAYMENT_011, the Apple Pay sheet or the 3DS challenge closed
+    /// before it finished, or any other error once the charge had gone out, such as a read that
+    /// failed on the network or a 3DS challenge that could not be presented.
     ///
     /// An Apple Pay sheet closed before its charge went out sends nothing, so a soft banner is all
     /// it takes. After the charge went out it is not necessarily a payment that did not happen:
@@ -158,8 +161,10 @@ final class CheckoutViewModel {
     /// the gateway says does not exist, or one that did not go through, gets the soft banner. When
     /// the charge cannot be read, the pending screen with its Refresh button stays up rather than
     /// a new payment being offered.
-    private func settleAfterCancellation() async {
-        let pickAgain = "Payment cancelled. Pick a method and try again."
+    private func settleAfterInterruption(_ error: GopaySDKError) async {
+        let pickAgain = error.code == .paymentCancelled
+            ? "Payment cancelled. Pick a method and try again."
+            : "[\(error.code.rawValue)] \(error.message). Pick a method and try again."
         guard chargeSent, let session else {
             banner = pickAgain
             return
@@ -171,10 +176,9 @@ final class CheckoutViewModel {
             lastRead = charge
             switch charge.state {
             case .succeeded:
-                outcome = Outcome(state: charge.state, response: charge, message: charge.failReason)
+                outcome = Outcome(state: charge.state, response: charge, message: nil)
             case .requested, .processing, .unknown:
-                let settled = try await settle(session: session, initial: charge)
-                outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
+                outcome = try await settle(session: session)
             case .failed, .actionRequired:
                 // Back to the checkout, also from the pending screen's Refresh.
                 outcome = nil
@@ -212,21 +216,19 @@ final class CheckoutViewModel {
         paymentId = nil
     }
 
-    /// Re-reads the charge and resumes polling — used by the pending result screen.
+    /// Waits for the charge again — used by the pending result screen.
     func refreshChargeState() async {
         guard let session else { return }
         busyLabel = "Refreshing…"
         defer { busyLabel = nil }
         do {
-            let charge = try await session.getChargeState()
-            let settled = try await settle(session: session, initial: charge)
-            outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
+            outcome = try await settle(session: session)
         } catch is CancellationError {
             // The checkout's own task going away, not the shopper: nothing left to show it on.
-        } catch let error as GopaySDKError where error.code == .paymentCancelled {
-            await settleAfterCancellation()
         } catch let error as GopaySDKError {
-            banner = "[\(error.code.rawValue)] \(error.message)"
+            // The charge is out, so a failed refresh goes the same way as a closed challenge: the
+            // state is read once more, and the pending screen stays up when it cannot be.
+            await settleAfterInterruption(error)
         } catch {
             banner = error.localizedDescription
         }
@@ -299,59 +301,43 @@ final class CheckoutViewModel {
 
     /// Charge, then settle. Shared by every card-based method.
     private func runCharge(session: PaymentSession, _ charge: () async throws -> ChargePaymentResponse) async throws {
-        let response = try await charge()
+        _ = try await charge()
         chargeSent = true
-        let settled = try await settle(session: session, initial: response)
-        outcome = Outcome(state: settled.state, response: settled, message: settled.failReason)
+        outcome = try await settle(session: session)
     }
 
-    /// Drives a charge to a terminal state, exactly the way a merchant backend would: poll
-    /// `GET /payments/{id}/charge` on an interval until the gateway reports SUCCEEDED or FAILED.
+    /// Drives the charge to a result with the SDK's `awaitChargeState`: it reads
+    /// `GET /payments/{id}/charge` once a second, runs a 3DS challenge inline whenever the gateway
+    /// hands back a new `redirect_url` (the return URL is the one the payment was created with),
+    /// and returns the charge once it is `succeeded`.
     ///
-    /// `ACTION_REQUIRED` is a normal step of that loop, not a failure — whenever the gateway hands
-    /// back a 3DS `redirect_url` we haven't seen yet, the SDK's verification web view is presented
-    /// inline and polling continues afterwards. Each redirect is run once so a gateway that keeps
-    /// echoing the same action can't loop the shopper through the challenge repeatedly.
-    ///
-    /// If the charge is still in flight when the budget runs out we return the last response as-is;
-    /// the result screen then shows "pending" with a Refresh button that re-enters this loop.
-    private func settle(session: PaymentSession, initial: ChargePaymentResponse) async throws -> ChargePaymentResponse {
-        var response = initial
-        var handledRedirects = Set<String>()
-        var attempts = 0
-
-        while true {
-            if let redirect = response.action?.redirectUrl,
-               let url = URL(string: redirect),
-               handledRedirects.insert(redirect).inserted {
-                busyLabel = "Verifying with your bank…"
-                try await session.handle3dsVerification(
-                    redirectURL: url,
-                    returnURL: returnURL
-                )
-            }
-
-            switch response.state {
-            case .succeeded, .failed:
-                return response
-            case .requested, .processing, .actionRequired, .unknown:
-                // A state the SDK does not know is not a result either; keep polling.
-                break
-            }
-
-            guard attempts < Self.maxPollAttempts else { return response }
-            attempts += 1
-
-            busyLabel = attempts == 1 ? "Confirming payment…" : "Still confirming… (\(attempts))"
-            try await Task.sleep(for: .seconds(Self.pollInterval))
-            response = try await session.getChargeState()
+    /// A charge that ended `failed` arrives as `PAYMENT_006` with the charge attached, which is
+    /// the failure screen. One that is still undecided after the initial 30 seconds arrives as
+    /// `PAYMENT_007`: not a result, so the pending screen shows the last state read, with a
+    /// Refresh button that comes back here. Anything else, a closed 3DS screen (`PAYMENT_011`)
+    /// included, propagates to the caller.
+    private func settle(session: PaymentSession) async throws -> Outcome {
+        busyLabel = "Confirming payment…"
+        do {
+            let charge = try await session.awaitChargeState(AwaitChargeOptions(
+                returnURL: returnURL,
+                onStateChange: { [weak self] charge in
+                    if charge.state != .actionRequired { self?.busyLabel = "Confirming payment…" }
+                },
+                onActionRequired: { [weak self] _ in
+                    self?.busyLabel = "Verifying with your bank…"
+                }
+            ))
+            return Outcome(state: charge.state, response: charge, message: nil)
+        } catch let error as GopaySDKError where error.code == .paymentDeclined {
+            let charge = error.chargeState
+            return Outcome(state: .failed, response: charge, message: charge?.failReason ?? error.message)
+        } catch let error as GopaySDKError where error.code == .paymentTimeout {
+            // Not decided yet: the pending screen, whose Refresh waits again.
+            let charge = error.chargeState
+            return Outcome(state: charge?.state ?? .processing, response: charge, message: nil)
         }
     }
-
-    /// ~45 s of polling — long enough for a slow issuer, short enough that the shopper isn't
-    /// stranded on a spinner.
-    private static let pollInterval: Double = 1.5
-    private static let maxPollAttempts = 30
 
     /// Creates a *fresh* payment on the simulated merchant backend and opens a session for it.
     ///
