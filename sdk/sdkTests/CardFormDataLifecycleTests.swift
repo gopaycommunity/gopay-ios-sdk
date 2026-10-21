@@ -123,6 +123,48 @@ extension SessionNetworkTests {
             #expect(error.code == .validationInvalidInput)
             #expect(error.message == GopaySDKErrors.noCardFormData)
         }
+
+        // The emptied form syncs its empty fields back in on its next appearance or keystroke;
+        // that is still a form without a card, so the answer stays noCardFormData, as on Android.
+        sdk.updateCardFormData(GopayCardFormData(), formId: "f1")
+        do {
+            _ = try await sdk.submitCardForm(formId: "f1")
+            Issue.record("expected noCardFormData")
+        } catch let error as GopaySDKError {
+            #expect(error.message == GopaySDKErrors.noCardFormData)
+        }
+    }
+
+    /// A form on screen that nobody has typed into has synced empty fields: no card, not an
+    /// invalid one. Hosts key their "enter the card" path on this message.
+    @Test func submitCardForm_emptyForm_throwsNoCardFormData() async throws {
+        StubURLProtocol.reset { _ in (500, Data()) }
+        let sdk = lifecycleSDK()
+        sdk.updateCardFormData(GopayCardFormData(), formId: "f1")
+
+        do {
+            _ = try await sdk.submitCardForm(formId: "f1")
+            Issue.record("expected noCardFormData")
+        } catch let error as GopaySDKError {
+            #expect(error.code == .validationInvalidInput)
+            #expect(error.message == GopaySDKErrors.noCardFormData)
+        }
+        #expect(StubURLProtocol.paths.isEmpty)
+    }
+
+    /// A card that is typed but fails validation is a different answer: the user has to fix it,
+    /// not enter it.
+    @Test func submitCardForm_partiallyTypedForm_throwsInvalidCardFormData() async throws {
+        StubURLProtocol.reset { _ in (500, Data()) }
+        let sdk = lifecycleSDK()
+        sdk.updateCardFormData(GopayCardFormData(cardNumber: "4444"), formId: "f1")
+
+        do {
+            _ = try await sdk.submitCardForm(formId: "f1")
+            Issue.record("expected invalidCardFormData")
+        } catch let error as GopaySDKError {
+            #expect(error.message == GopaySDKErrors.invalidCardFormData)
+        }
     }
 
     @Test func aSuccessfulSubmitRunsTheRegisteredWipe() async throws {

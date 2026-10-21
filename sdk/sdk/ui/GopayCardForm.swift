@@ -77,6 +77,11 @@ internal struct GopayCardFormData {
     var isCvvValid: Bool {
         return cvv.count == 3 && cvv.allSatisfy { $0.isNumber }
     }
+
+    /// True when no field holds anything: a form nobody has typed into, or one the SDK emptied.
+    var isEmpty: Bool {
+        cardNumber.isEmpty && expirationMonth.isEmpty && expirationYear.isEmpty && cvv.isEmpty
+    }
 }
 
 /// Controls whether and when ``GopayCardForm`` renders localized inline validation errors.
@@ -547,9 +552,9 @@ public struct GopayCardForm: View {
     /// "required" message, also while the 3DS challenge runs.
     ///
     /// The SDK's own copy is already gone by this point and this does not re-sync an empty one,
-    /// so a second submit fails until a new card is typed: with `noCardFormData` while nothing is
-    /// stored, and with `invalidCardFormData` from the next `onAppear` or keystroke onwards, which
-    /// syncs the emptied fields back in.
+    /// so a second submit fails with `noCardFormData` until a new card is typed; the next
+    /// `onAppear` or keystroke syncs the emptied fields back in, and an empty form is a form
+    /// without a card, so the answer stays the same.
     private func resetFields() {
         data = GopayCardFormData()
         cardNumberEdited = false

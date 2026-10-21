@@ -4,9 +4,24 @@ import CommonCrypto
 import CryptoKit
 
 /// Utility for JWE (JSON Web Encryption) operations following RFC 7516.
+///
+/// Every failure is a ``GopaySDKError`` with ``GopaySDKError/Code/unexpected`` (`INTERNAL_001`),
+/// the step that failed in `message` and the system's own error, when there is one, as
+/// `underlying`. The Android SDK reports an encryption failure with the same code.
 struct JweUtils {
     /// How long the encrypted card payload stays valid. Short by design — tokenize right away.
     private static let payloadValiditySeconds: TimeInterval = 600
+
+    /// The error a failed encryption step surfaces as.
+    static func encryptionError(_ message: String, underlying: Error? = nil) -> GopaySDKError {
+        GopaySDKError(.unexpected, message: "Card encryption failed: \(message)", underlying: underlying)
+    }
+
+    /// The `OSStatus` a Security call answered with, as an error for `underlying`.
+    private static func statusError(_ status: OSStatus) -> Error {
+        NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+    }
+
     /// Creates a JWE string by encrypting card data using the provided JWK.
     /// - Parameters:
     ///   - cardData: The card data to encrypt.
@@ -25,11 +40,11 @@ struct JweUtils {
         ]
         
         // Use compact JSON serialization (no whitespace)
-        guard let headerData = try? JSONSerialization.data(
-            withJSONObject: header,
-            options: []
-        ) else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweHeaderEncodingFailed))
+        let headerData: Data
+        do {
+            headerData = try JSONSerialization.data(withJSONObject: header, options: [])
+        } catch {
+            return .failure(encryptionError(GopaySDKErrors.jweHeaderEncodingFailed, underlying: error))
         }
         
         // Step 2: Generate random CEK (Content Encryption Key) - 32 bytes for AES-256
@@ -38,7 +53,7 @@ struct JweUtils {
             SecRandomCopyBytes(kSecRandomDefault, 32, bytes.baseAddress!)
         }
         guard cekStatus == errSecSuccess else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweKeyGenerationFailed))
+            return .failure(encryptionError(GopaySDKErrors.jweKeyGenerationFailed, underlying: statusError(cekStatus)))
         }
         
         // Step 3: Generate random IV (12 bytes for AES-GCM)
@@ -47,7 +62,7 @@ struct JweUtils {
             SecRandomCopyBytes(kSecRandomDefault, 12, bytes.baseAddress!)
         }
         guard ivStatus == errSecSuccess else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweIVGenerationFailed))
+            return .failure(encryptionError(GopaySDKErrors.jweIVGenerationFailed, underlying: statusError(ivStatus)))
         }
         
         // Step 4: Encrypt card data JSON with AES-256-GCM using CEK, IV, and header as AAD.
@@ -67,11 +82,11 @@ struct JweUtils {
         ]
         
         // Use compact JSON serialization (no whitespace)
-        guard let cardDataJSONData = try? JSONSerialization.data(
-            withJSONObject: cardDataJSON,
-            options: []
-        ) else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweCardDataEncodingFailed))
+        let cardDataJSONData: Data
+        do {
+            cardDataJSONData = try JSONSerialization.data(withJSONObject: cardDataJSON, options: [])
+        } catch {
+            return .failure(encryptionError(GopaySDKErrors.jweCardDataEncodingFailed, underlying: error))
         }
         
         // Base64URL encode header for AAD (according to JWE spec, AAD is the encoded header)
@@ -113,24 +128,27 @@ struct JweUtils {
         }
         
         // Fallback: return error for older iOS versions
-        return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweAESGCMNotAvailable))
+        return .failure(encryptionError(GopaySDKErrors.jweAESGCMNotAvailable))
     }
     
     /// AES-256-GCM encryption using CryptoKit (iOS 13+) with AAD support.
     @available(iOS 13.0, *)
     private static func aes256GCMEncryptCryptoKit(data: Data, key: Data, iv: Data, aad: Data) -> Result<(ciphertext: Data, tag: Data), Error> {
         guard key.count == 32 else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweInvalidKeySize))
+            return .failure(encryptionError(GopaySDKErrors.jweInvalidKeySize))
         }
         
         guard iv.count == 12 else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweInvalidIVSize))
+            return .failure(encryptionError(GopaySDKErrors.jweInvalidIVSize))
         }
         
         let symmetricKey = SymmetricKey(data: key)
         
-        guard let nonce = try? AES.GCM.Nonce(data: iv) else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweNonceCreationFailed))
+        let nonce: AES.GCM.Nonce
+        do {
+            nonce = try AES.GCM.Nonce(data: iv)
+        } catch {
+            return .failure(encryptionError(GopaySDKErrors.jweNonceCreationFailed, underlying: error))
         }
         
         do {
@@ -138,7 +156,7 @@ struct JweUtils {
             let sealedBox = try AES.GCM.seal(data, using: symmetricKey, nonce: nonce, authenticating: aad)
             return .success((ciphertext: sealedBox.ciphertext, tag: sealedBox.tag))
         } catch {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jweEncryptionFailed))
+            return .failure(encryptionError(GopaySDKErrors.jweEncryptionFailed, underlying: error))
         }
     }
     
@@ -146,7 +164,7 @@ struct JweUtils {
     private static func encryptCEK(cek: Data, jwk: GopayJWK) -> Result<Data, Error> {
         // Convert JWK to SecKey
         guard let publicKey = jwkToSecKey(jwk: jwk) else {
-            return .failure(GopaySDKErrors.jweError(GopaySDKErrors.jwePublicKeyCreationFailed))
+            return .failure(encryptionError(GopaySDKErrors.jwePublicKeyCreationFailed))
         }
         
         // Encrypt CEK using RSA-OAEP-256
@@ -157,8 +175,8 @@ struct JweUtils {
             cek as CFData,
             &error
         ) as Data? else {
-            let errorMessage = error?.takeRetainedValue().localizedDescription ?? GopaySDKErrors.jweCEKEncryptionFailed
-            return .failure(GopaySDKErrors.jweError(errorMessage))
+            let cause = error?.takeRetainedValue()
+            return .failure(encryptionError(GopaySDKErrors.jweCEKEncryptionFailed, underlying: cause))
         }
         
         return .success(encryptedData)

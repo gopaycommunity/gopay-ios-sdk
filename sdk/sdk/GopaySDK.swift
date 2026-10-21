@@ -131,22 +131,29 @@ public class GopaySDK {
     ///     (`payment:charge payment:read`), which are the only two the gateway grants for payment
     ///     credentials, so there is no wider one. A scope it does not accept throws
     ///     ``GopaySDKError/Code/authPaymentCredentialsInvalid``.
+    /// - Throws: ``GopaySDKError`` with ``GopaySDKError/Code/sdkNotInitialized`` before
+    ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` for an empty
+    ///   `paymentId` or `paymentSecret`, ``GopaySDKError/Code/authPaymentCredentialsInvalid``
+    ///   when the gateway turns the pair down, ``GopaySDKError/Code/authPaymentSessionAlreadyExists``
+    ///   for a payment that already has a session, or the token request's own error.
     public func startPaymentSession(
         paymentId: String,
         paymentSecret: String,
         scope: String = PaymentSession.defaultScope
     ) async throws -> PaymentSession {
-        guard !paymentId.isEmpty else {
+        // Checked first, as the Android `getInstance()` is: without a config there is no gateway
+        // to talk to, whatever the credentials look like.
+        guard config != nil, let authAPI = authAPI, let publicAPI = publicAPI, let client = asyncClient else {
+            throw notInitializedError()
+        }
+        // Blank, not only empty, as the Android `isBlank` check: a value of white space would
+        // otherwise go to the gateway and come back as AUTH_010, a wrong-credentials answer for
+        // what is a missing value.
+        guard !paymentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw GopaySDKError(.validationInvalidInput, message: "paymentId must not be empty")
         }
-        guard !paymentSecret.isEmpty else {
+        guard !paymentSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw GopaySDKError(.validationInvalidInput, message: "paymentSecret must not be empty")
-        }
-        guard let authAPI = authAPI, let publicAPI = publicAPI, let client = asyncClient else {
-            throw GopaySDKError(
-                .sdkNotInitialized,
-                message: "GopaySDK has not been initialized. Call initialize(with:) first."
-            )
         }
 
         let registry = sessionRegistry
@@ -195,12 +202,7 @@ public class GopaySDK {
     /// encryption key and the gateway's clock from the same response. Never cached; the key is
     /// fetched only when a card is being encrypted.
     private func fetchPublicKey() async throws -> ServedPublicKey {
-        guard let publicAPI = publicAPI else {
-            throw GopaySDKError(
-                .sdkNotInitialized,
-                message: "GopaySDK has not been initialized. Call initialize(with:) first."
-            )
-        }
+        guard let publicAPI = publicAPI else { throw notInitializedError() }
         do {
             return try await publicAPI.getPublicKey()
         } catch is CancellationError {
@@ -228,9 +230,13 @@ public class GopaySDK {
     /// through `errorCallback`, and no JWE is built.
     ///
     /// - Returns: A JWE compact serialization (RFC 7516) ready to send to the merchant backend.
-    /// - Throws: ``GopaySDKError`` if `cardData` fails validation, the public key fetch fails, or
-    ///   encryption fails.
+    /// - Throws: ``GopaySDKError`` with ``GopaySDKError/Code/sdkNotInitialized`` before
+    ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` when `cardData`
+    ///   fails validation, the public key fetch's own code when that fails, or
+    ///   ``GopaySDKError/Code/unexpected`` when the encryption itself fails, with the step that
+    ///   failed in the message and the system's error as `underlying`.
     public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
+        guard config != nil else { throw notInitializedError() }
         try validateCardData(cardData)
         let served = try await fetchPublicKey()
         // URLSession's completion API does not notice the task being cancelled, so the fetch
@@ -265,10 +271,10 @@ public class GopaySDK {
     /// should move on rather than wait for further input. A failed encryption leaves everything as
     /// the user typed it, since nothing has been authorized yet.
     ///
-    /// A second call for the same form therefore fails until a new card is typed: with
-    /// `GopaySDKErrors.noCardFormData` while nothing is stored, and with
-    /// `GopaySDKErrors.invalidCardFormData` once the emptied form has re-synced (it does so on
-    /// appear and on any edit).
+    /// A second call for the same form therefore fails with `GopaySDKErrors.noCardFormData`
+    /// until a new card is typed: an emptied form, whether it has re-synced its empty fields or
+    /// not, is a form without a card, as on Android. A card that is typed but invalid is
+    /// `GopaySDKErrors.invalidCardFormData`.
     ///
     /// Like ``encryptCardData(_:)``, every call fetches the public key afresh and dates the
     /// payload by the gateway's clock. A task cancelled while the key is on its way gets
@@ -279,12 +285,19 @@ public class GopaySDK {
     /// to confirm the card again.
     ///
     /// - Parameter formId: The form to read. When `nil`, uses the most recently active form.
+    /// - Throws: ``GopaySDKError`` with ``GopaySDKError/Code/sdkNotInitialized`` before
+    ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` when no card is
+    ///   held or the held one is invalid, and otherwise what ``encryptCardData(_:)`` throws.
     public func submitCardForm(formId: String? = nil) async throws -> String {
+        guard config != nil else { throw notInitializedError() }
         cardFormDataLock.lock()
         let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
         let stored = resolvedId.flatMap { internalCardFormData[$0] }
         cardFormDataLock.unlock()
-        guard let id = resolvedId, let data = stored else {
+        // A form whose fields are all empty holds no card, the same answer as no form at all:
+        // hosts key their "enter the card again" path on this message, and the Android SDK
+        // answers an empty form with it too.
+        guard let id = resolvedId, let data = stored, !data.isEmpty else {
             let error = GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.noCardFormData)
             handleError(error)
             throw error
@@ -373,6 +386,16 @@ public class GopaySDK {
         cardFormDataLock.unlock()
         // Run outside the lock: a wipe re-enters through the form's own bookkeeping.
         runOnMain { resets.forEach { $0() } }
+    }
+
+    /// `CONFIG_001`: thrown by every entry point that needs the gateway while ``config`` is `nil`.
+    /// `shared` is built with API objects over the sandbox so the internals never see a `nil`,
+    /// which is why the config itself, not those objects, is the test.
+    private func notInitializedError() -> GopaySDKError {
+        GopaySDKError(
+            .sdkNotInitialized,
+            message: "GopaySDK has not been initialized. Call initialize(with:) first."
+        )
     }
 
     private func validateCardData(_ cardData: GopayCardData) throws {
