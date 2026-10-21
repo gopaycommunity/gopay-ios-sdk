@@ -381,7 +381,8 @@ public struct ChargePaymentRequest: Encodable {
 
     /// Charge directly with a JWE-encrypted card (`payload`), skipping the server-side
     /// `POST /cards/tokens` tokenization step. `payload` is the JWE produced by
-    /// ``GopaySDK/encryptCardData(_:)`` / ``GopaySDK/submitCardForm()``.
+    /// ``GopaySDK/encryptCardData(_:)`` / ``GopaySDK/submitCardForm(formId:)``, which
+    /// ``PaymentSession/chargeWithEncryptedCard(_:browserData:challengePreference:)`` sends for you.
     public static func encryptedCard(
         _ payload: String,
         browserData: BrowserData,

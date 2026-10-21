@@ -13,6 +13,29 @@ the full catalog, including codes only the Android surface can raise, is in that
 [`ERROR_CODES.md`](https://github.com/gopaycommunity/gopay-android-sdk/blob/master/sdk/docs/ERROR_CODES.md).
 Never add, rename, or repurpose a code on one platform alone.
 
+## The `errorCallback` rule
+
+`GopaySDKConfig.errorCallback` is for central logging and monitoring, not a substitute for
+catching the error at the call. The rule is the same on both platforms:
+
+- Every `GopaySDKError` a public call of `GopaySDK` or of a `PaymentSession` throws reaches the
+  callback **once**. A call made of several steps, such as `chargeWithWallet`, which reads the
+  wallet configuration and then charges, or `awaitChargeState`, which reads the charge again and
+  again, reports the one error it ends with, not each step on the way. An error wrapped into
+  another on the way out, the gateway's 401 behind `AUTH_010` or the browser-data fetch behind a
+  charge error, is reported as the one you catch; the inner one is its `underlying`.
+- `reauthenticate()` on a session is a public call like any other, so a refresh it fails is
+  reported once by it; a refresh that fails inside another call is reported by that call.
+- Two codes never reach it, because they are outcomes of a payment window rather than failures:
+  `PAYMENT_007` (the charge is still undecided) and `PAYMENT_011` (the sheet or the 3DS screen
+  closed early).
+- A `CancellationError` from a task the host cancelled never reaches it, and no error of a type
+  other than `GopaySDKError` does. Constructing a `GopaySDKError` yourself reports nothing.
+- `CONFIG_001` is thrown before `initialize`, when no callback is installed yet, so it does not
+  reach one.
+
+The callback runs on whatever thread the failing call ends on, not necessarily the main thread.
+
 ## Error Code Structure
 
 - **AUTH_XXX**: authentication and authorization errors
@@ -31,7 +54,7 @@ Never add, rename, or repurpose a code on one platform alone.
   - Session left idle past the token lifetime
   - `payment_secret` no longer valid for the payment
 - **Developer Action**:
-  - The SDK re-authenticates once automatically on a 401; a second 401 surfaces this code
+  - The SDK re-authenticates once automatically on a 401 and retries; this code is thrown when the retry gets a second 401 after that re-authentication succeeded, on both platforms. A re-authentication the gateway refuses is `AUTH_010`
   - Start a new `PaymentSession` for the payment
 
 ### AUTH_010: Invalid Payment Credentials
@@ -134,10 +157,10 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Case**: `sdkNotInitialized`
 - **Description**: An API was called before `GopaySDK.shared.initialize(with:)`
 - **Common Causes**:
-  - `startPaymentSession` called on app start before initialization
-- **Note**: `encryptCardData` and `submitCardForm` called before initialization fail with `AUTH_011` instead, because `GopaySDK.shared` starts without `clientId` / `shareableKey`
+  - `startPaymentSession`, `encryptCardData` or `submitCardForm` called on app start before initialization
 - **Developer Action**:
   - Initialize once on app start, before any other SDK call
+- **Note**: the one code `errorCallback` cannot carry, since the callback arrives with the config. The Android `getInstance()` throws the same code
 
 ### CONFIG_003: Missing Required Parameter
 - **Case**: `configMissingParameter`
@@ -154,6 +177,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Pass an absolute `https://` URL ending in `/`; `initialize(with:)` also logs a warning when the selected environment has no base URL
   - `.sandbox` and `.production` carry their own hosts and cannot hit this
+- **Note**: thrown when the request is built, so the first call that needs the gateway fails with it. The Android SDK throws it from `Environment.DEVELOPMENT` and `initialize` instead, before any call
 
 ## Payment Errors (PAYMENT_XXX)
 
@@ -166,7 +190,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Let the user try again or pick another method
   - Test Apple Pay on a device with an Apple Pay sandbox tester account, not in the Simulator
-- **Note**: a charge that fails after the token was read keeps the code of its own failure. On Android the same code covers a Google Pay error and empty payment data, and also a Google Pay set up wrongly for the app, which on iOS is `PAYMENT_004` (see there)
+- **Note**: a charge that fails after the token was read keeps the code of its own failure. On Android the same code covers a Google Pay error, empty payment data and a Google Pay token the SDK cannot parse, and also a Google Pay set up wrongly for the app, which on iOS is `PAYMENT_004` (see there)
 
 ### PAYMENT_004: Payment Method Unavailable
 - **Case**: `paymentMethodUnavailable`
@@ -201,7 +225,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Not a failed payment: the gateway may still decide it. Do not offer a new payment right away
   - Read the charge as last read on `GopaySDKError.chargeState`, then `getChargeState()` again, or call `awaitChargeState()` again, or wait for the notification GoPay sends your backend (`notification_url`), which the GoPay guide treats as the authoritative signal
-- **Note**: thrown by both SDKs since 2.1 and not reported through `errorCallback` on either platform: on iOS no `PaymentSession` call reports there, on Android the code is excluded like `PAYMENT_011`. The read on the deadline decides: a charge still undecided there is this code, one that moved is handled as that state
+- **Note**: thrown by both SDKs since 2.1 and not reported through `errorCallback` on either platform, see the rule at the top. The read on the deadline decides: a charge still undecided there is this code, one that moved is handled as that state
 
 ### PAYMENT_008: Verification Already In Progress
 - **Case**: `paymentVerificationInProgress`
@@ -250,7 +274,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Not a failed payment, and not necessarily one that did not happen: read `getChargeState()` before offering the payment again. A 3DS challenge may have been answered
   - When there is no charge (`NETWORK_002`, HTTP 404) or it did not go through, let the user pick a method again
-- **Note**: cancelling the task that awaits the call is not this code, see Cancellation below. The Android SDK reports the same code for Google Pay and its 3DS screen
+- **Note**: cancelling the task that awaits the call is not this code, see Cancellation below. Not reported through `errorCallback`, see the rule at the top. The Android SDK reports the same code for Google Pay and its 3DS screen
 
 ## Validation Errors (VALIDATION_XXX)
 
@@ -258,17 +282,23 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Case**: `validationInvalidInput`
 - **Description**: Invalid input data was provided to an SDK call
 - **Common Causes**:
-  - Empty `paymentId` / `paymentSecret`
-  - `submitCardForm` or `encryptCardData` called with data that fails validation
+  - Empty `paymentId` / `paymentSecret` passed to `startPaymentSession`
+  - `encryptCardData` called with a card that fails validation: the PAN is not 13 to 19 digits, the month is not `01` to `12`, the year is not 2 to 4 digits, or the CVV is not 3 or 4 digits. The same rules apply on Android
+  - `submitCardForm` called while no `GopayCardForm` holds a card (after a successful submit, or before one was typed), or while the held card is invalid
   - `awaitChargeState()` called with an `interval` or `initialTimeout` that is not positive; nothing is sent
 - **Developer Action**:
   - Validate before calling, and drive the submit button from `GopayCardForm`'s `isValid` binding
+- **Note**: the Android SDK adds one cause of its own: a card charge helper called without `browserData` and without an `activity`, since it derives the device's browser data from the latter. On iOS the helpers derive it from the device on their own
 
 ## Internal Errors (INTERNAL_XXX)
 
 ### INTERNAL_001: Unexpected
 - **Case**: `unexpected`
 - **Description**: An unexpected internal error
+- **Common Causes**:
+  - The card encryption itself failed in `encryptCardData` or `submitCardForm`: the merchant's public key could not be read, or a step of building the JWE failed. The message names the step and `underlying` carries the system's error when there is one. The key fetch failing keeps its own `NETWORK_*` or `AUTH_011` code; this one is only the encryption. The Android SDK throws the same code for the same failure
+  - A request got a response that is not an HTTP response
+  - No view controller could be found to present the 3DS screen from
 - **Developer Action**:
   - Enable `enableDebugLogging` and report the message
 
@@ -292,9 +322,10 @@ Two different things end a payment window early, and they are reported different
   for the charge and returns its result or its error.
 - **Your code cancelled the task** that awaits the call. For `handle3dsVerification` that closes
   the 3DS screen and throws `CancellationError`, which is not a `GopaySDKError`.
-  `chargeWithApplePay` throws it only when the task is cancelled before the sheet is shown. A
-  sheet already up is not closed: the call waits until the sheet closes and ends with the
-  charge's result or `PAYMENT_011`. The Android SDK differs here, see its `ERROR_CODES.md`.
+  `chargeWithApplePay` cancelled before the sheet is shown throws it and shows nothing. A sheet
+  already up is not closed: the call waits until the sheet closes, then returns the charge if it
+  succeeded and otherwise throws `CancellationError` in place of `PAYMENT_011` or the charge's
+  error, and reports neither. The Android SDK differs here, see its `ERROR_CODES.md`.
 
 A 3DS challenge that never reached the user is neither: it throws `PAYMENT_010` (see above), and
 the payment is unverified rather than abandoned. Anything that breaks after the challenge has

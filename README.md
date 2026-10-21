@@ -18,6 +18,8 @@ The SDK implements the **Payments 4.0** per-payment session model:
 - **Localized form labels** in 20 languages (device language, falling back to Czech), with
   per-form overrides and custom locale registration.
 - **Concurrent payments** — multiple independent `PaymentSession`s, keyed by `payment_id`.
+- **One API with the Android SDK** — the card charges, the wallet and the card form have the
+  same names and shapes on both platforms since 2.2 (see [Shared API](#shared-api-with-android)).
 
 The public library product is named **`GopaySDK`** and targets **iOS 13+**. The API is built on
 Swift **async/await**.
@@ -89,9 +91,10 @@ pod install
       │ 3. GopaySDK.shared.startPaymentSession(paymentId:paymentSecret:)
       ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ PaymentSession  →  getStatus / charge / chargeWithApplePay /           │
-│                    awaitChargeState / getChargeState /                 │
-│                    handle3dsVerification / getQrPaymentInfo            │
+│ PaymentSession  →  chargeWithCardToken / chargeWithEncryptedCard /     │
+│                    chargeWithWallet / awaitChargeState /               │
+│                    getStatus / getChargeState / handle3dsVerification / │
+│                    getQrPaymentInfo                                    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -181,8 +184,8 @@ second, as GoPay recommends, opens the 3DS challenge in an SDK-managed WebView w
 asks for one, and returns the charge once it is `succeeded`:
 
 ```swift
-// A saved card; see below for the card form, Apple Pay and the other inputs.
-_ = try await session.charge(.cardToken(token, browserData: await BrowserData.deviceDefault()))
+// A saved card; see below for the card form, the wallet and the other inputs.
+_ = try await session.chargeWithCardToken(token)
 do {
     let charge = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
     // charge.state == .succeeded
@@ -225,15 +228,24 @@ let charge = try await session.getChargeState()             // GET /payments/{id
 // Charge state polled to a result, with the 3DS challenge run on the way (see Reading the result)
 let result = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
 
+// Charges, one call each (see below)                       // POST /payments/{id}/charge
+_ = try await session.chargeWithCardToken(token)
+_ = try await session.chargeWithEncryptedCard(jwe)
+_ = try await session.chargeWithWallet()                    // the Apple Pay sheet
+_ = try await session.charge(request)                       // a ChargePaymentRequest built by hand
+
 // QR (bank transfer) info
 let qr = try await session.getQrPaymentInfo(format: .png)   // GET /payments/{id}/qr-payment/info
 
-// Apple Pay config (for building a sheet manually, if needed)
-let appInfo = try await session.getApplePayInfo()           // GET /payments/{id}/apple-pay/app-info
+// Wallet config (for building an Apple Pay sheet manually, if needed)
+let appInfo = try await session.getWalletInfo()             // GET /payments/{id}/apple-pay/app-info
 
 // Browser data as the charge will send it (charge() runs this step itself)
 let browserData = try await session.completeBrowserData(await BrowserData.deviceDefault())
 ```
+
+`getWalletInfo()` and `chargeWithWallet()` are the wallet's names shared with the Android SDK;
+`getApplePayInfo()` and `chargeWithApplePay()` do the same and stay as aliases.
 
 The enums the gateway answers with (`ChargeState`, `ChargeActionType`, `Emv3dsState`, `CardScheme`,
 `PaymentState`, `Currency`) each have an `unknown` case: a value added after this SDK shipped decodes
@@ -242,10 +254,10 @@ as `unknown` instead of failing the response, and the original value goes to the
 ### Charging with Apple Pay
 
 ```swift
-guard GopaySDK.canUseApplePay() else { /* hide the Apple Pay button */ return }
+guard await GopaySDK.isWalletAvailable() else { /* hide the Apple Pay button */ return }
 
 do {
-    _ = try await session.chargeWithApplePay()               // presents the Apple Pay sheet
+    _ = try await session.chargeWithWallet()                 // presents the Apple Pay sheet
     let result = try await session.awaitChargeState(         // polls; presents the 3DS WebView
         AwaitChargeOptions(returnURL: returnURL)             // callback.return_url, from your backend
     )
@@ -264,10 +276,15 @@ do {
 }
 ```
 
-`chargeWithApplePay` derives the required `browser_data` from the device automatically; pass your
+`chargeWithWallet` derives the required `browser_data` from the device automatically; pass your
 own `BrowserData` if you have more accurate values. When Apple Pay cannot be used it throws
 `PAYMENT_004` (hide the button and offer another method); a token the SDK cannot use, such as the
 empty one the iOS Simulator returns, is `PAYMENT_003`. A charge that fails keeps its own code.
+
+`isWalletAvailable()` is `async` because its Android counterpart has to ask Play services; on iOS
+it answers what `canUseApplePay()` answers, a synchronous check you can keep using from a view
+body. `chargeWithWallet(browserData:challengePreference:)` is `chargeWithApplePay` under the
+shared name, with the same arguments and the same codes.
 
 #### Setting up Apple Pay
 
@@ -323,12 +340,7 @@ When the user enters a card, the SDK encrypts it to a JWE (see below) that **you
 tokenizes via `POST /cards/tokens`. Your backend returns a card token, which you charge with:
 
 ```swift
-let request = ChargePaymentRequest.cardToken(
-    cardToken,
-    browserData: await BrowserData.deviceDefault(),
-    challengePreference: .auto
-)
-_ = try await session.charge(request)
+_ = try await session.chargeWithCardToken(cardToken, challengePreference: .auto)
 let result = try await session.awaitChargeState(   // polls, runs the 3DS challenge, returns succeeded
     AwaitChargeOptions(returnURL: returnURL)       // callback.return_url, from your backend
 )
@@ -338,23 +350,31 @@ let result = try await session.awaitChargeState(   // polls, runs the 3DS challe
 
 If you don't need a reusable card token, charge the JWE directly with the `ENCRYPTED_CARD`
 input — this skips the server-side `POST /cards/tokens` round-trip. Encrypt the card (via
-`submitCardForm()` or `encryptCardData(_:)`, see below) and pass the resulting JWE as `payload`:
+`submitCardForm()` or `encryptCardData(_:)`, see below) and pass the resulting JWE:
 
 ```swift
 let jwe = try await GopaySDK.shared.submitCardForm()   // or encryptCardData(_:)
+_ = try await session.chargeWithEncryptedCard(jwe, challengePreference: .auto)
+let result = try await session.awaitChargeState(   // polls, runs the 3DS challenge, returns succeeded
+    AwaitChargeOptions(returnURL: returnURL)       // callback.return_url, from your backend
+)
+```
+
+Both helpers take an optional `browserData`, derived from the device when left out, and an
+optional `challengePreference`, and both return the first charge state, which you can read
+instead of waiting: a `redirect_url` in `action` is the 3DS challenge for `handle3dsVerification`,
+the manual path below. They are `charge(_:)` with the request built for you; to set anything the
+helpers do not take, build a `ChargePaymentRequest` with `.cardToken(...)` or
+`.encryptedCard(...)` and pass it to `charge(_:)`:
+
+```swift
 let request = ChargePaymentRequest.encryptedCard(
     jwe,
     browserData: await BrowserData.deviceDefault(),
     challengePreference: .auto
 )
 _ = try await session.charge(request)
-let result = try await session.awaitChargeState(   // polls, runs the 3DS challenge, returns succeeded
-    AwaitChargeOptions(returnURL: returnURL)       // callback.return_url, from your backend
-)
 ```
-
-Both return the first charge state, which you can read instead of waiting: a `redirect_url` in
-`action` is the 3DS challenge for `handle3dsVerification`, the manual path below.
 
 ### 3DS verification
 
@@ -537,7 +557,10 @@ let jwe = try await GopaySDK.shared.encryptCardData(
 ```
 
 `GopayCardForm` accepts a `GopayCardFormTheme` and a `formId` (when multiple forms are on screen,
-pass the same `formId` to `submitCardForm(formId:)`).
+pass the same `formId` to `submitCardForm(formId:)`). This is the card form model both SDKs share
+since 2.2: the form holds the card under its `formId`, `GopaySDK.shared.submitCardForm(formId:)`
+turns it into a JWE and `clearCardFormData(formId:)` drops it, with the same three `validation`
+modes on both platforms.
 
 The SDK clears the form's card data from memory after a successful `submitCardForm()` and when
 the form disappears — so call `submitCardForm()` while the form is on screen and forward the
@@ -755,17 +778,20 @@ Validation error strings are localized too. The form can render them inline for 
 with the `validation` parameter:
 
 ```swift
-// Errors appear only after the user taps your submit button (mirrors the Android example):
+// Errors appear once the card is submitted (the same mode as on Android):
 @State private var attemptedSubmit = false
 GopayCardForm(locale: "cs", validation: .onSubmit(attempted: $attemptedSubmit), isValid: $isCardValid)
-// …then in your submit action: attemptedSubmit = true
+// …then in your submit action: try await GopaySDK.shared.submitCardForm()
 
 // Or validate live as the user types:
 GopayCardForm(locale: "cs", validation: .live, isValid: $isCardValid)
 ```
 
 `.onSubmit` shows the localized required/pattern message for every invalid field while `attempted`
-is `true`. The form sets `attempted` back to `false` whenever it empties its fields, e.g. after a
+is `true`. The SDK sets `attempted` to `true` itself when `submitCardForm()` is called for the form,
+before it judges the card, so an empty or invalid card shows its errors on the submit, which then
+throws `VALIDATION_007`; you can also set it yourself, e.g. when your button is tapped before you
+call the SDK. The form sets `attempted` back to `false` whenever it empties its fields, e.g. after a
 successful `submitCardForm()`, so the emptied fields do not light up as required. `.live` shows a
 field's error once it holds non-empty, invalid content. The default is `.hidden` — the form
 renders nothing and you display errors yourself from the resolved locale:
@@ -803,9 +829,9 @@ let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
 
 ## Error handling
 
-Session and config failures throw `GopaySDKError`, which carries a stable `code` (matching the
-Android SDK) and a message. A request that got no HTTP response is one too, never a bare
-`URLError`, with the original error as `underlying`:
+Every failure throws `GopaySDKError`, which carries a stable `code` (matching the Android SDK) and
+a message. A request that got no HTTP response is one too, never a bare `URLError`, with the
+original error as `underlying`, and so is a card encryption that fails, with `INTERNAL_001`:
 
 | Code | Meaning |
 |---|---|
@@ -828,11 +854,11 @@ Android SDK) and a message. A request that got no HTTP response is one too, neve
 | `NETWORK_004` | No HTTP response: no connection (offline, the host does not resolve, the connection is refused) |
 | `NETWORK_005` | No HTTP response: a certificate failed (any other TLS failure is `NETWORK_007`) |
 | `NETWORK_007` | No HTTP response for any other reason, e.g. the connection dropped |
-| `CONFIG_001` | `initialize(with:)` was never called |
+| `CONFIG_001` | `startPaymentSession`, `encryptCardData` or `submitCardForm` called before `initialize(with:)` |
 | `CONFIG_003` | Not thrown by the SDK; deprecated, removed in 3.0 |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |
-| `VALIDATION_007` | Invalid input — empty ids, card-form validation failed, or `awaitChargeState` options that are not positive |
-| `INTERNAL_001` | Unexpected internal error |
+| `VALIDATION_007` | Invalid input — empty ids, a card that fails the PAN / month / year / CVV rules, a form with no card or an invalid one, or `awaitChargeState` options that are not positive |
+| `INTERNAL_001` | Unexpected internal error, including a card encryption that failed after the key was fetched |
 | `INTERNAL_003` | Response could not be decoded |
 
 ```swift
@@ -855,6 +881,60 @@ screen, while an Apple Pay sheet already up is not closed, and the call waits fo
 Every code above, with its causes and what to do about it, is in
 [`sdk/docs/ERROR_CODES.md`](sdk/docs/ERROR_CODES.md). The codes are shared with the Android SDK —
 the iOS surface throws the subset listed there.
+
+`GopaySDKConfig.errorCallback` hears every `GopaySDKError` a public call of the SDK or of a
+session throws, once per error, for central logging; the two outcomes of a payment window,
+`PAYMENT_007` and `PAYMENT_011`, and a `CancellationError` stay out, and nothing that is not a
+`GopaySDKError` goes in. The rule is the same on Android and spelled out at the top of
+`ERROR_CODES.md`. It is not a substitute for catching the error at the call.
+
+---
+
+## Shared API with Android
+
+Since 2.2 the two SDKs offer the same calls under the same names, so an integration, or the React
+Native SDK built on both, reads the same on either platform. The main path of this README is that
+shared API; the platform names stay as aliases, without deprecation, and what 3.0 removes is
+listed in [`sdk/docs/API_3_0.md`](sdk/docs/API_3_0.md).
+
+| Shared name | iOS alias | What it is |
+| --- | --- | --- |
+| `session.chargeWithCardToken(_:browserData:challengePreference:)` | — | a card token charge in one call, `browserData` optional |
+| `session.chargeWithEncryptedCard(_:browserData:challengePreference:)` | — | a JWE charge in one call, `browserData` optional |
+| `GopaySDK.isWalletAvailable()` | `canUseApplePay()` | can the device pay with the platform wallet |
+| `session.getWalletInfo()` | `getApplePayInfo()` | the wallet configuration for the payment |
+| `session.chargeWithWallet(browserData:challengePreference:)` | `chargeWithApplePay(...)` | the managed wallet sheet and charge |
+| `GopayCardForm(formId:)` + `submitCardForm(formId:)` + `clearCardFormData(formId:)` | — | the card form model, now on Android too |
+| `GopayCardForm(validation:)` with `.hidden`, `.live`, `.onSubmit` | — | the validation display modes, now on Android too |
+
+An alias is one body under a second name: it does exactly what the shared name does, with the
+same arguments and the same codes. The response types stay platform-specific
+(`GopayApplePayAppInfoResponse` here, `GooglePayInfoResponse` on Android), and so do the UI
+arguments: Android takes an `activity` where the wallet, the 3DS screen and the automatic
+polling need one, iOS finds the presenting view controller itself. The errors are the shared
+code contract above, with one rule for `errorCallback` on both.
+
+---
+
+## What changed in 2.2
+
+Nothing was removed or renamed, but a few behaviours moved to the shared contract, and an
+integration written against 2.0 or 2.1 may notice:
+
+- Errors thrown by a `PaymentSession` now reach `errorCallback`, once each, and so do the
+  failures of `startPaymentSession` itself (`AUTH_010`, `VALIDATION_007`, the `NETWORK_*` codes);
+  until 2.1 only the card encryption and `AUTH_012` did. The callback runs on whatever thread the
+  failing call ends on, not necessarily the main thread.
+- Before `initialize(with:)`, `encryptCardData` and `submitCardForm` throw `CONFIG_001` instead of
+  `AUTH_011`, and `startPaymentSession` throws `CONFIG_001` instead of calling the sandbox.
+- A card encryption that fails after the key was fetched throws `GopaySDKError` with
+  `INTERNAL_001` instead of an `NSError` of the `GopayJWE` domain.
+- `submitCardForm` switches the form's `.onSubmit` validation on itself, before it judges the
+  card; the host no longer has to flip the `attempted` binding.
+- `submitCardForm` on a form whose fields are all empty throws `VALIDATION_007` with the
+  "no card form data" message, like a form that is not on screen, instead of the "invalid" one.
+- `paymentId` and `paymentSecret` of white space only are refused with `VALIDATION_007` instead
+  of going to the gateway.
 
 ---
 
