@@ -10,8 +10,8 @@ protocol SessionTokenProviding: AnyObject {
     /// Drops the cached token so the next request re-authenticates.
     func invalidateToken() async
     /// Acquires a fresh token (single-flighted). Throws if credentials are rejected or the session
-    /// is closed.
-    func reauthenticate() async throws -> String
+    /// is closed. Unreported: the call this runs inside reports the failure.
+    func authenticate() async throws -> String
 }
 
 /// Per-session payment endpoints. Attaches the session's `Bearer` token to every request and, on a
@@ -95,7 +95,7 @@ final class PaymentAPI {
         if result.1.statusCode == 401 {
             // Stale token — re-auth once and retry.
             await provider.invalidateToken()
-            token = try await provider.reauthenticate()
+            token = try await provider.authenticate()
             result = try await client.send(authorized(request, token: token))
             if result.1.statusCode == 401 {
                 let gatewayError = GopayGatewayError.parse(result.0)
@@ -115,7 +115,7 @@ final class PaymentAPI {
         if let token = await provider.currentToken() {
             return token
         }
-        return try await provider.reauthenticate()
+        return try await provider.authenticate()
     }
 
     private func authorized(_ request: URLRequest, token: String) -> URLRequest {

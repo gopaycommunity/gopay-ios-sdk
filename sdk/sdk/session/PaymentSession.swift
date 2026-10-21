@@ -23,6 +23,9 @@ public actor PaymentSession {
     /// Shareable-key endpoints; ``charge(_:)`` completes the browser data through it.
     private let publicApi: PublicAPI
     private let onClose: @Sendable (PaymentSession) async -> Void
+    /// Where every error a public call of this session throws goes, once: the owning
+    /// ``GopaySDK/report(_:)``, which applies the `errorCallback` rule.
+    private let report: @Sendable (Error) -> Void
 
     /// In-memory only; `nil` once ``close()`` wipes it — the canonical "closed" signal.
     private var paymentSecret: String?
@@ -52,13 +55,15 @@ public actor PaymentSession {
         scope: String,
         authApi: AuthAPI,
         publicApi: PublicAPI,
-        onClose: @escaping @Sendable (PaymentSession) async -> Void
+        onClose: @escaping @Sendable (PaymentSession) async -> Void,
+        report: @escaping @Sendable (Error) -> Void
     ) {
         self.paymentId = paymentId
         self.scope = scope
         self.authApi = authApi
         self.publicApi = publicApi
         self.onClose = onClose
+        self.report = report
         self.api = nil
     }
 
@@ -66,11 +71,35 @@ public actor PaymentSession {
         self.api = PaymentAPI(client: client, tokenProvider: self)
     }
 
+    // MARK: - Error reporting
+
+    /// Runs one public call and reports what it throws, once, before rethrowing it.
+    ///
+    /// Every public method of the session, the token provider's ``reauthenticate()`` included,
+    /// is one `reported` block around an unreported implementation, and the implementations
+    /// call each other, never the public methods: a charge that fails while
+    /// ``chargeWithWallet(browserData:challengePreference:)`` runs it is reported by that call
+    /// alone, a read that fails inside ``awaitChargeState(_:)`` by that one, and a token refresh
+    /// the gateway refuses inside any call by that call. The rule itself, which errors are
+    /// passed on, is ``GopaySDK/report(_:)``'s.
+    func reported<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch {
+            // URLSession does not notice the task being cancelled, so a request in flight
+            // finishes, or fails, on its own. A task cancelled meanwhile ends with the
+            // cancellation, not with the request's error, and reports nothing.
+            try Task.checkCancellation()
+            report(error)
+            throw error
+        }
+    }
+
     // MARK: - Endpoints
 
     /// `GET /payments/{payment_id}`
     public func getStatus() async throws -> PaymentDetails {
-        try await api.getPaymentStatus(paymentId: paymentId)
+        try await reported { try await api.getPaymentStatus(paymentId: paymentId) }
     }
 
     /// `POST /payments/{payment_id}/charge`.
@@ -82,19 +111,30 @@ public actor PaymentSession {
     /// be asked for the data, the charge is not sent and the failure surfaces as a charge error
     /// with the underlying one as its cause.
     public func charge(_ request: ChargePaymentRequest) async throws -> ChargePaymentResponse {
+        try await reported { try await sendCharge(request) }
+    }
+
+    /// ``charge(_:)`` without the reporting, for the calls that run a charge as one of their
+    /// steps.
+    func sendCharge(_ request: ChargePaymentRequest) async throws -> ChargePaymentResponse {
         // Checked before the browser data step, which runs under the shareable key rather than
         // the session's token: a closed session would otherwise still ask the gateway once, and
         // without a shareable key report that key as missing instead of the closure.
         guard paymentSecret != nil else { throw closedError() }
+        // A task cancelled before the charge even started fetches nothing and sends nothing.
+        try Task.checkCancellation()
         let instrument = request.paymentInstrument
         let completed = ChargePaymentRequest(
             paymentInstrument: PaymentChargeInstrument(
                 input: instrument.input,
-                browserData: try await completeBrowserData(instrument.browserData),
+                browserData: try await fillBrowserData(instrument.browserData),
                 challengePreference: instrument.challengePreference,
                 paymentInstrument: instrument.paymentInstrument
             )
         )
+        // The browser data step is an await the cancellation may have passed through: a charge
+        // the caller no longer wants must not reach the gateway.
+        try Task.checkCancellation()
         return try await api.charge(paymentId: paymentId, request: completed)
     }
 
@@ -124,6 +164,11 @@ public actor PaymentSession {
     ///   shareable key, or any other code the fetch produced) and the original error as
     ///   `underlying`.
     public func completeBrowserData(_ browserData: BrowserData) async throws -> BrowserData {
+        try await reported { try await fillBrowserData(browserData) }
+    }
+
+    /// ``completeBrowserData(_:)`` without the reporting, the step every charge runs first.
+    private func fillBrowserData(_ browserData: BrowserData) async throws -> BrowserData {
         var data = browserData
         if data.userAgent == nil {
             // Filled in before the fetch is decided, whether or not one runs: sent as the
@@ -159,17 +204,27 @@ public actor PaymentSession {
 
     /// `GET /payments/{payment_id}/charge`
     public func getChargeState() async throws -> ChargePaymentResponse {
+        try await reported { try await readChargeState() }
+    }
+
+    /// ``getChargeState()`` without the reporting, the read ``awaitChargeState(_:)`` repeats.
+    func readChargeState() async throws -> ChargePaymentResponse {
         try await api.getChargeState(paymentId: paymentId)
     }
 
     /// `GET /payments/{payment_id}/qr-payment/info`
     public func getQrPaymentInfo(format: QrCodeFormat? = nil) async throws -> QrPaymentDetails {
-        try await api.getQrPaymentInfo(paymentId: paymentId, format: format)
+        try await reported { try await api.getQrPaymentInfo(paymentId: paymentId, format: format) }
     }
 
     /// `GET /payments/{payment_id}/apple-pay/app-info` — the BE-configured Apple Pay request for
     /// this payment, used to build the native sheet.
     public func getApplePayInfo() async throws -> GopayApplePayAppInfoResponse {
+        try await reported { try await fetchApplePayInfo() }
+    }
+
+    /// ``getApplePayInfo()`` without the reporting, the first step of the Apple Pay charge.
+    func fetchApplePayInfo() async throws -> GopayApplePayAppInfoResponse {
         try await api.getApplePayAppInfo(paymentId: paymentId)
     }
 
@@ -192,7 +247,7 @@ public actor PaymentSession {
 
     private func startEagerAuth(secret: String) async throws {
         paymentSecret = secret
-        _ = try await reauthenticate()
+        _ = try await authenticate()
     }
 
     private func closedError() -> GopaySDKError {
@@ -230,7 +285,12 @@ public actor PaymentSession {
 
     // MARK: - Factory
 
-    /// Builds a session and authenticates eagerly. Throws if the credentials are rejected.
+    /// Builds a session and authenticates eagerly. Throws if the credentials are rejected; that
+    /// error is the caller's to report, since ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)``
+    /// is the public call it fails.
+    ///
+    /// - Parameter report: Where the session's public calls report what they throw. Tests that
+    ///   build a session outside the SDK can leave it out.
     static func create(
         paymentId: String,
         paymentSecret: String,
@@ -238,10 +298,12 @@ public actor PaymentSession {
         authApi: AuthAPI,
         publicApi: PublicAPI,
         client: AsyncHTTPClient,
-        onClose: @escaping @Sendable (PaymentSession) async -> Void
+        onClose: @escaping @Sendable (PaymentSession) async -> Void,
+        report: @escaping @Sendable (Error) -> Void = { _ in }
     ) async throws -> PaymentSession {
         let session = PaymentSession(
-            paymentId: paymentId, scope: scope, authApi: authApi, publicApi: publicApi, onClose: onClose
+            paymentId: paymentId, scope: scope, authApi: authApi, publicApi: publicApi,
+            onClose: onClose, report: report
         )
         await session.attach(client: client)
         try await session.startEagerAuth(secret: paymentSecret)
@@ -262,6 +324,11 @@ public actor PaymentSession {
     private static let credentialsRejectedStatuses: Set<Int> = [400, 401, 403]
 }
 
+/// The token provider ``PaymentAPI`` reads. Public only because an earlier protocol needed it, and
+/// listed for removal in 3.0. ``PaymentAPI`` and the eager authentication use the unreported
+/// ``authenticate()``, so a refresh that fails inside a call is reported by that call; the public
+/// ``reauthenticate()`` is reported like every other public call, for a host that calls it
+/// directly.
 extension PaymentSession: SessionTokenProviding {
     /// Returns the cached JWT if it's still valid, otherwise `nil`. Lets ``PaymentAPI`` avoid
     /// re-parsing the JWT on every request — expiry is captured once at re-auth time.
@@ -277,6 +344,12 @@ extension PaymentSession: SessionTokenProviding {
     }
 
     public func reauthenticate() async throws -> String {
+        try await reported { try await authenticate() }
+    }
+
+    /// ``reauthenticate()`` without the reporting: the single-flighted token refresh every
+    /// request on this session falls back to.
+    func authenticate() async throws -> String {
         if let token = currentToken() { return token }
         if let authTask = authTask { return try await authTask.value }
 

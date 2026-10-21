@@ -41,7 +41,24 @@ public class GopaySDK {
     public static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
 
     /// The current configuration for the SDK.
-    public private(set) var config: GopaySDKConfig?
+    ///
+    /// Written by ``initialize(with:)`` on whatever thread the host calls it from and read by
+    /// ``report(_:)`` on whatever executor a failing call ends on, so both go through
+    /// ``configLock``.
+    public private(set) var config: GopaySDKConfig? {
+        get {
+            configLock.lock()
+            defer { configLock.unlock() }
+            return storedConfig
+        }
+        set {
+            configLock.lock()
+            defer { configLock.unlock() }
+            storedConfig = newValue
+        }
+    }
+    private var storedConfig: GopaySDKConfig?
+    private let configLock = NSLock()
 
     /// Async HTTP client used by the per-payment session API layer.
     private var asyncClient: AsyncHTTPClient?
@@ -141,6 +158,16 @@ public class GopaySDK {
         paymentSecret: String,
         scope: String = PaymentSession.defaultScope
     ) async throws -> PaymentSession {
+        try await reported {
+            try await openPaymentSession(paymentId: paymentId, paymentSecret: paymentSecret, scope: scope)
+        }
+    }
+
+    private func openPaymentSession(
+        paymentId: String,
+        paymentSecret: String,
+        scope: String
+    ) async throws -> PaymentSession {
         // Checked first, as the Android `getInstance()` is: without a config there is no gateway
         // to talk to, whatever the credentials look like.
         guard config != nil, let authAPI = authAPI, let publicAPI = publicAPI, let client = asyncClient else {
@@ -164,14 +191,16 @@ public class GopaySDK {
             authApi: authAPI,
             publicApi: publicAPI,
             client: client,
-            onClose: { session in await registry.remove(session) }
+            onClose: { session in await registry.remove(session) },
+            // The session outlives nothing of the SDK that made it: `shared` lives for the process,
+            // and a test instance that is gone has no callback left to call.
+            report: { [weak self] error in self?.report(error) }
         )
         do {
             try await registry.register(session)
         } catch {
             // Lost a race for this paymentId — wipe the just-created session and surface the error.
             await session.close()
-            handleError(error)
             throw error
         }
         return session
@@ -203,15 +232,7 @@ public class GopaySDK {
     /// fetched only when a card is being encrypted.
     private func fetchPublicKey() async throws -> ServedPublicKey {
         guard let publicAPI = publicAPI else { throw notInitializedError() }
-        do {
-            return try await publicAPI.getPublicKey()
-        } catch is CancellationError {
-            // A cancelled fetch is not an error, so errorCallback does not hear of it.
-            throw CancellationError()
-        } catch {
-            handleError(error)
-            throw error
-        }
+        return try await publicAPI.getPublicKey()
     }
 
     /// Encrypts card data into a JWE for server-side tokenization.
@@ -236,6 +257,12 @@ public class GopaySDK {
     ///   ``GopaySDKError/Code/unexpected`` when the encryption itself fails, with the step that
     ///   failed in the message and the system's error as `underlying`.
     public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
+        try await reported { try await encrypt(cardData) }
+    }
+
+    /// ``encryptCardData(_:)`` without the reporting, the step ``submitCardForm(formId:)`` ends
+    /// with.
+    private func encrypt(_ cardData: GopayCardData) async throws -> String {
         guard config != nil else { throw notInitializedError() }
         try validateCardData(cardData)
         let served = try await fetchPublicKey()
@@ -243,9 +270,7 @@ public class GopaySDK {
         // finishes anyway. Stopping here keeps a cancelled submitCardForm from wiping the form.
         try Task.checkCancellation()
         guard let clientId = config?.clientId, !clientId.isEmpty else {
-            let error = GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopaySDKConfig to encrypt card data")
-            handleError(error)
-            throw error
+            throw GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopaySDKConfig to encrypt card data")
         }
         let issuedAt: Date
         if let serverTime = served.serverTime {
@@ -254,13 +279,7 @@ public class GopaySDK {
             issuedAt = Date()
             logWarning(Self.missingDateWarning)
         }
-        switch JweUtils.createJWE(cardData: cardData, clientId: clientId, jwk: served.jwk, issuedAt: issuedAt) {
-        case .success(let jwe):
-            return jwe
-        case .failure(let error):
-            handleError(error)
-            throw error
-        }
+        return try JweUtils.createJWE(cardData: cardData, clientId: clientId, jwk: served.jwk, issuedAt: issuedAt).get()
     }
 
     /// Encrypts the card data currently held by a ``GopayCardForm`` into a JWE for server-side
@@ -289,6 +308,10 @@ public class GopaySDK {
     ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` when no card is
     ///   held or the held one is invalid, and otherwise what ``encryptCardData(_:)`` throws.
     public func submitCardForm(formId: String? = nil) async throws -> String {
+        try await reported { try await submitStoredCard(formId: formId) }
+    }
+
+    private func submitStoredCard(formId: String?) async throws -> String {
         guard config != nil else { throw notInitializedError() }
         cardFormDataLock.lock()
         let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
@@ -298,14 +321,10 @@ public class GopaySDK {
         // hosts key their "enter the card again" path on this message, and the Android SDK
         // answers an empty form with it too.
         guard let id = resolvedId, let data = stored, !data.isEmpty else {
-            let error = GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.noCardFormData)
-            handleError(error)
-            throw error
+            throw GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.noCardFormData)
         }
         guard data.isValid else {
-            let error = GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.invalidCardFormData)
-            handleError(error)
-            throw error
+            throw GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.invalidCardFormData)
         }
         let cardData = GopayCardData(
             cardPan: data.cardNumber,
@@ -313,7 +332,7 @@ public class GopaySDK {
             expYear: data.expirationYear,
             cvv: data.cvv
         )
-        let jwe = try await encryptCardData(cardData)
+        let jwe = try await encrypt(cardData)
         // Only clear after encryption succeeded — on failure (e.g. key fetch offline) the user
         // shouldn't have to retype the card; authorization hasn't happened yet. Clearing also
         // empties the fields the form still shows, so the card does not outlive the JWE made
@@ -444,17 +463,50 @@ public class GopaySDK {
         self.mostRecentFormId = formId
     }
 
-    /// Routes an error through the configured error callback and debug logging.
-    func handleError(_ error: Error) {
-        config?.errorCallback?(error)
-        if config?.enableDebugLogging == true {
-            print("[GopaySDK] Error: \(error)")
+    /// Runs one public call and reports what it throws, once, before rethrowing it. The public
+    /// entry points of this class are one `reported` block each around an unreported
+    /// implementation, as the ``PaymentSession`` calls are, so an error crosses exactly one block
+    /// on its way out.
+    private func reported<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch {
+            // As in PaymentSession: a request in flight does not notice the task being cancelled,
+            // so a task cancelled meanwhile ends with the cancellation and reports nothing.
+            try Task.checkCancellation()
+            report(error)
+            throw error
+        }
+    }
+
+    /// The `errorCallback` rule, in one place for the SDK and every session it made.
+    ///
+    /// Every ``GopaySDKError`` a public call throws reaches ``GopaySDKConfig/errorCallback``
+    /// once, except ``GopaySDKError/Code/paymentTimeout`` and ``GopaySDKError/Code/paymentCancelled``,
+    /// which are outcomes of a payment window rather than failures. Nothing else reaches it: not
+    /// `CancellationError`, which is the host's own decision, and no error of another type. The
+    /// Android SDK applies the same rule. The debug log, when on, gets the same errors, as their
+    /// code and message; the charge a `PAYMENT_006` carries is not printed.
+    func report(_ error: Error) {
+        guard let sdkError = error as? GopaySDKError else { return }
+        switch sdkError.code {
+        case .paymentTimeout, .paymentCancelled:
+            return
+        default:
+            break
+        }
+        // Read once: a re-initialization halfway through must not split the callback from its
+        // own logging flag.
+        guard let config = config else { return }
+        config.errorCallback?(sdkError)
+        if config.enableDebugLogging {
+            print("[GopaySDK] Error: \(sdkError.errorDescription ?? sdkError.message)")
         }
     }
 
     /// Logs something the integrator should know about that is not an error, such as a response
     /// field the decoder had to substitute, a hand-off no app answered or a failure the SDK
-    /// degraded to a cancellation. Printed with the same gate as ``handleError(_:)``: only while
+    /// degraded to a cancellation. Printed with the same gate as ``report(_:)``: only while
     /// `GopaySDKConfig.enableDebugLogging` is on, and never through `errorCallback`.
     func logWarning(_ message: String) {
         if config?.enableDebugLogging == true {

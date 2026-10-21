@@ -55,7 +55,13 @@ public struct GopaySDKConfig {
     ///   surface later as a `CONFIG_006` on an unrelated-looking call.
     public let enableDebugLogging: Bool
 
-    /// The callback to use for errors.
+    /// Called with every ``GopaySDKError`` a public call of the SDK or of one of its
+    /// ``PaymentSession``s throws, once per error, for central logging and monitoring. Two codes
+    /// stay out, because they are outcomes of a payment window rather than failures:
+    /// ``GopaySDKError/Code/paymentTimeout`` and ``GopaySDKError/Code/paymentCancelled``. So does a
+    /// `CancellationError` from a task the host cancelled, and so does any error that is not a
+    /// `GopaySDKError`. The rule is the same on Android. The callback runs on whatever thread the
+    /// failing call ends on, and it is not a substitute for catching the error at the call.
     public let errorCallback: ((Error) -> Void)?
 
     /// Preferred locale code (ISO 639-1, e.g. `"cs"`, `"de"`) for the payment card form labels.

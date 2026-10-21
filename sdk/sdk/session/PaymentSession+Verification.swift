@@ -51,6 +51,22 @@ public extension PaymentSession {
         returnURL: URL? = nil,
         presenting: UIViewController? = nil
     ) async throws {
+        try await reported {
+            try await verify(redirectURL: redirectURL, returnURL: returnURL, presenting: presenting)
+        }
+    }
+
+    /// ``handle3dsVerification(redirectURL:returnURL:presenting:)`` without the reporting, the
+    /// challenge ``awaitChargeState(_:)`` runs in ``ThreeDSMode/automatic``.
+    ///
+    /// Touches neither the secret nor the token: the challenge is between the WebView and the
+    /// issuer, so it runs on a closed session as well, as it does on Android. The charge state
+    /// afterwards does need a live session.
+    internal func verify(
+        redirectURL: URL,
+        returnURL: URL?,
+        presenting: UIViewController?
+    ) async throws {
         // Rejected before anything is registered or presented. A redirect URL the WebView cannot
         // load never reaches the navigation decision — that only sees where the page navigates
         // next — so the hand-off suppression downstream would swallow its load failure and the

@@ -23,9 +23,10 @@ public extension PaymentSession {
     /// A failed charge keeps its own code.
     ///
     /// A task cancelled before the sheet is shown throws `CancellationError` and shows nothing.
-    /// Cancelling it later does not close the sheet: the call waits until the sheet closes and
-    /// ends with the charge's result or ``GopaySDKError/Code/paymentCancelled``. The Android SDK
-    /// differs here, its call ends at once.
+    /// Cancelling it later does not close the sheet: the call waits until the sheet closes, then
+    /// returns the charge if it succeeded and otherwise throws `CancellationError`, so neither
+    /// ``GopaySDKError/Code/paymentCancelled`` nor the charge's error is thrown or reported. The
+    /// Android SDK differs here, its call ends at once.
     ///
     /// - Parameters:
     ///   - browserData: Optional 3DS browser data. The spec requires it on every card charge; when
@@ -35,7 +36,18 @@ public extension PaymentSession {
         browserData: BrowserData? = nil,
         challengePreference: ChallengePreference? = nil
     ) async throws -> ChargePaymentResponse {
-        let appInfo = try await getApplePayInfo()
+        try await reported {
+            try await runApplePay(browserData: browserData, challengePreference: challengePreference)
+        }
+    }
+
+    /// The Apple Pay flow without the reporting: its own steps are unreported calls, so the one
+    /// error it ends with is reported once, by the public call.
+    private func runApplePay(
+        browserData: BrowserData?,
+        challengePreference: ChallengePreference?
+    ) async throws -> ChargePaymentResponse {
+        let appInfo = try await fetchApplePayInfo()
 
         let resolvedBrowserData: BrowserData
         if let browserData = browserData {
@@ -116,7 +128,7 @@ public extension PaymentSession {
     ) {
         Task {
             do {
-                let response = try await self.charge(
+                let response = try await self.sendCharge(
                     .applePay(
                         data: fields.data,
                         signature: fields.signature,

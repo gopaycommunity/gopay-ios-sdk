@@ -88,7 +88,7 @@ struct AwaitChargeHooks {
             guard let url = URL(string: redirect) else {
                 throw GopayVerificationNavigationPolicy.unloadableRedirect(reason: "not a URL")
             }
-            try await session.handle3dsVerification(redirectURL: url, returnURL: returnURL, presenting: presenting)
+            try await session.verify(redirectURL: url, returnURL: returnURL, presenting: presenting)
         }
     )
 
@@ -157,6 +157,13 @@ public extension PaymentSession {
     ///   or ``GopaySDKError/Code/paymentTimeout`` as above, or the error of the read or the
     ///   verification that failed; `CancellationError` when the awaiting task is cancelled.
     func awaitChargeState(_ options: AwaitChargeOptions = .init()) async throws -> ChargePaymentResponse {
+        try await reported { try await pollChargeState(options) }
+    }
+
+    /// The polling without the reporting. Its reads and its challenge are unreported calls, so
+    /// the one error the call ends with is reported once, by the public call; `PAYMENT_006` among
+    /// them, while `PAYMENT_007` and the cancellation are kept out by ``GopaySDK/report(_:)``.
+    private func pollChargeState(_ options: AwaitChargeOptions) async throws -> ChargePaymentResponse {
         guard options.interval > 0, options.initialTimeout > 0 else {
             throw GopaySDKError(
                 .validationInvalidInput,
@@ -172,7 +179,16 @@ public extension PaymentSession {
 
         while true {
             try Task.checkCancellation()
-            let charge = try await getChargeState()
+            let charge: ChargePaymentResponse
+            do {
+                charge = try await readChargeState()
+            } catch {
+                // URLSession does not notice the task being cancelled, so a read in flight
+                // finishes, or fails, on its own. A task cancelled meanwhile ends with the
+                // cancellation, not with the read's error, and reports nothing.
+                try Task.checkCancellation()
+                throw error
+            }
             // A read the cancellation did not cut short must not be reported or acted on.
             try Task.checkCancellation()
             if let onStateChange = options.onStateChange {

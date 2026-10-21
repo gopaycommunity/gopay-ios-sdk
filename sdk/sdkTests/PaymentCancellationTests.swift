@@ -163,6 +163,25 @@ extension SessionNetworkTests {
         #expect(await MainActor.run { !SheetGuards.verificationInProgress })
     }
 
+    /// The challenge is between the WebView and the issuer and needs neither the secret nor the
+    /// token, so a closed session still shows it, as the Android SDK does (GPMOB-160, A8). Only
+    /// the charge state read afterwards needs the session to be live.
+    @Test(.timeLimit(.minutes(1)))
+    func aVerificationStartsOnAClosedSession() async throws {
+        let server = try SilentServer()
+        defer { server.stop() }
+        let session = try await makeVerifyingSession()
+        await session.close()
+
+        let (task, screen, window) = try await startVerification(session, at: server.url)
+        defer { Task { @MainActor in window.isHidden = true } }
+        #expect(await MainActor.run { screen.presentingViewController != nil })
+
+        task.cancel()
+        let error = await outcome(of: task)
+        #expect(error is CancellationError, "got \(String(describing: error))")
+    }
+
     /// The guard a cancelled verification held is free again: the next one starts and shows.
     @Test(.timeLimit(.minutes(1)))
     func afterACancelledVerificationTheNextOneStarts() async throws {

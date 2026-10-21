@@ -243,6 +243,30 @@ extension SessionNetworkTests {
         }
     }
 
+    @Test func anEncryptionCancelledWhileTheKeyFetchFailsReportsNothing() async throws {
+        StubURLProtocol.reset(delay: 0.3, headers: ["Date": Self.serverDateHeader]) { _ in (500, Data()) }
+        var reported: [Error] = []
+        let config = GopaySDKConfig(
+            environment: .development(baseURL: "https://stub.test/"),
+            clientId: "c",
+            shareableKey: "k",
+            errorCallback: { reported.append($0) }
+        )
+        let client: DefaultNetworkClient = {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [StubURLProtocol.self]
+            return DefaultNetworkClient(baseURL: "https://stub.test/", configuration: configuration)
+        }()
+        let sdk = GopaySDK(config: config, networkClient: client)
+
+        let encryption = Task { [card] in try await sdk.encryptCardData(card) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        encryption.cancel()
+
+        await #expect(throws: CancellationError.self) { try await encryption.value }
+        #expect(reported.isEmpty)
+    }
+
     @Test func aSubmitCancelledDuringTheKeyFetchKeepsTheCardAndReportsNothing() async throws {
         let key = try TestEncryptionKey()
         serveKey(key, headers: ["Date": Self.serverDateHeader], delay: 0.3)
