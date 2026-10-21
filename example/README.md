@@ -25,6 +25,12 @@ scheme and Run (⌘R). You may also need to set your own signing team.
 The `example` scheme is shared, so the app builds without opening Xcode:
 `xcodebuild -project example/example.xcodeproj -scheme example -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' build`.
 
+The demo uses the SDK from this checkout. `./scripts/demo-sdk-source.sh released` points it at the
+released Swift package (the version in `GopaySDK.podspec`) and `./scripts/demo-sdk-source.sh local`
+back; commit the project in `local`. `released` builds only while the demo uses nothing but
+released API, so before a release that adds API it fails on the missing symbols. See
+[the main README](../README.md#demo-app-against-the-released-sdk).
+
 ## Configuration
 
 `example/Config/Local.xcconfig` is gitignored and holds the five values the demo needs.

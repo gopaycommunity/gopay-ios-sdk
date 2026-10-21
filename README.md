@@ -1039,6 +1039,24 @@ The Developer sandbox has four sections — **1.** simulated merchant backend, *
 session, **3.** operations (status, Apple Pay, card token, charge, charge state, 3DS, QR), and
 **4.** card form → JWE. Sections 3 and 4 appear once a session is live.
 
+### Demo app against the released SDK
+
+The demo builds against the SDK in this checkout, so a change to the SDK shows up in the demo
+straight away. To build it against the released SDK instead, the Swift package an integrator gets
+by following [Installation](#installation), switch the project:
+
+```bash
+./scripts/demo-sdk-source.sh released   # gopay-ios-sdk at exactly the version in GopaySDK.podspec
+./scripts/demo-sdk-source.sh local      # back to this checkout
+```
+
+Close the project in Xcode before switching. The script changes only the package reference in
+`example/example.xcodeproj` and removes the `Package.resolved` that `released` creates. Commit the
+project in `local`: that is what development builds; CI builds only the SDK.
+
+`released` builds only while the demo uses nothing but released API. On a branch that changes the
+SDK ahead of a release, the build fails on the missing symbols, and that is expected.
+
 See [`example/README.md`](example/README.md) for the full walkthrough.
 
 ---
