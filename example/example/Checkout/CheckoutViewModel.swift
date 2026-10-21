@@ -5,7 +5,7 @@
 //  Owns the whole checkout flow. This is the file to read if you want to see, in one place, how an
 //  integration wires the SDK together:
 //
-//    create payment (your server) -> startPaymentSession -> charge(...) -> awaitChargeState -> result
+//    create payment (your server) -> startPaymentSession -> chargeWith...(...) -> awaitChargeState -> result
 //
 //  Every payment method funnels into the same `runCharge` tail, because 3DS and result handling
 //  are identical regardless of how the card data arrived: `awaitChargeState` polls the charge and
@@ -64,11 +64,11 @@ final class CheckoutViewModel {
         var sdkNote: String {
             switch self {
             case .card:
-                "GopayCardForm collects the card, submitCardForm() encrypts it into a JWE on device, and charge(.encryptedCard) sends it. The PAN never touches this app's code."
+                "GopayCardForm collects the card, submitCardForm() encrypts it into a JWE on device, and chargeWithEncryptedCard() sends it. The PAN never touches this app's code."
             case .applePay:
-                "chargeWithApplePay() presents the PassKit sheet configured from the gateway's /apple-pay/app-info and charges the resulting token."
+                "chargeWithWallet() presents the PassKit sheet configured from the gateway's /apple-pay/app-info and charges the resulting token. The same name charges with Google Pay on Android."
             case .savedCard:
-                "A returning customer. encryptCardData() → your server's POST /cards/tokens → charge(.cardToken). Tokenization is simulated here by MerchantBackendSimulator."
+                "A returning customer. encryptCardData() → your server's POST /cards/tokens → chargeWithCardToken(). Tokenization is simulated here by MerchantBackendSimulator."
             case .bankTransfer:
                 "getQrPaymentInfo(format: .png) returns the recipient account and QR payloads to render for a manual transfer."
             }
@@ -112,7 +112,9 @@ final class CheckoutViewModel {
 
     var isBusy: Bool { busyLabel != nil }
 
-    /// Apple Pay is hidden rather than shown dead when the device can't pay.
+    /// Apple Pay is hidden rather than shown dead when the device can't pay. A view body cannot
+    /// `await`, so this reads the synchronous `canUseApplePay()`, the same answer the shared
+    /// `isWalletAvailable()` gives the pay action below.
     var availableMethods: [Method] {
         Method.allCases.filter { $0 != .applePay || GopaySDK.canUseApplePay() }
     }
@@ -237,41 +239,42 @@ final class CheckoutViewModel {
     // MARK: - Flows
 
     private func payWithNewCard() async throws {
-        // Reveal the form's inline validation before doing anything expensive.
-        didAttemptSubmit = true
-        guard isCardFormValid != false else { return }
-
-        let session = try await startNewSession()
+        // The card first, before anything expensive: `submitCardForm` switches the form's
+        // `.onSubmit` validation on itself, so an empty or invalid card shows its errors here
+        // without the view model touching the `attempted` binding, as on Android.
         busyLabel = "Encrypting card…"
         let jwe: String
         do {
             jwe = try await GopaySDK.shared.submitCardForm()
-        } catch let error as GopaySDKError where error.message == GopaySDKErrors.noCardFormData {
-            // The SDK wiped the card data after the previous successful encryption (GPMOB-140),
-            // and the gateway accepts each JWE only once — so a retry needs the card confirmed
-            // again. Any edit in the form re-syncs its data and the next Pay succeeds.
+        } catch let error as GopaySDKError where error.message == GopaySDKErrors.invalidCardFormData {
+            // The form is showing what is wrong; nothing more to say.
             busyLabel = nil
-            banner = "Please re-enter your card details and try again."
+            return
+        } catch let error as GopaySDKError where error.message == GopaySDKErrors.noCardFormData {
+            // Nothing typed yet, or the SDK wiped the card after the previous successful
+            // encryption (GPMOB-140): the gateway accepts each JWE only once, so a retry needs the
+            // card entered again. The form shows the required fields; the banner says why.
+            busyLabel = nil
+            banner = "Please enter your card details and try again."
             return
         }
 
+        let session = try await startNewSession()
         busyLabel = "Authorizing…"
-        let request = ChargePaymentRequest.encryptedCard(
-            jwe,
-            browserData: await BrowserData.deviceDefault(),
-            challengePreference: .auto
-        )
-        try await runCharge(session: session) { try await session.charge(request) }
+        // The browser data is left to the SDK, which derives it from the device.
+        try await runCharge(session: session) {
+            try await session.chargeWithEncryptedCard(jwe, challengePreference: .auto)
+        }
     }
 
     private func payWithApplePay() async throws {
-        guard GopaySDK.canUseApplePay() else {
+        guard await GopaySDK.isWalletAvailable() else {
             banner = "Apple Pay is not available on this device."
             return
         }
         let session = try await startNewSession()
         busyLabel = "Waiting for Apple Pay…"
-        try await runCharge(session: session) { try await session.chargeWithApplePay() }
+        try await runCharge(session: session) { try await session.chargeWithWallet() }
     }
 
     private func payWithSavedCard() async throws {
@@ -285,12 +288,9 @@ final class CheckoutViewModel {
         let token = try await MerchantBackendSimulator.tokenizeCard(jwe: jwe)
 
         busyLabel = "Authorizing…"
-        let request = ChargePaymentRequest.cardToken(
-            token,
-            browserData: await BrowserData.deviceDefault(),
-            challengePreference: .auto
-        )
-        try await runCharge(session: session) { try await session.charge(request) }
+        try await runCharge(session: session) {
+            try await session.chargeWithCardToken(token, challengePreference: .auto)
+        }
     }
 
     private func showBankTransfer() async throws {
