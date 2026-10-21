@@ -26,7 +26,7 @@ public class GopaySDK {
     /// would report the integrating app's `MARKETING_VERSION` instead of the SDK's.
     ///
     /// - Note: Rewritten automatically on release by `scripts/set-version.sh`. Don't edit by hand.
-    public static let version = "2.1.0"
+    public static let version = "2.2.0"
 
     /// The shared instance of the SDK.
     public static let shared = GopaySDK()

@@ -1,3 +1,18 @@
+# [2.2.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/2.1.0...2.2.0) (2026-10-21)
+
+
+### Bug Fixes
+
+* clear the PR's SonarCloud findings GPMOB-160 ([0315f05](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/0315f050ec4332b558ae5b421a3dbccc4f75c3b1))
+* report each SDK error to errorCallback once GPMOB-160 ([433172c](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/433172c7a893d718df9633ef6f3760773b7b42b7))
+* throw the shared error codes instead of platform exceptions GPMOB-160 ([cdd72be](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/cdd72bed6b8c60a25ec2194900429c9cc1c8c129))
+
+
+### Features
+
+* add the card, wallet and form API shared with Android/iOS GPMOB-160 ([30a438d](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/30a438d2f020103ea0d2b73a889f67dca8642526))
+* use the shared API in the demo GPMOB-160 ([49928d3](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/49928d3c2f9c238fb5a6f57ca583f442070b7052))
+
 # [2.1.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/2.0.0...2.1.0) (2026-10-20)
 
 
