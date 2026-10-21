@@ -899,8 +899,8 @@ listed in [`sdk/docs/API_3_0.md`](sdk/docs/API_3_0.md).
 
 | Shared name | iOS alias | What it is |
 | --- | --- | --- |
-| `session.chargeWithCardToken(_:browserData:challengePreference:)` | — | a card token charge in one call, `browserData` optional |
-| `session.chargeWithEncryptedCard(_:browserData:challengePreference:)` | — | a JWE charge in one call, `browserData` optional |
+| `session.chargeWithCardToken(_:browserData:challengePreference:)` | — | a card token charge in one call; `browserData` optional, derived from the device default, which needs no context; Android without an `activity` requires it |
+| `session.chargeWithEncryptedCard(_:browserData:challengePreference:)` | — | a JWE charge in one call; `browserData` optional, derived from the device default, which needs no context; Android without an `activity` requires it |
 | `GopaySDK.isWalletAvailable()` | `canUseApplePay()` | can the device pay with the platform wallet |
 | `session.getWalletInfo()` | `getApplePayInfo()` | the wallet configuration for the payment |
 | `session.chargeWithWallet(browserData:challengePreference:)` | `chargeWithApplePay(...)` | the managed wallet sheet and charge |

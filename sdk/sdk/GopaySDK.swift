@@ -434,10 +434,11 @@ public class GopaySDK {
 
     /// Removes card data held for a ``GopayCardForm`` from memory.
     ///
-    /// ``submitCardForm(formId:)`` calls this automatically after returning a JWE, and
-    /// ``GopayCardForm`` calls it when the form disappears. Call it yourself when the user
-    /// abandons checkout while the form stays on screen, so the PAN/CVV don't linger in
-    /// memory longer than needed (PCI DSS 4.0.1, req. 3.3.1).
+    /// ``submitCardForm(formId:)`` calls this automatically after returning a JWE. A
+    /// ``GopayCardForm`` that leaves the screen drops its card without it, through its own
+    /// unregistration, so this call is the host's: make it when the user abandons checkout while
+    /// the form stays on screen, so the PAN/CVV don't linger in memory longer than needed
+    /// (PCI DSS 4.0.1, req. 3.3.1).
     ///
     /// This empties the fields of every affected form that is currently on screen, not just the
     /// SDK's copy of them — otherwise clearing on the host's behalf would leave the card the user
