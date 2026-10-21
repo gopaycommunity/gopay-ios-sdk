@@ -101,9 +101,9 @@ public enum GopayCardFormValidationDisplay {
     case onSubmit(attempted: Binding<Bool>)
 }
 
-/// The identity a ``GopayCardForm`` registers its handlers under: a class, so two forms under the
-/// same form ID stay distinguishable by reference.
-final class CardFormOwner {}
+/// The identity a ``GopayCardForm`` registers its handlers under: an object with no state of its
+/// own, so two forms under the same form ID stay distinguishable by reference.
+typealias CardFormOwner = NSObject
 
 /// Payment card form UI component.
 ///

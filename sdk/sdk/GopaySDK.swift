@@ -206,10 +206,12 @@ public class GopaySDK {
             authApi: authAPI,
             publicApi: publicAPI,
             client: client,
-            onClose: { session in await registry.remove(session) },
-            // The session outlives nothing of the SDK that made it: `shared` lives for the process,
-            // and a test instance that is gone has no callback left to call.
-            report: { [weak self] error in self?.report(error) }
+            callbacks: SessionCallbacks(
+                onClose: { session in await registry.remove(session) },
+                // The session outlives nothing of the SDK that made it: `shared` lives for the
+                // process, and a test instance that is gone has no callback left to call.
+                report: { [weak self] error in self?.report(error) }
+            )
         )
         do {
             try await registry.register(session)
@@ -368,7 +370,9 @@ public class GopaySDK {
     /// life. A later registration under the same form ID replaces an earlier one.
     internal func registerCardFormReset(
         _ reset: @escaping () -> Void,
-        submitAttempted: @escaping () -> Void = {},
+        submitAttempted: @escaping () -> Void = {
+            // A form without .onSubmit validation has no errors to reveal on a submit.
+        },
         formId: String,
         owner: AnyObject
     ) {

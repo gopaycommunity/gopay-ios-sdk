@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Sessions are concurrency-safe (an `actor`) and independent — two sessions for two payments never
 /// share credentials or tokens. Always ``close()`` a session when the flow terminates so the
-/// in-memory secret is wiped. Construction goes through the eager ``create(paymentId:paymentSecret:scope:authApi:publicApi:client:onClose:)``
+/// in-memory secret is wiped. Construction goes through the eager ``create(paymentId:paymentSecret:scope:authApi:publicApi:client:callbacks:)``
 /// factory so bad credentials surface at the start of the flow rather than on the first API call.
 public actor PaymentSession {
 
@@ -74,15 +74,14 @@ public actor PaymentSession {
         scope: String,
         authApi: AuthAPI,
         publicApi: PublicAPI,
-        onClose: @escaping @Sendable (PaymentSession) async -> Void,
-        report: @escaping @Sendable (Error) -> Void
+        callbacks: SessionCallbacks
     ) {
         self.paymentId = paymentId
         self.scope = scope
         self.authApi = authApi
         self.publicApi = publicApi
-        self.onClose = onClose
-        self.report = report
+        self.onClose = callbacks.onClose
+        self.report = callbacks.report
         self.api = nil
     }
 
@@ -308,8 +307,7 @@ public actor PaymentSession {
     /// error is the caller's to report, since ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)``
     /// is the public call it fails.
     ///
-    /// - Parameter report: Where the session's public calls report what they throw. Tests that
-    ///   build a session outside the SDK can leave it out.
+    /// - Parameter callbacks: What the session calls back into the SDK that made it.
     static func create(
         paymentId: String,
         paymentSecret: String,
@@ -317,12 +315,11 @@ public actor PaymentSession {
         authApi: AuthAPI,
         publicApi: PublicAPI,
         client: AsyncHTTPClient,
-        onClose: @escaping @Sendable (PaymentSession) async -> Void,
-        report: @escaping @Sendable (Error) -> Void = { _ in }
+        callbacks: SessionCallbacks
     ) async throws -> PaymentSession {
         let session = PaymentSession(
             paymentId: paymentId, scope: scope, authApi: authApi, publicApi: publicApi,
-            onClose: onClose, report: report
+            callbacks: callbacks
         )
         await session.attach(client: client)
         try await session.startEagerAuth(secret: paymentSecret)
@@ -341,6 +338,24 @@ public actor PaymentSession {
     /// ``GopaySDKError/Code/authPaymentCredentialsInvalid``. A `payment_secret` past its seven
     /// days is refused with a 403.
     private static let credentialsRejectedStatuses: Set<Int> = [400, 401, 403]
+}
+
+/// What a ``PaymentSession`` calls back into the SDK that made it.
+struct SessionCallbacks: Sendable {
+    /// Called once the session is closed, so the SDK can drop it from its registry.
+    let onClose: @Sendable (PaymentSession) async -> Void
+    /// Where the session's public calls report what they throw.
+    let report: @Sendable (Error) -> Void
+
+    init(
+        onClose: @escaping @Sendable (PaymentSession) async -> Void,
+        report: @escaping @Sendable (Error) -> Void = { _ in
+            // Tests that build a session outside the SDK have no errorCallback to report to.
+        }
+    ) {
+        self.onClose = onClose
+        self.report = report
+    }
 }
 
 /// The token provider ``PaymentAPI`` reads. Public only because an earlier protocol needed it, and

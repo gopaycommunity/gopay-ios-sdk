@@ -435,9 +435,9 @@ struct SessionNetworkTests {
             paymentId: "p1", paymentSecret: "secret", scope: "payment:charge",
             authApi: AuthAPI(client: client),
             publicApi: PublicAPI(client: client, clientId: "client", shareableKey: shareableKey),
-            client: client, onClose: { _ in
+            client: client, callbacks: SessionCallbacks(onClose: { _ in
                 // Created outside the SDK, so there is no registry entry for the close to drop.
-            }
+            })
         )
     }
 
