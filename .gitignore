@@ -60,3 +60,6 @@ Thumbs.db
 example/Config/Local.xcconfig
 
 Payments.yaml
+
+# Created while scripts/demo-sdk-source.sh has the demo on the released SDK
+example/example.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
