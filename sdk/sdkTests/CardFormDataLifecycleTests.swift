@@ -180,7 +180,7 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(filledData(), formId: "f1")
 
         let wiped = Locked(false)
-        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1")
+        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1", owner: CardFormOwner())
 
         _ = try await sdk.submitCardForm()
         await drainMainQueue()
@@ -196,7 +196,7 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(filledData(), formId: "f1")
 
         let wiped = Locked(false)
-        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1")
+        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1", owner: CardFormOwner())
 
         await #expect(throws: GopaySDKError.self) {
             _ = try await sdk.submitCardForm()
@@ -206,27 +206,67 @@ extension SessionNetworkTests {
         #expect(wiped.value == false)
     }
 
-    @Test func unregisteringWipesTheFieldsBeforeDroppingTheHandler() async throws {
+    @Test func unregisteringWipesTheFieldsAndDropsTheHandlerAndTheCard() async throws {
         // The closure holds the form and with it the PAN, so dropping it without firing it would
         // hand the card on rather than clear it. Firing it once is also all that happens: the
-        // handler is gone afterwards, so a later submit cannot reach a view that has left.
-        let jwkJSON = try TestEncryptionKey().publicJWKJSON
-        StubURLProtocol.reset { req in
-            (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, jwkJSON) : (404, Data())
-        }
+        // handler and the SDK's copy are gone afterwards, so a later submit finds no card and
+        // cannot reach a view that has left.
+        StubURLProtocol.reset { _ in (500, Data()) }
         let sdk = lifecycleSDK()
         sdk.updateCardFormData(filledData(), formId: "f1")
+        let owner = CardFormOwner()
 
         let wipeCount = Locked(0)
-        sdk.registerCardFormReset({ wipeCount.value += 1 }, formId: "f1")
+        sdk.registerCardFormReset({ wipeCount.value += 1 }, formId: "f1", owner: owner)
 
-        sdk.unregisterCardFormReset(formId: "f1")
+        sdk.unregisterCardFormReset(formId: "f1", owner: owner)
         await drainMainQueue()
         #expect(wipeCount.value == 1)
+        #expect(sdk.internalCardFormData["f1"] == nil)
 
-        _ = try await sdk.submitCardForm()
+        await #expect(throws: GopaySDKError.self) { _ = try await sdk.submitCardForm(formId: "f1") }
         await drainMainQueue()
         #expect(wipeCount.value == 1)
+        #expect(StubURLProtocol.paths.isEmpty)
+    }
+
+    /// Two forms under the same ID with overlapping lives, as a navigation transition or a
+    /// `key()` churn produces: the first form's departure must not take the second form's card
+    /// and handlers with it. The Android `CardFormStore` keeps the same owner token.
+    @Test func aReplacedFormTakesNothingWithItWhenItLeaves() async {
+        let sdk = lifecycleSDK()
+        let first = CardFormOwner()
+        let second = CardFormOwner()
+        let firstWipes = Locked(0)
+        let secondWipes = Locked(0)
+        let secondAttempts = Locked(0)
+        sdk.updateCardFormData(filledData(), formId: "shared")
+        sdk.registerCardFormReset({ firstWipes.value += 1 }, formId: "shared", owner: first)
+        sdk.updateCardFormData(filledData(), formId: "shared")
+        sdk.registerCardFormReset(
+            { secondWipes.value += 1 }, submitAttempted: { secondAttempts.value += 1 },
+            formId: "shared", owner: second
+        )
+
+        sdk.unregisterCardFormReset(formId: "shared", owner: first)
+        await drainMainQueue()
+
+        // The card and the second form's handlers are still there, the first form was told nothing.
+        #expect(sdk.internalCardFormData["shared"] != nil)
+        #expect(firstWipes.value == 0)
+        sdk.notifyCardFormSubmitAttempted(formId: "shared")
+        sdk.clearCardFormData(formId: "shared")
+        await drainMainQueue()
+        #expect(secondAttempts.value == 1)
+        #expect(secondWipes.value == 1)
+
+        // The second form leaving does take its own handlers with it.
+        sdk.unregisterCardFormReset(formId: "shared", owner: second)
+        await drainMainQueue()
+        #expect(secondWipes.value == 2)
+        sdk.notifyCardFormSubmitAttempted(formId: "shared")
+        await drainMainQueue()
+        #expect(secondAttempts.value == 1)
     }
 
     /// A wipe writes SwiftUI state, so the SDK hops it to the main thread. Tests run off it, so
@@ -246,8 +286,8 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(filledData(), formId: "f2")
 
         let wiped = Locked(0)
-        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f1")
-        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f2")
+        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f1", owner: CardFormOwner())
+        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f2", owner: CardFormOwner())
 
         sdk.clearCardFormData()
         await drainMainQueue()
@@ -279,5 +319,50 @@ private final class Locked<Value>: @unchecked Sendable {
     var value: Value {
         get { lock.lock(); defer { lock.unlock() }; return stored }
         set { lock.lock(); defer { lock.unlock() }; stored = newValue }
+    }
+}
+
+// MARK: - The submit tells the form first
+
+extension SessionNetworkTests {
+
+    /// `submitCardForm` tells the form a submit was attempted before it judges the card, whatever
+    /// the outcome, so an `.onSubmit` form shows its errors for an empty or invalid card.
+    ///
+    /// The handler is queued on the main thread before the validation error is thrown, and the
+    /// test records the error on the main thread too, so the two land there in that order; a
+    /// handler queued after the throw, or not at all, would put the error first.
+    @Test func submitCardFormTellsTheFormBeforeValidating() async {
+        StubURLProtocol.reset { _ in (500, Data()) }
+        let sdk = GopaySDK(
+            config: GopaySDKConfig(environment: .development(baseURL: stubBaseURL), clientId: "c", shareableKey: "k"),
+            networkClient: stubbedClient()
+        )
+        let events = Locked<[String]>([])
+        sdk.registerCardFormReset(
+            {}, submitAttempted: { events.value.append("attempted") }, formId: "f1", owner: CardFormOwner()
+        )
+
+        for data in [GopayCardFormData(), GopayCardFormData(cardNumber: "4444")] {
+            sdk.updateCardFormData(data, formId: "f1")
+            do {
+                _ = try await sdk.submitCardForm(formId: "f1")
+                Issue.record("expected a validation error")
+            } catch let error as GopaySDKError {
+                await MainActor.run { events.value.append(error.message) }
+            } catch {
+                Issue.record("expected a GopaySDKError, got \(error)")
+            }
+        }
+
+        #expect(events.value == [
+            "attempted", GopaySDKErrors.noCardFormData,
+            "attempted", GopaySDKErrors.invalidCardFormData,
+        ])
+
+        // A form id nothing is registered for tells nobody and still fails as before.
+        await #expect(throws: GopaySDKError.self) { try await sdk.submitCardForm(formId: "other") }
+        await MainActor.run {}
+        #expect(events.value.count == 4)
     }
 }

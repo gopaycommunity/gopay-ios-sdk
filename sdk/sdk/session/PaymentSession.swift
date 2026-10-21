@@ -39,6 +39,25 @@ public actor PaymentSession {
     /// Set once by ``attach(client:)`` immediately after construction.
     private var api: PaymentAPI!
 
+    /// Where a charge without browser data gets the device's. ``BrowserData/deviceDefault()``
+    /// unless a test replaces it with ``useDeviceBrowserData(_:)``, so the tests of the charges
+    /// do not have to start a WKWebView for the User-Agent.
+    private var deviceBrowserData: @Sendable () async -> BrowserData = { await BrowserData.deviceDefault() }
+
+    /// Replaces the device's browser data for the tests.
+    func useDeviceBrowserData(_ provider: @escaping @Sendable () async -> BrowserData) {
+        deviceBrowserData = provider
+    }
+
+    /// The caller's browser data, or the device's when there is none. The one place the
+    /// convenience charges, the wallet included, resolve it, so they cannot drift apart.
+    func resolveBrowserData(_ browserData: BrowserData?) async -> BrowserData {
+        if let browserData = browserData {
+            return browserData
+        }
+        return await deviceBrowserData()
+    }
+
     /// The clock, the sleep and the 3DS step ``awaitChargeState(_:)`` runs on. The live ones
     /// unless a test replaces them with ``useAwaitChargeHooks(_:)``.
     private(set) var awaitChargeHooks = AwaitChargeHooks.live

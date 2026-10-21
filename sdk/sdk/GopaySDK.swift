@@ -80,11 +80,26 @@ public class GopaySDK {
     /// ``submitCardForm(formId:)`` reads and clears from whatever executor resumes it.
     private let cardFormDataLock = NSLock()
 
-    /// Wipes the fields a ``GopayCardForm`` still shows, keyed by form ID. Clearing
-    /// ``internalCardFormData`` only drops the SDK's own copy; the digits the user typed stay on
-    /// screen until the form itself is told to let go of them. Registered while a form is on
-    /// screen and guarded by ``cardFormDataLock`` alongside the data it belongs to.
-    private var cardFormResetHandlers: [String: () -> Void] = [:]
+    /// What the SDK can tell a live ``GopayCardForm``, and which form it is.
+    struct CardFormHandlers {
+        /// The form that registered, held weakly: the one object the form keeps for its whole
+        /// life, so a second form under the same ID, as a navigation transition or a `key()`
+        /// churn produces, does not let the first form's departure drop the second form's
+        /// handlers and card. The Android `CardFormStore` keeps the same owner token.
+        weak var owner: AnyObject?
+        /// Wipes the fields the form still shows. Clearing ``GopaySDK/internalCardFormData``
+        /// only drops the SDK's own copy; the digits the user typed stay on screen until the form
+        /// itself is told to let go of them.
+        let reset: () -> Void
+        /// Tells a form in the `.onSubmit` validation mode that a submit was attempted, so it
+        /// shows its errors. Called by ``GopaySDK/submitCardForm(formId:)`` before the card is
+        /// validated, whatever the outcome, which is what the Android form does too.
+        let submitAttempted: () -> Void
+    }
+
+    /// The handlers of every form on screen, keyed by form ID. Registered while a form is on
+    /// screen and guarded by ``cardFormDataLock`` alongside the data they belong to.
+    private var cardFormHandlers: [String: CardFormHandlers] = [:]
 
     /// Initializes the SDK with the given configuration. Call once before any other operation.
     /// - Parameter config: The configuration to use.
@@ -317,6 +332,12 @@ public class GopaySDK {
         let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
         let stored = resolvedId.flatMap { internalCardFormData[$0] }
         cardFormDataLock.unlock()
+        // The submit is what the `.onSubmit` validation mode waits for, so the form is told
+        // first, before the card is judged: an empty or invalid card then shows its errors, as
+        // the Android form shows them on `submitCardForm`.
+        if let id = resolvedId {
+            notifyCardFormSubmitAttempted(formId: id)
+        }
         // A form whose fields are all empty holds no card, the same answer as no form at all:
         // hosts key their "enter the card again" path on this message, and the Android SDK
         // answers an empty form with it too.
@@ -342,25 +363,56 @@ public class GopaySDK {
         return jwe
     }
 
-    /// Registers the wipe a live ``GopayCardForm`` performs on its own fields.
-    internal func registerCardFormReset(_ reset: @escaping () -> Void, formId: String) {
+    /// Registers the wipe a live ``GopayCardForm`` performs on its own fields, and what it does
+    /// when a submit is attempted, on behalf of `owner`, the object the form keeps for its whole
+    /// life. A later registration under the same form ID replaces an earlier one.
+    internal func registerCardFormReset(
+        _ reset: @escaping () -> Void,
+        submitAttempted: @escaping () -> Void = {},
+        formId: String,
+        owner: AnyObject
+    ) {
         cardFormDataLock.lock()
         defer { cardFormDataLock.unlock() }
-        cardFormResetHandlers[formId] = reset
+        cardFormHandlers[formId] = CardFormHandlers(owner: owner, reset: reset, submitAttempted: submitAttempted)
     }
 
-    /// Runs the wipe for a form that is leaving the screen and then drops it.
+    /// Runs the submit-attempted handler of a form, on the main thread, where it writes SwiftUI
+    /// state. The handler is looked up there, not before the hop: a form that leaves the screen
+    /// in between is not told, so its `attempted` binding is not switched on behind its back.
+    /// Nothing happens for a form that is not on screen.
+    internal func notifyCardFormSubmitAttempted(formId: String) {
+        runOnMain { [self] in
+            cardFormDataLock.lock()
+            let attempted = cardFormHandlers[formId]?.submitAttempted
+            cardFormDataLock.unlock()
+            attempted?()
+        }
+    }
+
+    /// Drops the handlers and the card of a form that is leaving the screen, and runs its wipe,
+    /// when the form is still the one registered under its ID. A form that another one under the
+    /// same ID has already replaced takes nothing with it: the second form's handlers and card
+    /// stay, and the first one empties its own fields itself.
     ///
-    /// The wipe runs first because the form's `@State` outlives the view whenever the hierarchy is
-    /// only detached rather than destroyed, an inactive tab being the common case: dropping the
+    /// The wipe runs because the form's `@State` outlives the view whenever the hierarchy is only
+    /// detached rather than destroyed, an inactive tab being the common case: dropping the
     /// handler without firing it would leave the PAN and the CVV sitting in that state with
     /// nothing left able to reach them, ready for the next `onAppear` to sync them straight back
-    /// into the SDK. Running it first leaves nothing behind.
-    internal func unregisterCardFormReset(formId: String) {
+    /// into the SDK.
+    internal func unregisterCardFormReset(formId: String, owner: AnyObject) {
         cardFormDataLock.lock()
-        let reset = cardFormResetHandlers.removeValue(forKey: formId)
+        guard let handlers = cardFormHandlers[formId], handlers.owner === owner else {
+            cardFormDataLock.unlock()
+            return
+        }
+        cardFormHandlers.removeValue(forKey: formId)
+        internalCardFormData.removeValue(forKey: formId)
+        if mostRecentFormId == formId {
+            mostRecentFormId = nil
+        }
         cardFormDataLock.unlock()
-        runOnMain { reset?() }
+        runOnMain { handlers.reset() }
     }
 
     /// Runs `work` on the main thread, synchronously when already there.
@@ -396,11 +448,11 @@ public class GopaySDK {
             if mostRecentFormId == id {
                 mostRecentFormId = nil
             }
-            resets = cardFormResetHandlers[id].map { [$0] } ?? []
+            resets = cardFormHandlers[id].map { [$0.reset] } ?? []
         } else {
             internalCardFormData.removeAll()
             mostRecentFormId = nil
-            resets = Array(cardFormResetHandlers.values)
+            resets = cardFormHandlers.values.map(\.reset)
         }
         cardFormDataLock.unlock()
         // Run outside the lock: a wipe re-enters through the form's own bookkeeping.
@@ -451,6 +503,17 @@ public class GopaySDK {
     /// one if needed. Safe to call synchronously (e.g. from a SwiftUI view body).
     public static func canUseApplePay() -> Bool {
         return PKPaymentAuthorizationController.canMakePayments()
+    }
+
+    /// Whether the platform wallet can be used on this device, under the name both SDKs share: on
+    /// iOS the same answer as ``canUseApplePay()``, which it returns, and on Android
+    /// `isWalletAvailable(activity, info)`, whose answer has to be asked of Play services, which
+    /// is why the shared name is `async` on both. A payment's own card networks are not checked
+    /// here; ``PaymentSession/chargeWithWallet(browserData:challengePreference:)`` throws
+    /// ``GopaySDKError/Code/paymentMethodUnavailable`` when the payment allows none the sheet can
+    /// offer.
+    public static func isWalletAvailable() async -> Bool {
+        canUseApplePay()
     }
 
     // MARK: - Internals

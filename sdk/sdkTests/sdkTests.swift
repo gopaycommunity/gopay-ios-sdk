@@ -454,7 +454,7 @@ struct SessionNetworkTests {
 
     /// Answers the token, the browser data (echoing the request's User-Agent like the gateway) and
     /// the charge; anything else is a 404.
-    private static func gatewayHandler(browserDataStatus: Int = 200) -> StubURLProtocol.Handler {
+    static func gatewayHandler(browserDataStatus: Int = 200) -> StubURLProtocol.Handler {
         { req in
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") { return tokenResponse() }

@@ -91,12 +91,19 @@ public enum GopayCardFormValidationDisplay {
     case hidden
     /// Show a field's error live, as soon as it holds non-empty, invalid content while typing.
     case live
-    /// Show errors only while `attempted` is `true`. Flip it (e.g. when the user taps your submit
-    /// button) to reveal errors for all invalid fields; set it back to `false` to hide them again.
-    /// The form sets it back to `false` itself whenever it empties its fields, e.g. after a
-    /// successful ``GopaySDK/submitCardForm(formId:)``.
+    /// Show errors only while `attempted` is `true`. The SDK sets it to `true` itself when
+    /// ``GopaySDK/submitCardForm(formId:)`` is called for this form, before the card is judged,
+    /// so an empty or invalid card shows its errors on the submit without the host doing
+    /// anything, as the Android form does; you can also set it yourself, e.g. when your submit
+    /// button is tapped before you call the SDK, and set it back to `false` to hide the errors
+    /// again. The form sets it back to `false` itself whenever it empties its fields, e.g. after a
+    /// successful submit.
     case onSubmit(attempted: Binding<Bool>)
 }
+
+/// The identity a ``GopayCardForm`` registers its handlers under: a class, so two forms under the
+/// same form ID stay distinguishable by reference.
+final class CardFormOwner {}
 
 /// Payment card form UI component.
 ///
@@ -135,6 +142,10 @@ public struct GopayCardForm: View {
     /// on every parent re-render — a plain `let` would mint a fresh UUID each time, scattering
     /// card data across orphaned storage keys that no cleanup would ever reach.
     @State private var autoFormId = UUID().uuidString
+    /// The token this form registers its handlers under, one object for the form's whole life,
+    /// so the SDK can tell two forms under the same ID apart (see
+    /// ``GopaySDK/unregisterCardFormReset(formId:owner:)``).
+    @State private var owner = CardFormOwner()
     
     /// Internal state for card form data (never exposed).
     @State private var data: GopayCardFormData
@@ -514,8 +525,11 @@ public struct GopayCardForm: View {
         .onAppear {
             // Initial sync when form appears
             GopaySDK.shared.updateCardFormData(data, formId: formId)
-            // Let the SDK empty these fields once it has turned them into a JWE.
-            GopaySDK.shared.registerCardFormReset(resetFields, formId: formId)
+            // Let the SDK empty these fields once it has turned them into a JWE, and show the
+            // errors once it has been asked to submit them.
+            GopaySDK.shared.registerCardFormReset(
+                resetFields, submitAttempted: markSubmitAttempted, formId: formId, owner: owner
+            )
             // Update validation binding if provided
             updateValidationBinding()
         }
@@ -526,13 +540,14 @@ public struct GopayCardForm: View {
             // case, so leaving the digits in place would keep the card in memory indefinitely and
             // `onAppear` would sync them straight back into the SDK.
             //
-            // Emptying the fields is `unregisterCardFormReset`'s job, here as everywhere else: it
-            // runs the wipe and then drops the handler. Clearing the SDK's copy afterwards finds
-            // no handler left, so the fields are emptied exactly once. `onDisappear` is already on
-            // the main thread, where both calls run the wipe synchronously, so nothing can slip in
-            // between the two.
-            GopaySDK.shared.unregisterCardFormReset(formId: formId)
-            GopaySDK.shared.clearCardFormData(formId: formId)
+            // The SDK drops this form's handlers and card, and runs the wipe, only while this form
+            // is the one registered under its ID. When another form under the same ID has taken
+            // over, as a navigation transition or a `key()` churn produces, that form's card stays
+            // in the SDK and this one empties its own fields itself. `onDisappear` is on the main
+            // thread, where the wipe runs synchronously, so the second call finds nothing to do
+            // in the first case and does the whole job in the second.
+            GopaySDK.shared.unregisterCardFormReset(formId: formId, owner: owner)
+            resetFields()
         }
     }
     
@@ -567,6 +582,15 @@ public struct GopayCardForm: View {
             attempted.wrappedValue = false
         }
         updateValidationBinding()
+    }
+
+    /// What ``GopaySDK/submitCardForm(formId:)`` tells the form: in the `.onSubmit` mode the
+    /// errors of every invalid field show from now on, until the fields are emptied again. The
+    /// other modes have nothing to reveal.
+    private func markSubmitAttempted() {
+        if case .onSubmit(let attempted) = validation, !attempted.wrappedValue {
+            attempted.wrappedValue = true
+        }
     }
 
     /// Publishes the current validity to the host's binding.

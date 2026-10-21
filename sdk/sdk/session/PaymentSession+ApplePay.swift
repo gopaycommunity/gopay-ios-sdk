@@ -3,6 +3,35 @@ import PassKit
 
 public extension PaymentSession {
 
+    // MARK: - The shared wallet names
+
+    /// The wallet configuration for this payment under the name both SDKs share; on iOS the same
+    /// read as ``getApplePayInfo()``, and on Android `getGooglePayInfo()`. Code written
+    /// against the shared API reads the wallet through this name on both platforms.
+    func getWalletInfo() async throws -> GopayApplePayAppInfoResponse {
+        try await reported { try await fetchApplePayInfo() }
+    }
+
+    /// The managed wallet charge under the name both SDKs share; on iOS the same flow as
+    /// ``chargeWithApplePay(browserData:challengePreference:)``, with the same arguments, and on
+    /// Android `chargeWithGooglePay(activity, browserData, challengePreference)`.
+    /// Everything that call documents, from the codes it throws to what a cancellation does,
+    /// holds here.
+    ///
+    /// - Parameters:
+    ///   - browserData: Optional 3DS browser data; `nil` derives it from the device.
+    ///   - challengePreference: 3DS challenge preference forwarded to the gateway.
+    func chargeWithWallet(
+        browserData: BrowserData? = nil,
+        challengePreference: ChallengePreference? = nil
+    ) async throws -> ChargePaymentResponse {
+        try await reported {
+            try await runApplePay(browserData: browserData, challengePreference: challengePreference)
+        }
+    }
+
+    // MARK: - Apple Pay
+
     /// Managed Apple Pay flow: fetches the Apple Pay config for this payment, presents the Apple Pay
     /// sheet, maps the resulting token, and submits the charge in one call.
     ///
@@ -48,13 +77,7 @@ public extension PaymentSession {
         challengePreference: ChallengePreference?
     ) async throws -> ChargePaymentResponse {
         let appInfo = try await fetchApplePayInfo()
-
-        let resolvedBrowserData: BrowserData
-        if let browserData = browserData {
-            resolvedBrowserData = browserData
-        } else {
-            resolvedBrowserData = await BrowserData.deviceDefault()
-        }
+        let resolvedBrowserData = await resolveBrowserData(browserData)
 
         // A task already cancelled gets no sheet. Once the sheet is up it stays until it closes,
         // and the call ends with what the sheet ended with.

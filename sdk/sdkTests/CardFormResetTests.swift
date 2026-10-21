@@ -86,6 +86,40 @@ struct CardFormResetTests {
 
         #expect(attempted.value == false)
     }
+
+    // MARK: The submit switches `.onSubmit` on
+
+    /// A live `.onSubmit` form registers what a submit does to it: the binding goes to `true`,
+    /// so the host does not have to flip it before calling `submitCardForm`.
+    @Test func theSubmitTurnsAttemptedOn() {
+        GopaySDK.shared.clearCardFormData()
+        let attempted = Box(false)
+        let window = host(
+            GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-attempted")
+        )
+        defer { window.isHidden = true }
+
+        GopaySDK.shared.notifyCardFormSubmitAttempted(formId: "submit-attempted")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+
+        #expect(attempted.value == true)
+    }
+
+    /// Only the form the submit was for is told: a submit for another ID, or for one no form is
+    /// on screen under, leaves an `.onSubmit` form's binding alone.
+    @Test func aSubmitForAnotherFormLeavesTheBindingAlone() {
+        GopaySDK.shared.clearCardFormData()
+        let attempted = Box(false)
+        let window = host(
+            GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-bystander")
+        )
+        defer { window.isHidden = true }
+
+        GopaySDK.shared.notifyCardFormSubmitAttempted(formId: "submit-gone")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+
+        #expect(attempted.value == false)
+    }
 }
 
 /// Holds the value behind a binding the form writes, so a test can read what it wrote.
