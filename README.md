@@ -49,7 +49,7 @@ The SDK is built and tested with Xcode 26.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "1.5.0")
+    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "2.2.0")
 ],
 targets: [
     .target(
@@ -66,7 +66,7 @@ targets: [
 ```ruby
 target 'YourApp' do
   use_frameworks!
-  pod 'GopaySDK', '~> 1.5'
+  pod 'GopaySDK', '~> 2.2'
 end
 ```
 
@@ -74,9 +74,6 @@ end
 pod repo update
 pod install
 ```
-
-`1.5.0` is the newest published version — see the
-[tags](https://github.com/gopaycommunity/gopay-ios-sdk/tags) for anything later.
 
 ---
 
@@ -161,7 +158,7 @@ GopaySDK.shared.initialize(
 )
 ```
 
-`GopaySDK.version` returns the SDK's own version (e.g. `"1.5.0"`) — a compiled-in constant rather
+`GopaySDK.version` returns the SDK's own version (e.g. `"2.2.0"`) — a compiled-in constant rather
 than an Info.plist lookup, since under SPM the SDK links statically into the host app and
 `Bundle(for:)` would otherwise report the *host app's* version instead.
 
