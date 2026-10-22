@@ -1,3 +1,11 @@
+## [2.2.1](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/2.2.0...2.2.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* point the README install at 2.2 GPMOB-144 ([ed16f9f](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/ed16f9fdcd428fb9d4c2b69f7a23818ffe34f542))
+* read the submitted card form outside the async context GPMOB-144 ([58854ee](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/commits/58854ee17f1a893aeb3171d17affdb47c7ec38de))
+
 # [2.2.0](https://bitbucket.org/gp-gopay/gp-gw-ios-sdk/compare/2.1.0...2.2.0) (2026-10-21)
 
 
