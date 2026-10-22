@@ -945,7 +945,7 @@ cards; these two were tested there with SDK 2.2.0:
 | Card | Result on the sandbox |
 | --- | --- |
 | `4444 4444 4444 4448`, expiry `12/28`, CVV `123` | The charge ends `succeeded` |
-| `4000 0000 0000 0002`, expiry `12/28`, CVV `123` | The charge ends `failed`: `awaitChargeState` throws `paymentDeclined` (`PAYMENT_006`). The sandbox sends no `fail_reason` with it, so the message is only `Charge failed` |
+| `4000 0000 0000 0002`, expiry `12/28`, CVV `123` | The charge ends `failed`: `awaitChargeState` throws `paymentDeclined` (`PAYMENT_006`). The sandbox may send a `fail_reason` with it or not, so the message is either `Charge failed: PAYMENT_FAILED` or only `Charge failed`, and the app has to handle both |
 
 The sandbox does not ask for a 3DS challenge, and `ChallengePreference` does not change that, so
 the challenge cannot be tried there. In production the challenge comes when the card's bank asks
