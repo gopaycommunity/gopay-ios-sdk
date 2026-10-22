@@ -1,5 +1,14 @@
 # Gopay iOS SDK (`GopaySDK`)
 
+[![CocoaPods](https://img.shields.io/cocoapods/v/GopaySDK)](https://cocoapods.org/pods/GopaySDK)
+[![semantic-release: angular](https://img.shields.io/badge/semantic--release-angular-e10079)](https://github.com/semantic-release/semantic-release)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+iOS SDK for charging GoPay payments from a mobile app, for the GoPay Payments 4.0 API:
+[API documentation](https://api-docs.gopay.com/en/api),
+[OpenAPI specification](https://api-docs.gopay.com/spec/en/payments.yaml),
+[`GopaySDK` on CocoaPods](https://cocoapods.org/pods/GopaySDK).
+
 ## Overview
 
 This repository contains the official **Gopay iOS SDK** and a simple example app.
@@ -75,6 +84,9 @@ pod repo update
 pod install
 ```
 
+The badge at the top of this README shows the latest version on
+[CocoaPods](https://cocoapods.org/pods/GopaySDK).
+
 ---
 
 ## How it works
@@ -107,34 +119,52 @@ The SDK charges a payment your server has created and settles nothing on its own
 does, as the GoPay guide describes it
 ([Security and credentials](https://api-docs.gopay.com/en/docs/01-security.md),
 [Payment states and lifecycle](https://api-docs.gopay.com/en/docs/02-payment-lifecycle.md),
-[Saved cards](https://api-docs.gopay.com/en/docs/05-saved-cards.md)):
+[Saved cards](https://api-docs.gopay.com/en/docs/05-saved-cards.md)). The paths are relative to
+the gateway host, `https://gw.sandbox.gopay.com/gp-gw/api/4.0/` on the sandbox and
+`https://gate.gopay.com/gp-gw/api/4.0/` in production (see [Environments](#environments)), the
+same gateway the app talks to. A payment exists only on the gateway it was created on.
 
-1. **Create the payment** with `POST /eshops/{goid}/payments`, under a merchant access token with
-   the `payment:write` scope. The body needs `amount`, `currency`, `order_number`, `customer` and
-   `callback`. `amount` is an integer in the currency's minor unit: 100.00 CZK is `10000`.
-2. **Set both callback URLs.** `callback.return_url` and `callback.notification_url` are required.
+1. **Get a merchant access token** with `POST /oauth2/token`: your `client_id:client_secret` as
+   HTTP Basic and a form body with `grant_type=client_credentials` and the scopes you need,
+   `payment:write` and `payment:read`, plus `card:write` to save cards. The token is a JWT,
+   currently valid for 15 minutes; read `expires_in`. The client secret stays on your server; the
+   app never sees it.
+2. **Create the payment** with `POST /eshops/{goid}/payments`, under that token. The body needs
+   `amount`, `currency`, `order_number`, `customer` and `callback`. `amount` is an integer in the
+   currency's minor unit: 100.00 CZK is `10000`.
+3. **Set both callback URLs.** `callback.return_url` and `callback.notification_url` are required.
    According to the GoPay guide both must be absolute HTTPS URLs; in production a `return_url`
    that is not HTTPS gets a 403 when the payment is created, the sandbox is more tolerant. The
    3DS screen closes when the challenge comes back to `return_url` (see
    [3DS verification](#3ds-verification)), so the URL does not have to serve anything to the app.
    `notification_url` must be reachable from GoPay's servers.
-3. **Give the app `id`, `payment_secret` and the `callback.return_url`** you created the payment
-   with, nothing else. The app passes the pair to `startPaymentSession` and the return URL to
-   `handle3dsVerification`; GoPay is removing it from the charge response. According to the
-   GoPay guide, `payment_secret` must not be stored, logged or put in a URL, and it is valid for
-   seven days, after which the gateway refuses it with a 403.
-4. **Settle the payment on the server.** What the app reports is not proof of payment. GoPay
+4. **Give the app `id`, `payment_secret` and the `callback.return_url`** you created the payment
+   with, nothing else; `id` is the payment id the SDK calls `paymentId`. The app passes the first
+   two to `startPaymentSession` and the return URL to `awaitChargeState` or
+   `handle3dsVerification`. GoPay is removing `return_url` from the charge response, so the app
+   should get it only from you. According to the GoPay guide, `payment_secret` must not be
+   stored, logged or put in a URL, and it is valid for seven days, after which the gateway refuses
+   it with a 403.
+5. **Settle the payment on the server.** What the app reports is not proof of payment. GoPay
    sends a `GET` to `notification_url` with the payment `id` on every state change; answer `204`
    and read the payment with `GET /payments/{id}`. The GoPay guide treats this webhook as the
    authoritative signal. A payment nobody charges times out, after one hour by default.
-5. **Save a card, if you need to,** by exchanging the JWE from the card form for a permanent token
-   with `POST /cards/tokens` (merchant scope `card:write`). Tokenisation is off until GoPay enables
+6. **Save a card, if you need to,** by exchanging the JWE from the card form for a permanent token
+   with `POST /cards/tokens` (merchant scope `card:write`). Tokenization is off until GoPay enables
    it for you through `integration@gopay.com`. A JWE is single-use: it pays one charge or makes one
-   token, not both. An Apple Pay payload cannot be tokenised.
+   token, not both. An Apple Pay payload cannot be tokenized.
+
+The example app's [`MerchantBackendSimulator`](example/example/MerchantBackendSimulator.swift)
+makes the token, payment and tokenization calls from the app, so that the demo runs on its own.
+Read it as a sketch of these requests; the merchant secret it needs must never ship in an app.
 
 ---
 
 ## Quick start
+
+Your backend creates the payment first and hands the app its `id` (the API's `payment_id`),
+`payment_secret` and the return URL; the calls it makes are in [Your backend](#your-backend).
+Cards to try are in [Testing on the sandbox](#testing-on-the-sandbox).
 
 ### Initialize
 
@@ -187,7 +217,7 @@ do {
     let charge = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
     // charge.state == .succeeded
 } catch let error as GopaySDKError where error.code == .paymentDeclined {
-    // The charge ended failed: error.chargeState?.failReason says why. A retry needs a new payment.
+    // The charge ended failed: error.chargeState?.failReason says why, when the gateway sends a reason. A retry needs a new payment.
 } catch let error as GopaySDKError where error.code == .paymentTimeout {
     // Still undecided after 30 s: not a result, error.chargeState is the last state read. Read getChargeState() later or wait for the notification.
 }
@@ -449,8 +479,10 @@ do {
     ))
     // charge.state == .succeeded
 } catch let error as GopaySDKError where error.code == .paymentDeclined {
-    // PAYMENT_006: the charge ended failed. error.chargeState is the charge, its failReason
-    // is in the message. The payment is over; a retry means a new payment.
+    // PAYMENT_006: the charge ended failed. error.chargeState is the charge, and
+    // error.chargeState?.failReason says why when the gateway sends a reason; the message is then
+    // "Charge failed: <fail_reason>", without one only "Charge failed". The payment is over; a
+    // retry means a new payment.
 } catch let error as GopaySDKError where error.code == .paymentTimeout {
     // PAYMENT_007: still requested / processing / unknown, or actionRequired without a new
     // address, after initialTimeout (30 s by default). Not a result: error.chargeState is the
@@ -473,10 +505,11 @@ lifted the first time the charge reports `actionRequired` with a redirect URL, b
 challenge takes as long as the user needs; in `.automatic` it starts again once the challenge
 returns, so a gateway that never decides after it still ends in `PAYMENT_007`, while in `.manual`
 it stays lifted. A failed read or a failed challenge ends the call with that error unchanged
-(`NETWORK_*`, `PAYMENT_010`, `PAYMENT_011`, `AUTH_013`), and cancelling the awaiting task stops
-the polling, closes a challenge that is up and throws `CancellationError`. Two calls on the same
-session poll independently; only one of them can open the challenge, the other ends with
-`PAYMENT_008`.
+(`NETWORK_*`, `PAYMENT_010`, `PAYMENT_011`, `AUTH_013`); a `NETWORK_*` there does not mean the
+payment failed (see [After a network error](#after-a-network-error)), and
+cancelling the awaiting task stops the polling, closes a challenge that is up and throws
+`CancellationError`. Two calls on the same session poll independently; only one of them can open
+the challenge, the other ends with `PAYMENT_008`.
 
 **The manual path**: after a charge, and again after `handle3dsVerification` returns or throws
 `PAYMENT_011`, read the state with `getChargeState()`. Keep asking while it is `requested`,
@@ -567,8 +600,9 @@ move on rather than wait for further input. A failed encryption leaves everythin
 typed it, since nothing has been authorized yet.
 
 The gateway accepts each JWE **once** and its payload expires 10 minutes after creation; to retry
-a failed charge, have the user confirm the card again. To wipe the data early — e.g. when the
-user abandons checkout while the form is still on screen — call
+a failed charge, have the user confirm the card again. A charge that never reached the gateway did
+not use the JWE, see [After a network error](#after-a-network-error). To wipe
+the data early — e.g. when the user abandons checkout while the form is still on screen — call
 `GopaySDK.shared.clearCardFormData()`, which empties the visible fields as well. Discard the JWE
 once your backend has tokenized it.
 
@@ -824,6 +858,22 @@ let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
 
 ---
 
+## Testing on the sandbox
+
+The sandbox is `.sandbox`, with its host in the table above. The GoPay guide does not list test
+cards; these two were tested there with SDK 2.2.0:
+
+| Card | Result on the sandbox |
+| --- | --- |
+| `4444 4444 4444 4448`, expiry `12/28`, CVV `123` | The charge ends `succeeded` |
+| `4000 0000 0000 0002`, expiry `12/28`, CVV `123` | The charge ends `failed`: `awaitChargeState` throws `paymentDeclined` (`PAYMENT_006`). The sandbox sends no `fail_reason` with it, so the message is only `Charge failed` |
+
+The sandbox does not ask for a 3DS challenge, and `ChallengePreference` does not change that, so
+the challenge cannot be tried there. In production the challenge comes when the card's bank asks
+for it.
+
+---
+
 ## Error handling
 
 Every failure throws `GopaySDKError`, which carries a stable `code` (matching the Android SDK) and
@@ -839,7 +889,7 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `AUTH_013` | Operation on a closed session |
 | `PAYMENT_003` | Apple Pay produced no usable payment token (unreadable, or empty as in the iOS Simulator) |
 | `PAYMENT_004` | Apple Pay cannot be used: the device cannot pay with it, no supported card network, or the sheet could not be shown |
-| `PAYMENT_006` | `awaitChargeState` only: the charge ended `failed`; the charge is in `chargeState`, its `failReason` in the message |
+| `PAYMENT_006` | `awaitChargeState` only: the charge ended `failed`; the charge is in `chargeState`; the message is `Charge failed: <fail_reason>` when the gateway sends a `chargeState.failReason`, otherwise only `Charge failed` |
 | `PAYMENT_007` | `awaitChargeState` only: the charge stayed `requested` / `processing` / `unknown`, or `actionRequired` without a new address, for the whole `initialTimeout` (30 s); not a result, the last state read is in `chargeState`, read the charge again or wait for the notification |
 | `PAYMENT_008` | A 3DS verification is already in progress |
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
@@ -884,6 +934,51 @@ session throws, once per error, for central logging; the two outcomes of a payme
 `PAYMENT_007` and `PAYMENT_011`, and a `CancellationError` stay out, and nothing that is not a
 `GopaySDKError` goes in. The rule is the same on Android and spelled out at the top of
 `ERROR_CODES.md`. It is not a substitute for catching the error at the call.
+
+### After a network error
+
+A `NETWORK_*` code means the request got no usable answer from the gateway, not that the payment
+failed. What to do depends on the call that threw it.
+
+- **`awaitChargeState` or `getChargeState`, after the charge call returned.** The charge reached
+  the gateway and its result is not known yet. Read the state again with `getChargeState()` or
+  `awaitChargeState` once the connection is back, and do not offer a new payment: the customer may
+  already have paid. If the app cannot get through, your backend learns the result from the
+  notification on `notification_url`.
+- **The charge call itself** (`chargeWithEncryptedCard`, `chargeWithCardToken`,
+  `chargeWithWallet`, `charge`). Before it sends the charge, the SDK fetches the browser data and,
+  when the payment token has expired, a new token, so the error may come from before the charge
+  went out.
+  - **With an HTTP status** (`NETWORK_002` for a 4xx, `NETWORK_003` for a 5xx), the gateway
+    answered, and its message says why. After a 5xx, read `getChargeState()` as well before
+    anything else: the charge may exist.
+  - **Without an HTTP status** (`NETWORK_001`, `NETWORK_004`, `NETWORK_005`, `NETWORK_007`), the
+    charge may not have gone out, or it reached the gateway and the answer was lost. Read
+    `getChargeState()`: a charge state means the charge exists, so follow it as above;
+    `NETWORK_002` with HTTP status 404 means no charge exists.
+
+```swift
+import GopaySDK
+
+/// Whether the payment has a charge, after the charge call ended with a NETWORK_* code.
+func chargeExists(_ session: PaymentSession) async throws -> Bool {
+    do {
+        _ = try await session.getChargeState()
+        return true
+    } catch let error as GopaySDKError
+        where error.code == .networkClientError && error.httpStatus == 404 {
+        // No charge is HTTP 404; anything else, such as still being offline, does not tell.
+        return false
+    }
+}
+```
+
+When no charge exists after a code without an HTTP status, charge again with the same JWE while it
+is within its 10 minutes: no charge used it. `submitCardForm` empties the form once it has returned
+the JWE, so this spares the user typing the card again. Charge on the same session if you have not
+closed it, or on a new one started from the same payment id and payment secret. Keep the JWE until
+a charge exists, and drop it then or once it has expired. Once the 10 minutes are over, or when the
+gateway answered the charge with an error, have the user enter the card again.
 
 ---
 
