@@ -194,35 +194,104 @@ than an Info.plist lookup, since under SPM the SDK links statically into the hos
 
 ---
 
-### Start a session and charge
+### Show the card form and charge
+
+The first card payment needs the keys above and a payment your backend has created.
+`GopayCardForm` collects the card, `submitCardForm` encrypts it into a JWE,
+`chargeWithEncryptedCard` sends the charge and `awaitChargeState` waits for the result: it polls
+the charge once a second, as GoPay recommends, runs the 3DS challenge in an SDK-managed WebView
+when the bank asks for one, and returns the charge once it is `succeeded`.
 
 ```swift
-// `paymentId`, `paymentSecret` and the `returnURL` the payment was created with
-// (`callback.return_url`) come from your backend after it created the payment.
-let session = try await GopaySDK.shared.startPaymentSession(
-    paymentId: paymentId,
-    paymentSecret: paymentSecret
-    // scope defaults to PaymentSession.defaultScope == "payment:charge payment:read"
-)
-```
+import SwiftUI
+import GopaySDK
 
-Then charge the payment and wait for the result. `awaitChargeState` polls the charge once a
-second, as GoPay recommends, opens the 3DS challenge in an SDK-managed WebView when the gateway
-asks for one, and returns the charge once it is `succeeded`:
+struct CheckoutView: View {
+    // paymentId, paymentSecret and returnURL (its callback.return_url) come from YOUR backend
+    // after it creates the payment.
+    let paymentId: String
+    let paymentSecret: String
+    let returnURL: URL
 
-```swift
-// A saved card; see below for the card form, the wallet and the other inputs.
-_ = try await session.chargeWithCardToken(token)
-do {
-    let charge = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
-    // charge.state == .succeeded
-} catch let error as GopaySDKError where error.code == .paymentDeclined {
-    // The charge ended failed: error.chargeState?.failReason says why, when the gateway sends a reason. A retry needs a new payment.
-} catch let error as GopaySDKError where error.code == .paymentTimeout {
-    // Still undecided after 30 s: not a result, error.chargeState is the last state read. Read getChargeState() later or wait for the notification.
+    @State private var isCardValid: Bool? = nil
+    @State private var status = ""
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // .live shows localized errors as the user types.
+            GopayCardForm(validation: .live, isValid: $isCardValid)
+            Button("Pay") { Task { status = await pay() } }
+                .disabled(!(isCardValid ?? false))
+            Text(status)
+        }
+        .padding()
+    }
+
+    /// Runs the payment and returns what the checkout tells the user.
+    private func pay() async -> String {
+        let session: PaymentSession
+        do {
+            session = try await GopaySDK.shared.startPaymentSession(
+                paymentId: paymentId,
+                paymentSecret: paymentSecret
+            )
+        } catch {
+            print("GoPay session failed:", error)   // the code is for your log, not the user
+            return "The payment could not start"
+        }
+        let message = await charge(session)
+        await session.close()   // wipes the secret + token from memory
+        return message
+    }
+
+    private func charge(_ session: PaymentSession) async -> String {
+        let jwe: String
+        do {
+            // The card the form holds, encrypted into a JWE; the form empties itself.
+            jwe = try await GopaySDK.shared.submitCardForm()
+        } catch let error as GopaySDKError where error.code == .validationInvalidInput {
+            return "Check the card details"
+        } catch {
+            // Anything else, such as the key not being fetched, leaves the card in the form.
+            return "Could not reach GoPay, try again"
+        }
+        var charged = false
+        do {
+            _ = try await session.chargeWithEncryptedCard(jwe)
+            charged = true
+            _ = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
+            return "Paid"
+        } catch let error as GopaySDKError {
+            // The code is for your log, not the user.
+            print("GoPay payment did not complete:", error)
+            switch error.code {
+            case .paymentDeclined:
+                // The charge ended failed. error.chargeState carries it, with failReason when the
+                // gateway sends one. Paying again needs a new payment.
+                return "Payment declined"
+            case .paymentTimeout, .paymentCancelled:
+                // Still undecided after 30 s, or the user closed the 3DS screen: the charge was
+                // sent, so read its state again or ask your backend before offering a new
+                // payment (see Reading the result).
+                return "The payment is being processed"
+            case _ where error.code.rawValue.hasPrefix("NETWORK_")
+                && (charged || (error.httpStatus ?? 500) >= 500):
+                // A NETWORK_* after the charge went out, or one without a 4xx answer, leaves
+                // the result unknown: see After a network error before offering to pay again.
+                return "The payment result is not known yet"
+            default:
+                return "The payment failed"
+            }
+        } catch {
+            return "The payment was cancelled"   // CancellationError: the task was cancelled
+        }
+    }
 }
 ```
 
+That is the whole of a card payment in the app. Your backend creates the payment and settles it;
+what the app reports is not proof of payment (see [Your backend](#your-backend)). The session
+starts before the card is encrypted, so a session that cannot start leaves the card in the form.
 The manual path, `getChargeState()` and `handle3dsVerification`, stays available; both are in
 [Reading the result](#reading-the-result).
 
@@ -231,11 +300,21 @@ The manual path, `getChargeState()` and `handle3dsVerification`, stays available
 403). Any other failure keeps its own code: offline is `NETWORK_004`, a 5xx is `NETWORK_003`, and so on
 (see [Error handling](#error-handling)), so do not ask your backend for a new payment over it.
 At most one live session per `payment_id` exists at a time; reuse it via
-`await GopaySDK.shared.getPaymentSession(paymentId)`. When done:
+`await GopaySDK.shared.getPaymentSession(paymentId)`. `session.close()` wipes the in-memory secret
+and token and unregisters the session.
+
+#### Charging a saved card token instead
+
+When your backend has saved the card as a token (`POST /cards/tokens`, step 6 under
+[Your backend](#your-backend)), the same session charges the token in place of the JWE, and
+everything after the charge stays as above:
 
 ```swift
-await session.close() // wipes the in-memory secret + token, unregisters the session
+_ = try await session.chargeWithCardToken(cardToken)
 ```
+
+Card tokenization is off until GoPay enables it for you through `integration@gopay.com`. The card
+form path above needs no such step.
 
 ---
 
