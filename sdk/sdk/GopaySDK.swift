@@ -330,10 +330,7 @@ public class GopaySDK {
 
     private func submitStoredCard(formId: String?) async throws -> String {
         guard config != nil else { throw notInitializedError() }
-        cardFormDataLock.lock()
-        let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
-        let stored = resolvedId.flatMap { internalCardFormData[$0] }
-        cardFormDataLock.unlock()
+        let (resolvedId, stored) = storedCardForm(formId: formId)
         // The submit is what the `.onSubmit` validation mode waits for, so the form is told
         // first, before the card is judged: an empty or invalid card then shows its errors, as
         // the Android form shows them on `submitCardForm`.
@@ -363,6 +360,15 @@ public class GopaySDK {
         // a successful encryption and deliberately not on a failed one.
         clearCardFormData(formId: id)
         return jwe
+    }
+
+    /// The form a submit reads and the card it holds, looked up under ``cardFormDataLock``.
+    /// Kept synchronous so the lock is never held across a suspension point.
+    private func storedCardForm(formId: String?) -> (String?, GopayCardFormData?) {
+        cardFormDataLock.lock()
+        defer { cardFormDataLock.unlock() }
+        let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
+        return (resolvedId, resolvedId.flatMap { internalCardFormData[$0] })
     }
 
     /// Registers the wipe a live ``GopayCardForm`` performs on its own fields, and what it does
