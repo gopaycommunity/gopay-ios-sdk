@@ -130,6 +130,11 @@ final class CheckoutViewModel {
     // MARK: - Actions
 
     func pay() async {
+        // Busy before the first `await`: a second tap queues its own task before the disabled
+        // button renders, and that task must find this one already running.
+        guard !isBusy else { return }
+        busyLabel = "Preparing your order…"
+        defer { busyLabel = nil }
         banner = nil
         chargeSent = false
         do {
@@ -148,7 +153,6 @@ final class CheckoutViewModel {
         } catch {
             fail(message: error.localizedDescription)
         }
-        busyLabel = nil
     }
 
     /// The payment was interrupted: PAYMENT_011, the Apple Pay sheet or the 3DS challenge closed
@@ -220,7 +224,7 @@ final class CheckoutViewModel {
 
     /// Waits for the charge again — used by the pending result screen.
     func refreshChargeState() async {
-        guard let session else { return }
+        guard let session, !isBusy else { return }
         busyLabel = "Refreshing…"
         defer { busyLabel = nil }
         do {
@@ -248,13 +252,11 @@ final class CheckoutViewModel {
             jwe = try await GopaySDK.shared.submitCardForm()
         } catch let error as GopaySDKError where error.message == GopaySDKErrors.invalidCardFormData {
             // The form is showing what is wrong; nothing more to say.
-            busyLabel = nil
             return
         } catch let error as GopaySDKError where error.message == GopaySDKErrors.noCardFormData {
             // Nothing typed yet, or the SDK wiped the card after the previous successful
             // encryption (GPMOB-140): the gateway accepts each JWE only once, so a retry needs the
             // card entered again. The form shows the required fields; the banner says why.
-            busyLabel = nil
             banner = "Please enter your card details and try again."
             return
         }

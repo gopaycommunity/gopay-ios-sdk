@@ -504,6 +504,8 @@ struct ContentView: View {
 
     @MainActor
     private func run(_ label: String, _ work: @escaping () async throws -> Void) async {
+        // A second tap can queue its task before the disabled buttons render.
+        guard !isBusy else { return }
         responseText = ""
         busyLabel = label
         defer { busyLabel = nil }
