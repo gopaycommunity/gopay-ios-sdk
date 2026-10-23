@@ -104,7 +104,8 @@ final class CheckoutViewModel {
     var qrDetails: QrPaymentDetails?
 
     private(set) var paymentId: String?
-    private var session: PaymentSession?
+    /// Not private only so the tests can hand the view model a session without the network.
+    var session: PaymentSession?
     /// The `callback.return_url` the current payment was created with; the 3DS challenge ends there.
     private var returnURL: URL?
     /// Whether the current attempt's charge has gone out, which decides what a closed window means.
