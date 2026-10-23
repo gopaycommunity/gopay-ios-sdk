@@ -107,17 +107,23 @@ struct BankTransferSheet: View {
     @ViewBuilder
     private var qrCode: some View {
         if let image = qrImage {
-            Image(uiImage: image)
-                .interpolation(.none)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 200, height: 200)
-                .padding(14)
-                .background(.white, in: RoundedRectangle(cornerRadius: CheckoutTheme.cardRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: CheckoutTheme.cardRadius, style: .continuous)
-                        .stroke(CheckoutTheme.hairline, lineWidth: 1)
-                )
+            // A tap on the code shares the same items as the Share button in the toolbar.
+            Button { isSharePresented = true } label: {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 200, height: 200)
+                    .padding(14)
+                    .background(.white, in: RoundedRectangle(cornerRadius: CheckoutTheme.cardRadius, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CheckoutTheme.cardRadius, style: .continuous)
+                            .stroke(CheckoutTheme.hairline, lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Bank transfer QR code")
+            .accessibilityHint("Shares the QR code and the transfer details")
         } else {
             SurfaceCard {
                 Label(
