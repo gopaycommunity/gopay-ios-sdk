@@ -1,3 +1,15 @@
+# 2.4.0 (2026-10-26)
+
+
+### Bug Fixes
+
+* keep oversized bodies out of the report and declare the data as linked GPMOB-186 81c6ca7
+
+
+### Features
+
+* send operational data to the GoPay ingest GPMOB-186 ae50f42
+
 # 2.3.0 (2026-10-26)
 
 
