@@ -1232,6 +1232,64 @@ See [`example/README.md`](example/README.md) for the full walkthrough.
 
 ---
 
+## Operational data
+
+The SDK sends GoPay basic diagnostic data about its own behaviour: which SDK operation ran, the
+HTTP status it got back, how long it took, what the request and response said (redacted, see
+below), and, when the SDK raises an error, the SDK's own error code and message. This is always on.
+There is no switch and nothing to configure, because a signal produced only by the merchants who
+opted in describes those merchants rather than the SDK. The debug log flag does not change what is
+sent; with it on, the SDK logs one line per event, its type and name, without its content.
+
+Alongside those it reports the lifecycle around a payment: the SDK being initialized, a payment
+session starting and closing, the card form appearing and disappearing, and the 3DS verification
+screen being opened, with the verification page's address but none of its parameters. Each step of
+an Apple Pay payment is reported as it happens (the sheet opening, the authorization, the charge and
+the result the sheet was given, or the sheet being closed without paying), and so is the answer to
+whether the device can pay with Apple Pay. Every event carries the SDK version, the platform, which
+payment method and flow it belongs to, the id of the payment being paid, your `clientId`, a random
+id for the SDK instance and one for the app process, the event's position among those the SDK
+instance sent, and your app's bundle identifier.
+
+One event describes something your customer did rather than something the SDK did: that they
+submitted the card form, or authorised in the Apple Pay sheet, and how long the form had been on
+screen before they did. That is the whole of it: no field contents, no keystrokes, no timing of
+individual fields, nothing derived from the card data, not even the length of the encrypted payload.
+
+**What it never contains.** Card numbers, CVV, the encrypted card payload, card tokens, wallet
+payment data, `payment_secret`, access tokens, credentials, 3DS or ACS redirect parameters, and
+personal data such as e-mail, phone, name, address or IBAN. Request and response bodies are
+redacted on the device before they are sent, and not by a field list alone: every field whose name
+marks it as a secret, a token, card or wallet data, a redirect or personal data is replaced with
+`[redacted]`; the payment instrument of a charge is dropped whole, whatever its fields are called;
+every text value that survives is still stripped of PAN-shaped digit runs, token-shaped strings,
+e-mail addresses and query strings; and each body is cut at 2 000 characters. Request paths are
+sent as templates (`/payments/{id}/charge`) rather than as the URLs actually called, error messages
+are the SDK's own text with the same scrub, and the token request reports only the form it sent,
+never the token that came back. The payment id itself is sent as its own field: it is what ties the
+events of one checkout together, and it identifies a payment rather than a person.
+
+**What it does contain that concerns you.** Every request carries the device's IP address, as any
+HTTP request does, and GoPay keeps it with the data, together with the SDK's own User-Agent (which
+names the SDK and its version, not the device or the person) and your app's bundle identifier. The
+data is therefore pseudonymised personal data, not anonymous. GoPay processes it under legitimate
+interest to keep the payment integration working and diagnosable.
+
+**What you should do.** Reflect this in your own privacy notice: you are the controller for your
+checkout, and your customers' data is being processed in your app. The reports go to
+`https://lx.gopay.com` (production) or `https://lx.sandbox.gopay.com` (sandbox); a `.development`
+environment sends none.
+
+Delivery is fire-and-forget: each report gives up after 10 seconds, nothing is retried, nothing is
+stored on the device, and every failure is discarded silently. Nothing here can delay or fail a
+payment. Four separate caps limit how much one payment session can produce (API reports, lifecycle
+markers, Apple Pay steps and errors), so a flood of any single kind cannot crowd out the others.
+The caps start over with every payment session, because the SDK lives as long as your app, not as
+long as one checkout. Unit or integration tests of your own that initialize the SDK against the
+sandbox send real reports to the sandbox ingest, like any other run of the SDK.
+
+---
+
 ## Security notes
 
 - `payment_secret` and the payment-scoped JWT live in memory only — never written to disk, and
@@ -1255,6 +1313,9 @@ See [`example/README.md`](example/README.md) for the full walkthrough.
   declare for your app in App Store Connect is yours to decide, see Apple's
   [App Privacy details](https://developer.apple.com/app-store/app-privacy-details/), Payment Info
   in particular.
+- The manifest also declares Other Diagnostic Data, for the [operational data](#operational-data)
+  the SDK sends GoPay: used for app functionality, not linked to the user's identity and not for
+  tracking.
 - According to the GoPay guide
   ([PCI DSS scope](https://api-docs.gopay.com/en/docs/01-security.md)), an integration where the
   GoPay SDK collects and encrypts the card and your code handles only the resulting JWE or card
@@ -1271,6 +1332,11 @@ xcodebuild test -project sdk.xcodeproj -scheme sdk \
 
 The tests live in `sdk/sdkTests` and run through the `sdk` Xcode project — `Package.swift`
 declares no test target, so `swift test` will not find them.
+
+One suite, `TelemetryIngestValidationTests`, sends an event of every kind to an operational-data
+ingest that answers schema errors with 400, and runs only when its `/events` URL is given:
+`TEST_RUNNER_GOPAY_TELEMETRY_VALIDATION_URL=<url> xcodebuild test …`. Without it the suite is
+skipped.
 
 ## Releasing
 
