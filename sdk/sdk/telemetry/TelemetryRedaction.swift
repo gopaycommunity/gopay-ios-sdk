@@ -23,6 +23,11 @@ enum TelemetryRedaction {
     /// The cap per request or response body.
     static let maxBodyLength = 2000
 
+    /// A raw body longer than this is not reported at all. Cutting the raw bytes would leave JSON
+    /// that no longer parses, and an unparsed body escapes the redaction by key; the Android SDK
+    /// drops the same bodies.
+    static let maxRawBodyBytes = 16 * 1024
+
     /// Nested deeper than this is dropped whole. The root is depth 0.
     static let maxDepth = 4
 
@@ -111,13 +116,14 @@ enum TelemetryRedaction {
     // MARK: - Bodies
 
     /// A request or response body as `req_body` / `res_body` carry it: parsed, redacted by key,
-    /// every remaining string scrubbed, then JSON cut at ``maxBodyLength``. `nil` for no body.
+    /// every remaining string scrubbed, then JSON cut at ``maxBodyLength``. `nil` for no body and
+    /// for one longer than ``maxRawBodyBytes``.
     ///
     /// A form-encoded body is read as the fields it carries, as the browser SDK hands over the
     /// token request's form; JSON is read as JSON, and anything else as text, which is itself
     /// parsed when it starts with `{` or `[`. Never fails: a body is only a diagnostic.
     static func serializeBody(_ data: Data?, contentType: String?) -> String? {
-        guard let data = data, !data.isEmpty else { return nil }
+        guard let data = data, !data.isEmpty, data.count <= maxRawBodyBytes else { return nil }
         let value: Any
         if let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
             value = parsed
@@ -276,9 +282,14 @@ enum TelemetryRedaction {
         return String(String.UnicodeScalarView(text.unicodeScalars.prefix(length)))
     }
 
+    /// One of the constant patterns above, compiled. A pattern that does not compile is a bug in
+    /// this file, caught by the first test that runs it, never something the input can cause.
     private static func regex(_ pattern: String, caseInsensitive: Bool = false) -> NSRegularExpression {
-        // The patterns are constants; a typo here is caught by the first test that runs them.
-        try! NSRegularExpression(pattern: pattern, options: caseInsensitive ? [.caseInsensitive] : [])
+        do {
+            return try NSRegularExpression(pattern: pattern, options: caseInsensitive ? [.caseInsensitive] : [])
+        } catch {
+            preconditionFailure("Invalid redaction pattern \(pattern): \(error)")
+        }
     }
 
     private static func whole(_ text: String) -> NSRange {

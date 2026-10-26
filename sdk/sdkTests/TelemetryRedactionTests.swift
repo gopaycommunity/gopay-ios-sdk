@@ -243,6 +243,22 @@ struct TelemetryBodyRedactionTests {
         #expect(TelemetryRedaction.serializeBody(Data(), contentType: "application/json") == nil)
     }
 
+    /// A JSON body of exactly `bytes` bytes.
+    private func body(ofBytes bytes: Int) -> Data {
+        let frame = #"{"note":""}"#.utf8.count
+        return Data(#"{"note":"\#(String(repeating: "x", count: bytes - frame))"}"#.utf8)
+    }
+
+    /// Past 16 384 bytes a body is not reported at all: cutting the raw bytes would leave JSON
+    /// that no longer parses, and so escapes the redaction by key. As on Android.
+    @Test func dropsABodyLongerThan16384BytesInsteadOfCuttingIt() {
+        #expect(body(ofBytes: 16_384).count == 16_384)
+        #expect(TelemetryRedaction.serializeBody(body(ofBytes: 16_384), contentType: "application/json") != nil)
+        #expect(TelemetryRedaction.serializeBody(body(ofBytes: 16_385), contentType: "application/json") == nil)
+        let text = Data(("payment_secret=abc " + String(repeating: "y", count: 16_400)).utf8)
+        #expect(TelemetryRedaction.serializeBody(text, contentType: "text/plain") == nil)
+    }
+
     @Test func cutsALongBodyAtTheCap() {
         let sent = TelemetryRedaction.serializeBody(
             body(["items": Array(repeating: "item", count: 400)]), contentType: "application/json"

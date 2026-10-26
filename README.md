@@ -1314,8 +1314,8 @@ sandbox send real reports to the sandbox ingest, like any other run of the SDK.
   [App Privacy details](https://developer.apple.com/app-store/app-privacy-details/), Payment Info
   in particular.
 - The manifest also declares Other Diagnostic Data, for the [operational data](#operational-data)
-  the SDK sends GoPay: used for app functionality, not linked to the user's identity and not for
-  tracking.
+  the SDK sends GoPay: used for app functionality and not for tracking, and linked, because the
+  payment id it carries ties the data to the payment and so to the payer.
 - According to the GoPay guide
   ([PCI DSS scope](https://api-docs.gopay.com/en/docs/01-security.md)), an integration where the
   GoPay SDK collects and encrypts the card and your code handles only the resulting JWE or card

@@ -59,27 +59,39 @@ struct TelemetryIngestValidationTests {
 
         telemetry.initialized()
         telemetry.apiCall(
-            method: "POST", path: "/oauth2/token", statusCode: 200, startedAt: Telemetry.now(),
-            requestBody: Data("grant_type=payment_credentials&scope=payment%3Acharge".utf8),
-            requestContentType: "application/x-www-form-urlencoded", responseBody: nil, responseContentType: nil,
+            Telemetry.ApiCallRecord(
+                method: "POST", path: "/oauth2/token", statusCode: 200, startedAt: Telemetry.now(),
+                requestBody: .init(data: Data("grant_type=payment_credentials&scope=payment%3Acharge".utf8), contentType: "application/x-www-form-urlencoded"),
+                responseBody: nil
+            ),
             paymentId: paymentId
         )
         telemetry.sessionStarted(paymentId: paymentId)
         telemetry.cardFormReady(owner: owner)
         telemetry.cardFormSubmitted(owner: owner)
         telemetry.apiCall(
-            method: "POST", path: "/payments/\(paymentId)/charge", statusCode: 200, startedAt: Telemetry.now(),
-            requestBody: charge, requestContentType: "application/json", responseBody: chargeResponse,
-            responseContentType: "application/json", paymentId: paymentId
+            Telemetry.ApiCallRecord(
+                method: "POST", path: "/payments/\(paymentId)/charge", statusCode: 200, startedAt: Telemetry.now(),
+                requestBody: .init(data: charge, contentType: "application/json"),
+                responseBody: .init(data: chargeResponse, contentType: "application/json")
+            ),
+            paymentId: paymentId
         )
         telemetry.apiCall(
-            method: "GET", path: "/payments/\(paymentId)/charge", statusCode: 503, startedAt: Telemetry.now(),
-            requestBody: nil, requestContentType: nil, responseBody: Data(#"{"error":"SERVICE_UNAVAILABLE"}"#.utf8),
-            responseContentType: "application/json", paymentId: paymentId
+            Telemetry.ApiCallRecord(
+                method: "GET", path: "/payments/\(paymentId)/charge", statusCode: 503, startedAt: Telemetry.now(),
+                requestBody: nil,
+                responseBody: .init(data: Data(#"{"error":"SERVICE_UNAVAILABLE"}"#.utf8), contentType: "application/json")
+            ),
+            paymentId: paymentId
         )
         telemetry.apiCall(
-            method: "GET", path: "/payments/\(paymentId)", statusCode: nil, startedAt: Telemetry.now(),
-            requestBody: nil, requestContentType: nil, responseBody: nil, responseContentType: nil, paymentId: paymentId
+            Telemetry.ApiCallRecord(
+                method: "GET", path: "/payments/\(paymentId)", statusCode: nil, startedAt: Telemetry.now(),
+                requestBody: nil,
+                responseBody: nil
+            ),
+            paymentId: paymentId
         )
         telemetry.verificationOpened(redirectURL: URL(string: "https://acs.test/challenge?creq=x")!, paymentId: paymentId)
         telemetry.cardFormUnmounted(owner: owner)

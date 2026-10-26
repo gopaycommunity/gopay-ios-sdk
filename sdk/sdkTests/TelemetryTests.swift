@@ -263,8 +263,11 @@ struct TelemetryTests {
         let probe = TelemetryProbe()
         for _ in 0..<205 {
             probe.telemetry.apiCall(
-                method: "GET", path: "/payments/1/charge", statusCode: 200, startedAt: Telemetry.now(),
-                requestBody: nil, requestContentType: nil, responseBody: nil, responseContentType: nil,
+                Telemetry.ApiCallRecord(
+                    method: "GET", path: "/payments/1/charge", statusCode: 200, startedAt: Telemetry.now(),
+                    requestBody: nil,
+                    responseBody: nil
+                ),
                 paymentId: "1"
             )
         }
@@ -292,9 +295,12 @@ struct TelemetryTests {
     @Test func sendsAnApiCallWithATemplateAndNullStatusWithoutAResponse() async throws {
         let probe = TelemetryProbe()
         probe.telemetry.apiCall(
-            method: "GET", path: "/payments/3273103424/qr-payment/info?format=png", statusCode: nil,
-            startedAt: Telemetry.now(), requestBody: nil, requestContentType: nil, responseBody: nil,
-            responseContentType: nil, paymentId: "3273103424"
+            Telemetry.ApiCallRecord(
+                method: "GET", path: "/payments/3273103424/qr-payment/info?format=png", statusCode: nil, startedAt: Telemetry.now(),
+                requestBody: nil,
+                responseBody: nil
+            ),
+            paymentId: "3273103424"
         )
 
         let event = try #require(await probe.events(1).first)
@@ -328,6 +334,25 @@ struct TelemetryTests {
                                  requestBody: "{}", responseBody: "{}")
         let kept = try #require(TelemetryTransport.fittingBody(of: small))
         #expect(String(data: kept, encoding: .utf8)?.contains("req_body") == true)
+    }
+
+    /// The call is still reported, with its status; only the oversize body is left out.
+    @Test func reportsAnApiCallWithoutABodyLongerThan16384Bytes() async throws {
+        let probe = TelemetryProbe()
+        let long = Data(#"{"note":"\#(String(repeating: "x", count: 16_400))"}"#.utf8)
+        probe.telemetry.apiCall(
+            Telemetry.ApiCallRecord(
+                method: "POST", path: "/payments/1/charge", statusCode: 400, startedAt: Telemetry.now(),
+                requestBody: .init(data: Data(#"{"state":"x"}"#.utf8), contentType: "application/json"),
+                responseBody: .init(data: long, contentType: "application/json")
+            ),
+            paymentId: "1"
+        )
+
+        let event = try #require(await probe.events(1).first)
+        #expect(event["status_code"] as? Int == 400)
+        #expect(event["req_body"] as? String == #"{"state":"x"}"#)
+        #expect(event["res_body"] == nil)
     }
 
     @Test func neverLetsAFailingIngestReachTheCaller() async {

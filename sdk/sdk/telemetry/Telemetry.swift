@@ -177,28 +177,38 @@ final class Telemetry: @unchecked Sendable {
 
     // MARK: - Requests
 
-    /// One request the SDK sent to the gateway, whichever way it ended. `statusCode` is `nil`
-    /// when no response came. The bodies go out redacted, see ``TelemetryRedaction``.
-    func apiCall(
-        method: String,
-        path: String,
-        statusCode: Int?,
-        startedAt: UInt64,
-        requestBody: Data?,
-        requestContentType: String?,
-        responseBody: Data?,
-        responseContentType: String?,
-        paymentId: String?
-    ) {
-        post(.apiCall, paymentId: paymentId, duration: Self.ms(since: startedAt)) {
-            let target = TelemetryRedaction.endpointTemplate(path)
+    /// One request the SDK sent to the gateway, as the choke point read it: the browser SDK's
+    /// `ApiCallRecord`. The bodies are raw here; the redaction runs on the transport.
+    struct ApiCallRecord: Sendable {
+        /// A body and the `Content-Type` it was sent or received with.
+        struct Body: Sendable {
+            let data: Data
+            let contentType: String?
+        }
+
+        let method: String
+        /// The path below the API's base path, query included; reported as a template.
+        let path: String
+        /// `nil` when no response came.
+        let statusCode: Int?
+        /// A ``Telemetry/now()`` reading taken when the request went out.
+        let startedAt: UInt64
+        let requestBody: Body?
+        let responseBody: Body?
+    }
+
+    /// One request the SDK sent to the gateway, whichever way it ended. The bodies go out
+    /// redacted, see ``TelemetryRedaction``.
+    func apiCall(_ record: ApiCallRecord, paymentId: String?) {
+        post(.apiCall, paymentId: paymentId, duration: Self.ms(since: record.startedAt)) {
+            let target = TelemetryRedaction.endpointTemplate(record.path)
             return .apiCall(
                 action: TelemetryRedaction.action(ofTemplate: target),
-                httpMethod: method,
+                httpMethod: record.method,
                 target: target,
-                statusCode: statusCode,
-                requestBody: TelemetryRedaction.serializeBody(requestBody, contentType: requestContentType),
-                responseBody: TelemetryRedaction.serializeBody(responseBody, contentType: responseContentType)
+                statusCode: record.statusCode,
+                requestBody: TelemetryRedaction.serializeBody(record.requestBody?.data, contentType: record.requestBody?.contentType),
+                responseBody: TelemetryRedaction.serializeBody(record.responseBody?.data, contentType: record.responseBody?.contentType)
             )
         }
     }

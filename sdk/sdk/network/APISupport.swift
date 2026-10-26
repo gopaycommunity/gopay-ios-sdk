@@ -130,15 +130,23 @@ extension AsyncHTTPClient {
         let startedAt = Telemetry.now()
         let path = telemetryPath(of: request)
         func report(_ result: (Data, HTTPURLResponse)?) {
+            let requestBody = request.httpBody.map {
+                Telemetry.ApiCallRecord.Body(data: $0, contentType: request.value(forHTTPHeaderField: "Content-Type"))
+            }
+            let responseBody = result.flatMap { data, response in
+                reportsResponseBody
+                    ? Telemetry.ApiCallRecord.Body(data: data, contentType: response.value(forHTTPHeaderField: "Content-Type"))
+                    : nil
+            }
             telemetry.apiCall(
-                method: request.httpMethod ?? "GET",
-                path: path,
-                statusCode: result?.1.statusCode,
-                startedAt: startedAt,
-                requestBody: request.httpBody,
-                requestContentType: request.value(forHTTPHeaderField: "Content-Type"),
-                responseBody: reportsResponseBody ? result?.0 : nil,
-                responseContentType: result?.1.value(forHTTPHeaderField: "Content-Type"),
+                Telemetry.ApiCallRecord(
+                    method: request.httpMethod ?? "GET",
+                    path: path,
+                    statusCode: result?.1.statusCode,
+                    startedAt: startedAt,
+                    requestBody: requestBody,
+                    responseBody: responseBody
+                ),
                 paymentId: paymentId
             )
         }
