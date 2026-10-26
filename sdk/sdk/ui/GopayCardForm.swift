@@ -532,6 +532,7 @@ public struct GopayCardForm: View {
             )
             // Update validation binding if provided
             updateValidationBinding()
+            GopaySDK.shared.telemetry.cardFormReady(owner: owner)
         }
         .onDisappear {
             // Drop the card when the form leaves the screen, both the SDK's copy and the fields
@@ -548,6 +549,7 @@ public struct GopayCardForm: View {
             // in the first case and does the whole job in the second.
             GopaySDK.shared.unregisterCardFormReset(formId: formId, owner: owner)
             resetFields()
+            GopaySDK.shared.telemetry.cardFormUnmounted(owner: owner)
         }
     }
     

@@ -23,9 +23,11 @@ public actor PaymentSession {
     /// Shareable-key endpoints; ``charge(_:)`` completes the browser data through it.
     private let publicApi: PublicAPI
     private let onClose: @Sendable (PaymentSession) async -> Void
-    /// Where every error a public call of this session throws goes, once: the owning
-    /// ``GopaySDK/report(_:)``, which applies the `errorCallback` rule.
-    private let report: @Sendable (Error) -> Void
+    /// Where every error a public call of this session throws goes, once, with the session's
+    /// payment: the owning ``GopaySDK/report(_:paymentId:)``, which applies the `errorCallback` rule.
+    private let report: @Sendable (Error, String) -> Void
+    /// The operational data of the SDK that made the session.
+    nonisolated let telemetry: Telemetry
 
     /// In-memory only; `nil` once ``close()`` wipes it — the canonical "closed" signal.
     private var paymentSecret: String?
@@ -82,11 +84,21 @@ public actor PaymentSession {
         self.publicApi = publicApi
         self.onClose = callbacks.onClose
         self.report = callbacks.report
+        self.telemetry = callbacks.telemetry
         self.api = nil
     }
 
+    /// A session dropped without ``close()`` still leaves the telemetry's attribution, or every
+    /// later event without a payment of its own would go on naming this one. A closed session, or
+    /// one whose start failed, has already left it.
+    deinit {
+        if paymentSecret != nil {
+            telemetry.detach(paymentId: paymentId)
+        }
+    }
+
     private func attach(client: AsyncHTTPClient) {
-        self.api = PaymentAPI(client: client, tokenProvider: self)
+        self.api = PaymentAPI(client: client, tokenProvider: self, telemetry: telemetry)
     }
 
     // MARK: - Error reporting
@@ -99,7 +111,7 @@ public actor PaymentSession {
     /// ``chargeWithWallet(browserData:challengePreference:)`` runs it is reported by that call
     /// alone, a read that fails inside ``awaitChargeState(_:)`` by that one, and a token refresh
     /// the gateway refuses inside any call by that call. The rule itself, which errors are
-    /// passed on, is ``GopaySDK/report(_:)``'s.
+    /// passed on, is ``GopaySDK/report(_:paymentId:)``'s.
     func reported<T>(_ work: () async throws -> T) async throws -> T {
         do {
             return try await work()
@@ -108,7 +120,7 @@ public actor PaymentSession {
             // finishes, or fails, on its own. A task cancelled meanwhile ends with the
             // cancellation, not with the request's error, and reports nothing.
             try Task.checkCancellation()
-            report(error)
+            report(error, paymentId)
             throw error
         }
     }
@@ -153,6 +165,9 @@ public actor PaymentSession {
         // The browser data step is an await the cancellation may have passed through: a charge
         // the caller no longer wants must not reach the gateway.
         try Task.checkCancellation()
+        // Counted for the card form's unmount, which reports whether it cut a charge short.
+        Telemetry.chargesInFlight.start()
+        defer { Telemetry.chargesInFlight.finish() }
         return try await api.charge(paymentId: paymentId, request: completed)
     }
 
@@ -205,7 +220,7 @@ public actor PaymentSession {
 
     private func fetchBrowserData(userAgent: String?) async throws -> BrowserDataDetected {
         do {
-            return try await publicApi.getBrowserData(userAgent: userAgent)
+            return try await publicApi.getBrowserData(userAgent: userAgent, paymentId: paymentId)
         } catch let error as GopaySDKError {
             // Charging without the address would fail on the gateway anyway, and reporting that as
             // the charge's own 400 would hide where it went wrong.
@@ -252,12 +267,24 @@ public actor PaymentSession {
     /// registry. Idempotent — once the secret is nil, ``reauthenticate()`` throws
     /// ``GopaySDKError/Code/authPaymentSessionClosed``.
     public func close() async {
+        await close(reportsLeave: true)
+    }
+
+    /// ``close()``, and whether the telemetry hears of it as the session's leave. A session that
+    /// lost the race for its payment never started as far as the telemetry knows, so its close
+    /// only drops it from the attribution.
+    func close(reportsLeave: Bool) async {
         guard paymentSecret != nil else { return }
         paymentSecret = nil
         token = nil
         tokenExpiresAt = 0
         authTask?.cancel()
         authTask = nil
+        if reportsLeave {
+            telemetry.sessionClosed(paymentId: paymentId)
+        } else {
+            telemetry.detach(paymentId: paymentId)
+        }
         await onClose(self)
     }
 
@@ -265,7 +292,14 @@ public actor PaymentSession {
 
     private func startEagerAuth(secret: String) async throws {
         paymentSecret = secret
-        _ = try await authenticate()
+        do {
+            _ = try await authenticate()
+        } catch {
+            // The session is never handed out, and the SDK has already taken it off the
+            // telemetry's attribution: wiping the secret keeps `deinit` from doing that twice.
+            paymentSecret = nil
+            throw error
+        }
     }
 
     private func closedError() -> GopaySDKError {
@@ -279,7 +313,8 @@ public actor PaymentSession {
             response = try await authApi.token(
                 basicAuth: gopayBasicAuthHeader(user: paymentId, secret: secret),
                 grantType: Self.grantTypePaymentCredentials,
-                scope: scope
+                scope: scope,
+                paymentId: paymentId
             )
         } catch let error as GopaySDKError {
             // Only the gateway turning the pair down means the payment_id / payment_secret pair
@@ -344,17 +379,21 @@ public actor PaymentSession {
 struct SessionCallbacks: Sendable {
     /// Called once the session is closed, so the SDK can drop it from its registry.
     let onClose: @Sendable (PaymentSession) async -> Void
-    /// Where the session's public calls report what they throw.
-    let report: @Sendable (Error) -> Void
+    /// Where the session's public calls report what they throw, with the session's payment.
+    let report: @Sendable (Error, String) -> Void
+    /// Where the session's operational data goes.
+    let telemetry: Telemetry
 
     init(
         onClose: @escaping @Sendable (PaymentSession) async -> Void,
-        report: @escaping @Sendable (Error) -> Void = { _ in
+        report: @escaping @Sendable (Error, String) -> Void = { _, _ in
             // Tests that build a session outside the SDK have no errorCallback to report to.
-        }
+        },
+        telemetry: Telemetry = .disabled
     ) {
         self.onClose = onClose
         self.report = report
+        self.telemetry = telemetry
     }
 }
 

@@ -43,7 +43,7 @@ public class GopaySDK {
     /// The current configuration for the SDK.
     ///
     /// Written by ``initialize(with:)`` on whatever thread the host calls it from and read by
-    /// ``report(_:)`` on whatever executor a failing call ends on, so both go through
+    /// ``report(_:paymentId:)`` on whatever executor a failing call ends on, so both go through
     /// ``configLock``.
     public private(set) var config: GopaySDKConfig? {
         get {
@@ -59,6 +59,20 @@ public class GopaySDK {
     }
     private var storedConfig: GopaySDKConfig?
     private let configLock = NSLock()
+
+    /// Where the SDK's operational data goes: the ingest of the configured environment from
+    /// ``initialize(with:)`` on, nowhere before it. Guarded by ``configLock`` like the config it
+    /// is made from.
+    var telemetry: Telemetry {
+        configLock.lock()
+        defer { configLock.unlock() }
+        return storedTelemetry
+    }
+    private var storedTelemetry = Telemetry.disabled
+
+    /// How ``initialize(with:)`` makes the telemetry for a configuration. Replaced in tests, which
+    /// catch the uploads instead of sending them, like ``warnSink``.
+    var makeTelemetry: (GopaySDKConfig) -> Telemetry = { Telemetry(config: $0) }
 
     /// Async HTTP client used by the per-payment session API layer.
     private var asyncClient: AsyncHTTPClient?
@@ -102,9 +116,17 @@ public class GopaySDK {
     private var cardFormHandlers: [String: CardFormHandlers] = [:]
 
     /// Initializes the SDK with the given configuration. Call once before any other operation.
+    ///
+    /// From here on the SDK sends GoPay operational data about its own behaviour, redacted on the
+    /// device and never in the way of a payment, to the ingest of the configured environment; a
+    /// `.development` environment sends none. See "Operational data" in the README.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
-        self.config = config
+        let telemetry = makeTelemetry(config)
+        configLock.lock()
+        storedConfig = config
+        storedTelemetry = telemetry
+        configLock.unlock()
         GopayLocales.registerAll(config.customLocales)
         GopayLocales.setDefaultLocale(config.locale)
         // Said once here, unconditionally, because the first symptom otherwise is a CONFIG_006 on
@@ -115,9 +137,12 @@ public class GopaySDK {
         }
         let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
         self.asyncClient = client
-        self.authAPI = AuthAPI(client: client)
-        let publicAPI = PublicAPI(client: client, clientId: config.clientId, shareableKey: config.shareableKey)
+        self.authAPI = AuthAPI(client: client, telemetry: telemetry)
+        let publicAPI = PublicAPI(
+            client: client, clientId: config.clientId, shareableKey: config.shareableKey, telemetry: telemetry
+        )
         self.publicAPI = publicAPI
+        telemetry.initialized()
         // Resolve the real WebView User-Agent now, off the critical path, so the first charge's
         // browser_data doesn't pay the WKWebView construction + JS round-trip latency.
         Task { @MainActor in GopayUserAgent.prewarm() }
@@ -132,14 +157,22 @@ public class GopaySDK {
         GopayLocales.resolve(preferred)
     }
 
-    /// Internal/test initializer for dependency injection.
-    internal init(config: GopaySDKConfig? = nil, networkClient: AsyncHTTPClient? = nil) {
+    /// Internal/test initializer for dependency injection. Sends no telemetry unless a test
+    /// passes its own.
+    internal init(
+        config: GopaySDKConfig? = nil,
+        networkClient: AsyncHTTPClient? = nil,
+        telemetry: Telemetry = .disabled
+    ) {
         self.config = config
+        self.storedTelemetry = telemetry
         let environment = config?.environment ?? GopayEnvironment.sandbox
         let client = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
         self.asyncClient = client
-        self.authAPI = AuthAPI(client: client)
-        let publicAPI = PublicAPI(client: client, clientId: config?.clientId, shareableKey: config?.shareableKey)
+        self.authAPI = AuthAPI(client: client, telemetry: telemetry)
+        let publicAPI = PublicAPI(
+            client: client, clientId: config?.clientId, shareableKey: config?.shareableKey, telemetry: telemetry
+        )
         self.publicAPI = publicAPI
     }
 
@@ -173,7 +206,10 @@ public class GopaySDK {
         paymentSecret: String,
         scope: String = PaymentSession.defaultScope
     ) async throws -> PaymentSession {
-        try await reported {
+        // A start that fails is still about this payment, so its error carries the id; a blank
+        // one is no id at all.
+        let reportedPaymentId = paymentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : paymentId
+        return try await reported(paymentId: reportedPaymentId) {
             try await openPaymentSession(paymentId: paymentId, paymentSecret: paymentSecret, scope: scope)
         }
     }
@@ -199,27 +235,37 @@ public class GopaySDK {
         }
 
         let registry = sessionRegistry
-        let session = try await PaymentSession.create(
-            paymentId: paymentId,
-            paymentSecret: paymentSecret,
-            scope: scope,
-            authApi: authAPI,
-            publicApi: publicAPI,
-            client: client,
-            callbacks: SessionCallbacks(
-                onClose: { session in await registry.remove(session) },
-                // The session outlives nothing of the SDK that made it: `shared` lives for the
-                // process, and a test instance that is gone has no callback left to call.
-                report: { [weak self] error in self?.report(error) }
+        let telemetry = self.telemetry
+        telemetry.attach(paymentId: paymentId)
+        let session: PaymentSession
+        do {
+            session = try await PaymentSession.create(
+                paymentId: paymentId,
+                paymentSecret: paymentSecret,
+                scope: scope,
+                authApi: authAPI,
+                publicApi: publicAPI,
+                client: client,
+                callbacks: SessionCallbacks(
+                    onClose: { session in await registry.remove(session) },
+                    // The session outlives nothing of the SDK that made it: `shared` lives for the
+                    // process, and a test instance that is gone has no callback left to call.
+                    report: { [weak self] error, paymentId in self?.report(error, paymentId: paymentId) },
+                    telemetry: telemetry
+                )
             )
-        )
+        } catch {
+            telemetry.detach(paymentId: paymentId)
+            throw error
+        }
         do {
             try await registry.register(session)
         } catch {
             // Lost a race for this paymentId — wipe the just-created session and surface the error.
-            await session.close()
+            await session.close(reportsLeave: false)
             throw error
         }
+        telemetry.sessionStarted(paymentId: paymentId)
         return session
     }
 
@@ -274,7 +320,7 @@ public class GopaySDK {
     ///   ``GopaySDKError/Code/unexpected`` when the encryption itself fails, with the step that
     ///   failed in the message and the system's error as `underlying`.
     public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
-        try await reported { try await encrypt(cardData) }
+        try await reported(paymentId: nil) { try await encrypt(cardData) }
     }
 
     /// ``encryptCardData(_:)`` without the reporting, the step ``submitCardForm(formId:)`` ends
@@ -325,7 +371,7 @@ public class GopaySDK {
     ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` when no card is
     ///   held or the held one is invalid, and otherwise what ``encryptCardData(_:)`` throws.
     public func submitCardForm(formId: String? = nil) async throws -> String {
-        try await reported { try await submitStoredCard(formId: formId) }
+        try await reported(paymentId: nil) { try await submitStoredCard(formId: formId) }
     }
 
     private func submitStoredCard(formId: String?) async throws -> String {
@@ -353,6 +399,8 @@ public class GopaySDK {
             cvv: data.cvv
         )
         let jwe = try await encrypt(cardData)
+        // The submit as the user made it: when, never what.
+        telemetry.cardFormSubmitted(owner: cardFormOwner(formId: id))
         // Only clear after encryption succeeded — on failure (e.g. key fetch offline) the user
         // shouldn't have to retype the card; authorization hasn't happened yet. Clearing also
         // empties the fields the form still shows, so the card does not outlive the JWE made
@@ -369,6 +417,13 @@ public class GopaySDK {
         defer { cardFormDataLock.unlock() }
         let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
         return (resolvedId, resolvedId.flatMap { internalCardFormData[$0] })
+    }
+
+    /// The owner token of the form registered under `formId`, while that form is on screen.
+    private func cardFormOwner(formId: String) -> AnyObject? {
+        cardFormDataLock.lock()
+        defer { cardFormDataLock.unlock() }
+        return cardFormHandlers[formId]?.owner
     }
 
     /// Registers the wipe a live ``GopayCardForm`` performs on its own fields, and what it does
@@ -513,7 +568,7 @@ public class GopaySDK {
     /// does NOT require a card to already be in the Wallet — the sheet will guide the user to add
     /// one if needed. Safe to call synchronously (e.g. from a SwiftUI view body).
     public static func canUseApplePay() -> Bool {
-        return PKPaymentAuthorizationController.canMakePayments()
+        probeApplePay(caller: "canUseApplePay", onlyWhenChanged: true)
     }
 
     /// Whether the platform wallet can be used on this device, under the name both SDKs share: on
@@ -524,7 +579,22 @@ public class GopaySDK {
     /// ``GopaySDKError/Code/paymentMethodUnavailable`` when the payment allows none the sheet can
     /// offer.
     public static func isWalletAvailable() async -> Bool {
-        canUseApplePay()
+        probeApplePay(caller: "isWalletAvailable", onlyWhenChanged: false)
+    }
+
+    /// The device check behind both availability calls, reported as its answer.
+    ///
+    /// ``isWalletAvailable()`` reports every answer, as the browser SDK and Android do, so the
+    /// data gives a rate. ``canUseApplePay()`` reports only a changed one: it is documented as safe
+    /// to call from a SwiftUI view body, and every render would otherwise spend the step budget.
+    /// Android has no such synchronous probe and reports every call.
+    private static func probeApplePay(caller: String, onlyWhenChanged: Bool) -> Bool {
+        let startedAt = Telemetry.now()
+        let available = PKPaymentAuthorizationController.canMakePayments()
+        shared.telemetry.walletAvailability(
+            caller: caller, available: available, startedAt: startedAt, onlyWhenChanged: onlyWhenChanged
+        )
+        return available
     }
 
     // MARK: - Internals
@@ -541,14 +611,17 @@ public class GopaySDK {
     /// entry points of this class are one `reported` block each around an unreported
     /// implementation, as the ``PaymentSession`` calls are, so an error crosses exactly one block
     /// on its way out.
-    private func reported<T>(_ work: () async throws -> T) async throws -> T {
+    ///
+    /// - Parameter paymentId: The payment the call is about, for the telemetry; `nil` when there
+    ///   is none.
+    private func reported<T>(paymentId: String?, _ work: () async throws -> T) async throws -> T {
         do {
             return try await work()
         } catch {
             // As in PaymentSession: a request in flight does not notice the task being cancelled,
             // so a task cancelled meanwhile ends with the cancellation and reports nothing.
             try Task.checkCancellation()
-            report(error)
+            report(error, paymentId: paymentId)
             throw error
         }
     }
@@ -560,8 +633,9 @@ public class GopaySDK {
     /// which are outcomes of a payment window rather than failures. Nothing else reaches it: not
     /// `CancellationError`, which is the host's own decision, and no error of another type. The
     /// Android SDK applies the same rule. The debug log, when on, gets the same errors, as their
-    /// code and message; the charge a `PAYMENT_006` carries is not printed.
-    func report(_ error: Error) {
+    /// code and message; the charge a `PAYMENT_006` carries is not printed. So does the telemetry,
+    /// with `paymentId` as the session the error belongs to, `nil` for one outside a session.
+    func report(_ error: Error, paymentId: String? = nil) {
         guard let sdkError = error as? GopaySDKError else { return }
         switch sdkError.code {
         case .paymentTimeout, .paymentCancelled:
@@ -572,6 +646,7 @@ public class GopaySDK {
         // Read once: a re-initialization halfway through must not split the callback from its
         // own logging flag.
         guard let config = config else { return }
+        telemetry.error(sdkError, paymentId: paymentId)
         config.errorCallback?(sdkError)
         if config.enableDebugLogging {
             print("[GopaySDK] Error: \(sdkError.errorDescription ?? sdkError.message)")
@@ -580,7 +655,7 @@ public class GopaySDK {
 
     /// Logs something the integrator should know about that is not an error, such as a response
     /// field the decoder had to substitute, a hand-off no app answered or a failure the SDK
-    /// degraded to a cancellation. Printed with the same gate as ``report(_:)``: only while
+    /// degraded to a cancellation. Printed with the same gate as ``report(_:paymentId:)``: only while
     /// `GopaySDKConfig.enableDebugLogging` is on, and never through `errorCallback`.
     func logWarning(_ message: String) {
         if config?.enableDebugLogging == true {

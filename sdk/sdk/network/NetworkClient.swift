@@ -40,6 +40,9 @@ public class DefaultNetworkClient: NSObject, URLSessionDelegate {
     }
 
     // URLSessionDelegate methods for SSL pinning or custom certificate handling can be added here.
+
+    /// What the SDK's own requests send as `User-Agent`: the gateway's, and the telemetry's.
+    static var userAgent: String { "GoPay iOS SDK \(GopaySDK.version)" }
 }
 
 extension DefaultNetworkClient: AsyncHTTPClient {
@@ -60,7 +63,7 @@ extension DefaultNetworkClient: AsyncHTTPClient {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         var mutableRequest = request
         if mutableRequest.value(forHTTPHeaderField: "User-Agent") == nil {
-            mutableRequest.setValue("GoPay iOS SDK \(GopaySDK.version)", forHTTPHeaderField: "User-Agent")
+            mutableRequest.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         }
 
         return try await withCheckedThrowingContinuation { continuation in

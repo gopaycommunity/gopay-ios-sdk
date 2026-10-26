@@ -166,6 +166,8 @@ public extension PaymentSession {
         }
         shown = verificationVC
         cancellation.onCancel { [weak verificationVC] in verificationVC?.report(.cancelled) }
+        // The leave that is part of the payment, reported before the challenge loads.
+        telemetry.verificationOpened(redirectURL: redirectURL, paymentId: paymentId)
         presenter.present(verificationVC, animated: true)
         // UIKit refuses to present while the presenter is still animating something else away and
         // says so only in the console: nothing reaches the screen, no delegate callback ever

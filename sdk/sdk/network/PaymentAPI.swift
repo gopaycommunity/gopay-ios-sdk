@@ -21,15 +21,17 @@ protocol SessionTokenProviding: AnyObject {
 final class PaymentAPI {
     private let client: AsyncHTTPClient
     private weak var tokenProvider: SessionTokenProviding?
+    private let telemetry: Telemetry
 
-    init(client: AsyncHTTPClient, tokenProvider: SessionTokenProviding) {
+    init(client: AsyncHTTPClient, tokenProvider: SessionTokenProviding, telemetry: Telemetry = .disabled) {
         self.client = client
         self.tokenProvider = tokenProvider
+        self.telemetry = telemetry
     }
 
     /// `GET /payments/{payment_id}`
     func getPaymentStatus(paymentId: String) async throws -> PaymentDetails {
-        try await run(action: "get payment status") {
+        try await run(action: "get payment status", paymentId: paymentId) {
             self.jsonGET(path: "payments/\(paymentId)")
         }
     }
@@ -37,7 +39,7 @@ final class PaymentAPI {
     /// `POST /payments/{payment_id}/charge`
     func charge(paymentId: String, request: ChargePaymentRequest) async throws -> ChargePaymentResponse {
         let body = try JSONEncoder().encode(request)
-        return try await run(action: "charge payment") {
+        return try await run(action: "charge payment", paymentId: paymentId) {
             guard let url = self.client.makeURL(path: "payments/\(paymentId)/charge") else { return nil }
             var r = URLRequest(url: url)
             r.httpMethod = "POST"
@@ -50,14 +52,14 @@ final class PaymentAPI {
 
     /// `GET /payments/{payment_id}/charge`
     func getChargeState(paymentId: String) async throws -> ChargePaymentResponse {
-        try await run(action: "get charge state") {
+        try await run(action: "get charge state", paymentId: paymentId) {
             self.jsonGET(path: "payments/\(paymentId)/charge")
         }
     }
 
     /// `GET /payments/{payment_id}/apple-pay/app-info`
     func getApplePayAppInfo(paymentId: String) async throws -> GopayApplePayAppInfoResponse {
-        try await run(action: "get Apple Pay info") {
+        try await run(action: "get Apple Pay info", paymentId: paymentId) {
             self.jsonGET(path: "payments/\(paymentId)/apple-pay/app-info")
         }
     }
@@ -66,7 +68,7 @@ final class PaymentAPI {
     func getQrPaymentInfo(paymentId: String, format: QrCodeFormat?) async throws -> QrPaymentDetails {
         var path = "payments/\(paymentId)/qr-payment/info"
         if let format = format { path += "?format=\(format.rawValue)" }
-        return try await run(action: "get QR payment info") {
+        return try await run(action: "get QR payment info", paymentId: paymentId) {
             self.jsonGET(path: path)
         }
     }
@@ -81,7 +83,7 @@ final class PaymentAPI {
         return r
     }
 
-    private func run<T: Decodable>(action: String, build: () -> URLRequest?) async throws -> T {
+    private func run<T: Decodable>(action: String, paymentId: String, build: () -> URLRequest?) async throws -> T {
         guard let provider = tokenProvider else {
             throw GopaySDKError(.authPaymentSessionClosed, message: "PaymentSession is closed")
         }
@@ -90,13 +92,13 @@ final class PaymentAPI {
         }
 
         var token = try await validToken(from: provider)
-        var result = try await client.send(authorized(request, token: token))
+        var result = try await client.send(authorized(request, token: token), telemetry: telemetry, paymentId: paymentId)
 
         if result.1.statusCode == 401 {
             // Stale token — re-auth once and retry.
             await provider.invalidateToken()
             token = try await provider.authenticate()
-            result = try await client.send(authorized(request, token: token))
+            result = try await client.send(authorized(request, token: token), telemetry: telemetry, paymentId: paymentId)
             if result.1.statusCode == 401 {
                 let gatewayError = GopayGatewayError.parse(result.0)
                 throw GopaySDKError(

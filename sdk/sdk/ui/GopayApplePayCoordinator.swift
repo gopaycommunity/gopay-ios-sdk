@@ -21,6 +21,7 @@ final class GopayApplePayCoordinator: NSObject {
     // MARK: - Dependencies
 
     private let appInfo: GopayApplePayAppInfoResponse
+    private let telemetry: ApplePayTelemetry
     private let charge: (TokenFields, @escaping (Swift.Result<ChargePaymentResponse, Error>) -> Void) -> Void
     private let completion: (Swift.Result<ChargePaymentResponse, Error>) -> Void
 
@@ -39,15 +40,19 @@ final class GopayApplePayCoordinator: NSObject {
     private var finishesWhenTheChargeReturns = false
     /// Self-retain to survive the async Apple Pay callback chain.
     private var selfReference: GopayApplePayCoordinator?
+    /// When the sheet was asked for, which the steps up to its close are timed from.
+    private var beganAt: UInt64?
 
     // MARK: - Init
 
     init(
         appInfo: GopayApplePayAppInfoResponse,
+        telemetry: ApplePayTelemetry = .disabled,
         charge: @escaping (TokenFields, @escaping (Swift.Result<ChargePaymentResponse, Error>) -> Void) -> Void,
         completion: @escaping (Swift.Result<ChargePaymentResponse, Error>) -> Void
     ) {
         self.appInfo = appInfo
+        self.telemetry = telemetry
         self.charge = charge
         self.completion = completion
         super.init()
@@ -67,7 +72,10 @@ final class GopayApplePayCoordinator: NSObject {
             return
         }
 
-        guard PKPaymentAuthorizationController.canMakePayments() else {
+        let probedAt = Telemetry.now()
+        let canPay = PKPaymentAuthorizationController.canMakePayments()
+        telemetry.readyToPay(canPay, startedAt: probedAt)
+        guard canPay else {
             completion(.failure(GopaySDKError(
                 .paymentMethodUnavailable,
                 message: "Apple Pay is not available on this device"
@@ -80,15 +88,23 @@ final class GopayApplePayCoordinator: NSObject {
         self.authorizationController = controller
         self.selfReference = self
 
+        beganAt = Telemetry.now()
+        telemetry.step(.begin, .start)
         controller.present { [weak self] presented in
             if !presented {
-                guard let self = self else { return }
-                self.finish(with: .failure(GopaySDKError(
-                    .paymentMethodUnavailable,
-                    message: "Apple Pay sheet could not be presented. Enable the Apple Pay capability in Xcode (Signing & Capabilities tab) and ensure a valid Merchant ID is configured in both the entitlement and the merchantIdentifier returned by the backend."
-                )))
+                self?.sheetWasNotPresented()
             }
         }
+    }
+
+    /// PassKit refused to show the sheet: the call ends with ``GopaySDKError/Code/paymentMethodUnavailable``.
+    func sheetWasNotPresented() {
+        let error = GopaySDKError(
+            .paymentMethodUnavailable,
+            message: "Apple Pay sheet could not be presented. Enable the Apple Pay capability in Xcode (Signing & Capabilities tab) and ensure a valid Merchant ID is configured in both the entitlement and the merchantIdentifier returned by the backend."
+        )
+        telemetry.step(.begin, .failure, detail: error.code.rawValue, startedAt: beganAt)
+        finish(with: .failure(error))
     }
 
     // MARK: - Helpers
@@ -109,6 +125,10 @@ final class GopayApplePayCoordinator: NSObject {
         if isChargeInFlight {
             finishesWhenTheChargeReturns = true
         } else {
+            if chargeResult == nil {
+                // Closed without an authorization: the time spent in the sheet before giving up.
+                telemetry.step(.cancel, .info, startedAt: beganAt)
+            }
             finish(with: resultOnceTheSheetCloses())
         }
     }
@@ -248,11 +268,20 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
             fields = try Self.mapToken(payment.token)
         } catch {
             self.chargeResult = .failure(error)
+            telemetry.step(.paymentAuthorized, .failure, detail: Telemetry.failureLabel(error), startedAt: beganAt)
             completion(PKPaymentAuthorizationResult(status: .failure, errors: [error]))
+            telemetry.completePayment(succeeded: false)
             return
         }
 
+        // The user authorized and the token is usable, timed from the sheet being asked for;
+        // what follows is the charge.
+        telemetry.submitted()
+        telemetry.step(.paymentAuthorized, .success, startedAt: beganAt)
         isChargeInFlight = true
+        let checkoutAt = Telemetry.now()
+        telemetry.step(.checkout, .start)
+        let telemetry = self.telemetry
         charge(fields) { [weak self] result in
             // The charge answers on whatever thread its task ran on; the state it lands in is read
             // on the main thread, where PassKit calls `didFinish`.
@@ -265,9 +294,13 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
                 self.chargeResult = result
                 switch result {
                 case .success:
+                    telemetry.step(.checkout, .success, startedAt: checkoutAt)
                     completion(PKPaymentAuthorizationResult(status: .success, errors: nil))
+                    telemetry.completePayment(succeeded: true)
                 case .failure(let error):
+                    telemetry.step(.checkout, .failure, detail: Telemetry.failureLabel(error), startedAt: checkoutAt)
                     completion(PKPaymentAuthorizationResult(status: .failure, errors: [error]))
+                    telemetry.completePayment(succeeded: false)
                 }
                 if self.finishesWhenTheChargeReturns {
                     self.finish(with: result)
@@ -282,5 +315,42 @@ extension GopayApplePayCoordinator: PKPaymentAuthorizationControllerDelegate {
         controller.dismiss { [weak self] in
             self?.sheetDidClose()
         }
+    }
+}
+
+// MARK: - Telemetry
+
+/// The Apple Pay flow's operational data for one payment: `APPLE_PAY.<step>` events, the
+/// availability answer and the user's authorization, with the payment they belong to.
+struct ApplePayTelemetry: Sendable {
+    let telemetry: Telemetry
+    let paymentId: String
+
+    /// Sends nothing, for a coordinator built outside a session.
+    static let disabled = ApplePayTelemetry(telemetry: .disabled, paymentId: "")
+
+    func step(
+        _ step: Telemetry.WalletStep,
+        _ status: Telemetry.StepStatus,
+        detail: String? = nil,
+        startedAt: UInt64? = nil,
+        params: [String: Telemetry.Param] = [:]
+    ) {
+        telemetry.walletStep(step, status: status, paymentId: paymentId, detail: detail, startedAt: startedAt, params: params)
+    }
+
+    /// The sheet was told the charge's result: the step went through, `params.result` says which.
+    func completePayment(succeeded: Bool) {
+        step(.completePayment, .success, params: ["result": .string(succeeded ? "success" : "failure")])
+    }
+
+    func readyToPay(_ available: Bool, startedAt: UInt64) {
+        telemetry.walletAvailability(
+            caller: "chargeWithApplePay", available: available, startedAt: startedAt, paymentId: paymentId
+        )
+    }
+
+    func submitted() {
+        telemetry.walletSubmitted(paymentId: paymentId)
     }
 }

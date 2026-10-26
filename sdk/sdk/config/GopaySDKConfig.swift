@@ -13,6 +13,8 @@ public enum GopayEnvironment: Equatable {
 
     private static let sandboxBaseURL = "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"
     private static let productionBaseURL = "https://gate.gopay.com/gp-gw/api/4.0/"
+    private static let sandboxTelemetryURL = URL(string: "https://lx.sandbox.gopay.com/events")
+    private static let productionTelemetryURL = URL(string: "https://lx.gopay.com/events")
 
     /// The base URL for the selected environment. Public so host apps can display or route
     /// around it (e.g. a demo backend simulator deriving its own base URL from the live SDK
@@ -22,6 +24,17 @@ public enum GopayEnvironment: Equatable {
         case .development(let url): return url
         case .sandbox: return Self.sandboxBaseURL
         case .production: return Self.productionBaseURL
+        }
+    }
+
+    /// The operational-data ingest that belongs to this gateway, or `nil` for a development
+    /// gateway, which has none. Not derived from ``baseURL``: a gateway URL pointed at a mock
+    /// server must not move the telemetry with it.
+    var telemetryURL: URL? {
+        switch self {
+        case .development: return nil
+        case .sandbox: return Self.sandboxTelemetryURL
+        case .production: return Self.productionTelemetryURL
         }
     }
 }
@@ -48,6 +61,10 @@ public struct GopaySDKConfig {
     public let shareableKey: String?
 
     /// Whether to enable debug logging.
+    ///
+    /// With it on, the SDK also logs one line for each operational-data event it sends to GoPay,
+    /// the event's type and name without its content. It does not change what is sent; see
+    /// "Operational data" in the README.
     ///
     /// - Note: One message ignores this flag and the ``errorCallback``: ``GopaySDK/initialize(with:)``
     ///   always prints when the selected environment resolves to no base URL. That is a

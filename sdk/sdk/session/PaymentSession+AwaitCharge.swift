@@ -162,7 +162,7 @@ public extension PaymentSession {
 
     /// The polling without the reporting. Its reads and its challenge are unreported calls, so
     /// the one error the call ends with is reported once, by the public call; `PAYMENT_006` among
-    /// them, while `PAYMENT_007` and the cancellation are kept out by ``GopaySDK/report(_:)``.
+    /// them, while `PAYMENT_007` and the cancellation are kept out by ``GopaySDK/report(_:paymentId:)``.
     private func pollChargeState(_ options: AwaitChargeOptions) async throws -> ChargePaymentResponse {
         guard options.interval > 0, options.initialTimeout > 0 else {
             throw GopaySDKError(

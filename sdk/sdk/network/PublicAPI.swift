@@ -9,11 +9,13 @@ struct PublicAPI {
     private let client: AsyncHTTPClient
     private let clientId: String?
     private let shareableKey: String?
+    private let telemetry: Telemetry
 
-    init(client: AsyncHTTPClient, clientId: String?, shareableKey: String?) {
+    init(client: AsyncHTTPClient, clientId: String?, shareableKey: String?, telemetry: Telemetry = .disabled) {
         self.client = client
         self.clientId = clientId
         self.shareableKey = shareableKey
+        self.telemetry = telemetry
     }
 
     /// `GET /cards/public-key`: the merchant's RSA encryption JWK together with the gateway's
@@ -22,10 +24,11 @@ struct PublicAPI {
     /// accepts.
     ///
     /// The request skips `URLCache`: a stored response would bring back the old `Date` with it.
+    /// Its answer is not reported: a public key is 2000 characters of nothing to read.
     func getPublicKey() async throws -> ServedPublicKey {
         var request = try jsonGET(path: "cards/public-key")
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        let result = try await client.send(request)
+        let result = try await client.send(request, telemetry: telemetry, paymentId: nil, reportsResponseBody: false)
         let jwk = try decodeOrThrow(GopayJWK.self, from: result, action: "fetch public key")
         let response = result.1
         let serverTime = parseHTTPDate(response.value(forHTTPHeaderField: "Date"))
@@ -40,13 +43,14 @@ struct PublicAPI {
     /// `userAgent` goes out as the request's `User-Agent` and comes back as `user_agent`. It has
     /// to be the User-Agent the 3DS challenge WebView will send, because the issuer compares the
     /// value in the AReq with the browser it then sees; the SDK's own HTTP User-Agent would fail
-    /// that comparison. `nil` leaves the header to ``DefaultNetworkClient``.
-    func getBrowserData(userAgent: String?) async throws -> BrowserDataDetected {
+    /// that comparison. `nil` leaves the header to ``DefaultNetworkClient``. `paymentId` is the
+    /// charge's, for the telemetry.
+    func getBrowserData(userAgent: String?, paymentId: String?) async throws -> BrowserDataDetected {
         var request = try jsonGET(path: "cards/browser-data")
         if let userAgent = userAgent {
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         }
-        let result = try await client.send(request)
+        let result = try await client.send(request, telemetry: telemetry, paymentId: paymentId)
         return try decodeOrThrow(BrowserDataDetected.self, from: result, action: "fetch browser data")
     }
 

@@ -126,6 +126,7 @@ public extension PaymentSession {
 
         let coordinator = GopayApplePayCoordinator(
             appInfo: appInfo,
+            telemetry: ApplePayTelemetry(telemetry: telemetry, paymentId: paymentId),
             charge: { fields, done in
                 self.submitApplePayCharge(
                     fields: fields,

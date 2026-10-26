@@ -108,3 +108,56 @@ extension Optional where Wrapped == GopayGatewayError {
         return ": \(message)"
     }
 }
+
+extension AsyncHTTPClient {
+    /// Sends `request` and reports it to `telemetry` as one `api_call`, whichever way it ends:
+    /// with its status, or without one when no response came. The one place every gateway request
+    /// passes through, so the method, the path, the status, the time and the bodies are read from
+    /// the request itself and never drift from what was sent.
+    ///
+    /// The report is queued, not awaited, so it adds nothing to the request's own time.
+    ///
+    /// - Parameters:
+    ///   - paymentId: The payment the request belongs to, `nil` for the merchant-level ones.
+    ///   - reportsResponseBody: `false` for the token exchange, whose answer is a token pair the
+    ///     redaction would reduce to nothing anyway, and for the public key.
+    func send(
+        _ request: URLRequest,
+        telemetry: Telemetry,
+        paymentId: String?,
+        reportsResponseBody: Bool = true
+    ) async throws -> (Data, HTTPURLResponse) {
+        let startedAt = Telemetry.now()
+        let path = telemetryPath(of: request)
+        func report(_ result: (Data, HTTPURLResponse)?) {
+            telemetry.apiCall(
+                method: request.httpMethod ?? "GET",
+                path: path,
+                statusCode: result?.1.statusCode,
+                startedAt: startedAt,
+                requestBody: request.httpBody,
+                requestContentType: request.value(forHTTPHeaderField: "Content-Type"),
+                responseBody: reportsResponseBody ? result?.0 : nil,
+                responseContentType: result?.1.value(forHTTPHeaderField: "Content-Type"),
+                paymentId: paymentId
+            )
+        }
+        do {
+            let result = try await send(request)
+            report(result)
+            return result
+        } catch {
+            report(nil)
+            throw error
+        }
+    }
+
+    /// The request's path below the API's base path, so the report reads `/payments/…` whatever
+    /// gateway the SDK talks to.
+    private func telemetryPath(of request: URLRequest) -> String {
+        let path = request.url?.path ?? ""
+        guard let basePath = URL(string: baseURL)?.path, basePath.count > 1 else { return path }
+        let prefix = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
+        return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
+    }
+}

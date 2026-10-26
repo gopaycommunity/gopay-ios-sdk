@@ -7,9 +7,11 @@ import Foundation
 /// token is attached here — credentials are supplied per call. Mirrors the Android `AuthApi`.
 struct AuthAPI {
     private let client: AsyncHTTPClient
+    private let telemetry: Telemetry
 
-    init(client: AsyncHTTPClient) {
+    init(client: AsyncHTTPClient, telemetry: Telemetry = .disabled) {
         self.client = client
+        self.telemetry = telemetry
     }
 
     /// Exchanges credentials for an access token.
@@ -19,7 +21,8 @@ struct AuthAPI {
     ///   - grantType: Custom GoPay value `payment_credentials` (Payments.yaml,
     ///     `Payment-Credentials-Request`).
     ///   - scope: Optional space-separated scope list.
-    func token(basicAuth: String, grantType: String, scope: String?) async throws -> AccessTokenResponse {
+    ///   - paymentId: The payment the credentials belong to, for the telemetry.
+    func token(basicAuth: String, grantType: String, scope: String?, paymentId: String?) async throws -> AccessTokenResponse {
         guard let url = client.makeURL(path: "oauth2/token") else {
             throw GopaySDKError(.invalidBaseURL, message: "Invalid URL for oauth2/token")
         }
@@ -34,7 +37,7 @@ struct AuthAPI {
         if let scope = scope { params["scope"] = scope }
         request.httpBody = formURLEncodedBody(params)
 
-        let result = try await client.send(request)
+        let result = try await client.send(request, telemetry: telemetry, paymentId: paymentId, reportsResponseBody: false)
         return try decodeOrThrow(AccessTokenResponse.self, from: result, action: "acquire payment-scoped token")
     }
 }
