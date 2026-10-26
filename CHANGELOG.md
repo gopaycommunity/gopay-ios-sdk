@@ -1,3 +1,15 @@
+# 2.3.0 (2026-10-26)
+
+
+### Bug Fixes
+
+* ignore a second pay tap while the first is running GPMOB-184 b729759
+
+
+### Features
+
+* share the QR code by tapping it GPMOB-184 747432e
+
 ## 2.2.1 (2026-10-22)
 
 
