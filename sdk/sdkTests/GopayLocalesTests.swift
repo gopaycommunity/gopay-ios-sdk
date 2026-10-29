@@ -145,7 +145,7 @@ struct GopayLocalesTests {
                 s.panLabel, s.panPlaceholder, s.expLabel, s.expPlaceholder,
                 s.cvvLabel, s.cvvPlaceholder, s.pay, s.panErrorPattern,
                 s.expErrorPattern, s.cvvErrorPattern, s.patternErrorMessage,
-                s.requiredErrorMessage
+                s.requiredErrorMessage, s.screenCaptureNotice
             ]
             for value in fields {
                 #expect(!value.trimmingCharacters(in: .whitespaces).isEmpty,

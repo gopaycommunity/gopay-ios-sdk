@@ -4,6 +4,9 @@ import Foundation
 ///
 /// A locale must provide every field — there are no defaults, so a partially translated locale
 /// cannot leak an untranslated fallback string into the middle of an otherwise localized form.
+/// The one exception is ``screenCaptureNotice``, which defaults to empty so that a locale written
+/// before it existed still compiles; an empty notice leaves the cover over the form without text
+/// rather than in another language.
 ///
 /// The label / placeholder / error-pattern fields mirror the shared GoPay web SDK locale keys;
 /// ``panPlaceholder``, ``cvvLabel`` and ``cvvPlaceholder`` are additional fields the native form
@@ -38,6 +41,9 @@ public struct GopayLocaleStrings: Equatable {
     public var patternErrorMessage: String
     /// Generic "this field is required" message. Web key `cc.requiredErrorMessage`.
     public var requiredErrorMessage: String
+    /// Shown over the form while the screen is recorded or mirrored, when the form hides its
+    /// fields (not localized in the web SDK, which has no such cover). Empty shows the cover alone.
+    public var screenCaptureNotice: String
 
     /// Creates a complete set of localized form strings.
     public init(
@@ -52,7 +58,8 @@ public struct GopayLocaleStrings: Equatable {
         expErrorPattern: String,
         cvvErrorPattern: String,
         patternErrorMessage: String,
-        requiredErrorMessage: String
+        requiredErrorMessage: String,
+        screenCaptureNotice: String = ""
     ) {
         self.panLabel = panLabel
         self.panPlaceholder = panPlaceholder
@@ -66,5 +73,6 @@ public struct GopayLocaleStrings: Equatable {
         self.cvvErrorPattern = cvvErrorPattern
         self.patternErrorMessage = patternErrorMessage
         self.requiredErrorMessage = requiredErrorMessage
+        self.screenCaptureNotice = screenCaptureNotice
     }
 }

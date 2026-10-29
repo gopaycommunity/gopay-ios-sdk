@@ -160,6 +160,11 @@ public struct GopayCardForm: View {
     /// Read so the theme's fonts rescale when the user changes the Dynamic Type size.
     @Environment(\.sizeCategory) private var sizeCategory
 
+    /// Whether the form covers itself in the app switcher and during a screen recording.
+    @Environment(\.gopayCardFormCaptureProtection) private var captureProtection
+    /// What the form currently covers itself for (see ``CardFormPrivacyCover``).
+    @State private var privacyCover = CardFormPrivacyCover()
+
     /// Height of the tallest label in the expiration + CVV row. The row measures both labels and
     /// hands the taller one back down, so a label that wraps in one column does not drop that
     /// column's input below its neighbour's.
@@ -448,6 +453,7 @@ public struct GopayCardForm: View {
                     placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                     accessibilityLabel: hiddenLabel(localeStrings.panLabel),
                     textContentType: cardNumberContentType,
+                    refusesInput: refusesInput,
                     isFocused: isCardNumberFocused,
                     onFocusChange: { isFocused in
                         isCardNumberFocused = isFocused
@@ -492,6 +498,7 @@ public struct GopayCardForm: View {
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                         accessibilityLabel: hiddenLabel(localeStrings.expLabel),
                         textContentType: expirationContentType,
+                        refusesInput: refusesInput,
                         isFocused: isExpirationFocused,
                         onFocusChange: { isFocused in
                             isExpirationFocused = isFocused
@@ -533,6 +540,7 @@ public struct GopayCardForm: View {
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                         accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),
                         isSecure: true,
+                        refusesInput: refusesInput,
                         isFocused: isCvvFocused,
                         onFocusChange: { isFocused in
                             isCvvFocused = isFocused
@@ -550,7 +558,18 @@ public struct GopayCardForm: View {
         }
         .padding(formPadding)
         .background(theme.formBackgroundColor)
+        // Under the cover the fields are out of VoiceOver's reach too: it would otherwise read
+        // their values, out loud or to the device the screen is mirrored to. `accessibility(hidden:)`
+        // rather than `accessibilityHidden(_:)`, which needs iOS 14.
+        .accessibility(hidden: isCovered)
+        .overlay(privacyCoverView)
+        .onReceive(CardFormCaptureProtection.coverChanges) { notification in
+            privacyCover.receive(notification.name, screenIsCaptured: captureProtection.screenIsCaptured)
+            endInputWhileCaptured()
+        }
         .onAppear {
+            privacyCover.refreshCapture(captureProtection.screenIsCaptured)
+            endInputWhileCaptured()
             // Initial sync when form appears
             GopaySDK.shared.updateCardFormData(data, formId: formId)
             // Let the SDK empty these fields once it has turned them into a JWE, and show the
@@ -581,6 +600,53 @@ public struct GopayCardForm: View {
         }
     }
     
+    /// The cover laid over the whole form while ``privacyCover`` asks for it. Opaque whatever the
+    /// theme says: the form's background on top of the system background, so a themed form looks
+    /// covered rather than replaced, and a form with the default clear background is covered too.
+    /// It only hides the fields; the card stays where it is, and the cover goes once the app is
+    /// active and the screen is no longer captured.
+    @ViewBuilder
+    private var privacyCoverView: some View {
+        if isCovered {
+            ZStack {
+                Color(UIColor.systemBackground)
+                theme.formBackgroundColor
+                if privacyCover.showsNotice && !localeStrings.screenCaptureNotice.isEmpty {
+                    Text(localeStrings.screenCaptureNotice)
+                        .font(theme.labelFont(for: sizeCategory))
+                        .foregroundColor(theme.labelColor)
+                        .multilineTextAlignment(.center)
+                        .padding(formPadding)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            // The cover for the app switcher says nothing, so there is nothing to read.
+            .accessibility(hidden: !privacyCover.showsNotice)
+        }
+    }
+
+    /// Whether the cover is up.
+    private var isCovered: Bool {
+        captureProtection.isEnabled && privacyCover.isShown
+    }
+
+    /// Whether the fields refuse the keyboard: while the screen is captured. The cover hides the
+    /// fields but not the keyboard, whose keys light up as they are tapped and would show the card
+    /// in the recording, and a tap through the cover would otherwise focus a field nobody can see.
+    /// The digits typed so far stay.
+    private var refusesInput: Bool {
+        captureProtection.isEnabled && privacyCover.isCaptured
+    }
+
+    /// Drops the form's own focus once a capture starts, so the keyboard does not come straight
+    /// back for the field that had it when the capture ends.
+    private func endInputWhileCaptured() {
+        guard refusesInput else { return }
+        isCardNumberFocused = false
+        isExpirationFocused = false
+        isCvvFocused = false
+    }
+
     /// Returns the form to its pristine state, dropping the card the user typed.
     ///
     /// Runs on every path that clears the card, not only the one it was written for: after

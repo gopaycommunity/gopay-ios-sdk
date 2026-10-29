@@ -96,6 +96,10 @@ struct FormattedTextField: UIViewRepresentable {
     var accessibilityLabel: String? = nil
     var textContentType: UITextContentType? = nil
     var isSecure: Bool = false
+    /// While `true` the field gives the keyboard up and does not take it again, whatever
+    /// `isFocused` says. The card form sets it while the screen is captured, when its cover hides
+    /// the field but would not hide the keyboard.
+    var refusesInput: Bool = false
     /// Whether this field should currently hold the keyboard focus. Setting this from the
     /// host view (e.g. after the previous field fills with a valid value) moves focus here;
     /// `onFocusChange` reports back when focus changes for other reasons (the user tapping in).
@@ -146,11 +150,11 @@ struct FormattedTextField: UIViewRepresentable {
         // editingDidBegin/editingDidEnd synchronously, which write @State via onFocusChange. Doing
         // that while still inside this SwiftUI view update triggers "Modifying state during view
         // update, this will cause undefined behavior".
-        if isFocused != textField.isFirstResponder {
+        if (isFocused && !refusesInput) != textField.isFirstResponder {
             let coordinator = context.coordinator
             DispatchQueue.main.async { [weak textField, weak coordinator] in
                 guard let textField, let coordinator else { return }
-                let shouldBeFocused = coordinator.parent.isFocused
+                let shouldBeFocused = coordinator.parent.isFocused && !coordinator.parent.refusesInput
                 if shouldBeFocused, !textField.isFirstResponder {
                     textField.becomeFirstResponder()
                 } else if !shouldBeFocused, textField.isFirstResponder {
@@ -208,6 +212,10 @@ struct FormattedTextField: UIViewRepresentable {
                 if seen == n { return index + 1 }
             }
             return formatted.count
+        }
+
+        func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+            !parent.refusesInput
         }
 
         @objc func editingBegan() { parent.onFocusChange(true) }

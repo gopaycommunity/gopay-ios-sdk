@@ -863,7 +863,9 @@ A 1.x theme stops compiling in 2.0; what to write instead is under
 Form labels and placeholders are localized. By default the form uses the **device language and
 falls back to Czech (`cs`)** when the language has no translation. 20 languages ship built in
 (`bg cs de en es et fr hr hu it lt lv nl pl pt ro ru sk sl uk`). The strings are identical to the
-Android SDK's, so a screen reads the same on both.
+Android SDK's, so a screen reads the same on both. The one iOS-only string is `screenCaptureNotice`,
+which the form shows over itself while the screen is recorded (see [Security notes](#security-notes));
+Android has no use for it, because it blocks the recording outright.
 
 The expiration label sits in a narrow column and carries GoPay's own wording, so nothing is
 shortened to fit: a long translation wraps onto a second line rather than being cut off. The
@@ -892,6 +894,10 @@ GopaySDK.shared.initialize(
 // or at runtime: GopayLocales.register(brandEnglish, for: "en")
 GopayCardForm(locale: "en", isValid: $isCardValid)
 ```
+
+A locale you build from scratch with `GopayLocaleStrings(...)` has to give every string except
+`screenCaptureNotice`, which defaults to empty: the form is then still covered during a recording,
+just without the notice.
 
 Validation error strings are localized too. The form can render them inline for you — choose when
 with the `validation` parameter:
@@ -1314,6 +1320,20 @@ sandbox send real reports to the sandbox ingest, like any other run of the SDK.
 - A `GopayCardData` you print, log or `dump` shows only the last four digits of the card number and
   hides the CVV, so a card you collect yourself does not end up in a log or a crash report whole.
   Its encoding for the JWE is unchanged.
+- The card form covers itself while your app goes to the background, so the snapshot iOS keeps
+  for the app switcher shows no card, and while the screen is recorded, mirrored or shared, then
+  with a short notice in the form's language. The cover only hides the fields; the card the user
+  typed stays as it was. iOS cannot keep a view out of a recording the way Android's `FLAG_SECURE`
+  does, so this is detection rather than prevention: the form hides once iOS reports the capture
+  and cannot hide what was captured before. Screenshots are not covered, since iOS reports them only
+  after they are taken. The cover is off in Debug builds of your app, the way the Android SDK keeps
+  `FLAG_SECURE` off in a debuggable build, so your own screenshots, UI tests and snapshot tests of
+  the form keep working; it is on in every other build and has no switch. Unlike on Android, this
+  is decided when the SDK is compiled rather than at run time: the cover is off wherever the SDK is
+  built with the `DEBUG` condition, which Swift Package Manager and CocoaPods set for your debug
+  configurations. A custom configuration, such as Staging, has the cover unless it builds the SDK
+  as debug. While the screen is captured the form also ends the input, so the keyboard goes away
+  rather than showing the keys being tapped, and VoiceOver does not read the covered fields.
 - Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key, fetched for
   every encryption and never cached.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create

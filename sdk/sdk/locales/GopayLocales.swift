@@ -29,7 +29,8 @@ public enum GopayLocales {
         expErrorPattern: "Zadejte číslo měsíce a poslední dvě čísla roku expirace vaší karty.",
         cvvErrorPattern: "CVC/CVV musí obsahovat 3 číslice",
         patternErrorMessage: "Hodnota je v nesprávném tvaru",
-        requiredErrorMessage: "Toto pole je povinné"
+        requiredErrorMessage: "Toto pole je povinné",
+        screenCaptureNotice: "Při nahrávání nebo sdílení obrazovky je formulář skrytý."
     )
 
     public static let en = GopayLocaleStrings(
@@ -44,7 +45,8 @@ public enum GopayLocales {
         expErrorPattern: "Enter the month number and the last two digits of your card's expiration year.",
         cvvErrorPattern: "CVV must be 3 digits",
         patternErrorMessage: "Value is in wrong format",
-        requiredErrorMessage: "This field is required"
+        requiredErrorMessage: "This field is required",
+        screenCaptureNotice: "The form is hidden while the screen is being recorded or shared."
     )
 
     public static let de = GopayLocaleStrings(
@@ -59,7 +61,8 @@ public enum GopayLocales {
         expErrorPattern: "Geben Sie die Monatsnummer und die letzten beiden Ziffern des Ablaufes Ihrer Karte ein.",
         cvvErrorPattern: "CVC/CVV muss 3 Ziffern enthalten",
         patternErrorMessage: "Falsches Format",
-        requiredErrorMessage: "Dieses Feld ist erforderlich"
+        requiredErrorMessage: "Dieses Feld ist erforderlich",
+        screenCaptureNotice: "Das Formular ist ausgeblendet, während der Bildschirm aufgenommen oder geteilt wird."
     )
 
     public static let es = GopayLocaleStrings(
@@ -74,7 +77,8 @@ public enum GopayLocales {
         expErrorPattern: "Ingrese el número de mes y los dos últimos dígitos del año de vencimiento de su tarjeta.",
         cvvErrorPattern: "El CVC/CVV debe tener 3 dígitos",
         patternErrorMessage: "Formato de valor incorrecto",
-        requiredErrorMessage: "Este campo es requerido"
+        requiredErrorMessage: "Este campo es requerido",
+        screenCaptureNotice: "El formulario está oculto mientras se graba o comparte la pantalla."
     )
 
     public static let fr = GopayLocaleStrings(
@@ -89,7 +93,8 @@ public enum GopayLocales {
         expErrorPattern: "Écrivez le numéro du mois et les deux derniers numéros de l'année d'expiration de votre carte.",
         cvvErrorPattern: "CVC/CVV doit contenir 3 chiffres",
         patternErrorMessage: "Format erroné",
-        requiredErrorMessage: "Ce champ est obligatoire"
+        requiredErrorMessage: "Ce champ est obligatoire",
+        screenCaptureNotice: "Le formulaire est masqué pendant l'enregistrement ou le partage de l'écran."
     )
 
     public static let it = GopayLocaleStrings(
@@ -104,7 +109,8 @@ public enum GopayLocales {
         expErrorPattern: "Inserire il numero di mese e ultimi due numeri della scadenza della vostra carta.",
         cvvErrorPattern: "CVC/CVV deve contenere 3 numeri",
         patternErrorMessage: "Formato errato",
-        requiredErrorMessage: "Questo campo è obbligatorio"
+        requiredErrorMessage: "Questo campo è obbligatorio",
+        screenCaptureNotice: "Il modulo è nascosto durante la registrazione o la condivisione dello schermo."
     )
 
     public static let nl = GopayLocaleStrings(
@@ -119,7 +125,8 @@ public enum GopayLocales {
         expErrorPattern: "Voer het maandnummer in en de laatste twee cijfers van het vervaljaar van uw kaart.",
         cvvErrorPattern: "CVC/CVV moet uit 3 cijfers bestaan",
         patternErrorMessage: "De waarde is in een onjuist formaat",
-        requiredErrorMessage: "Dit veld is verplicht"
+        requiredErrorMessage: "Dit veld is verplicht",
+        screenCaptureNotice: "Het formulier is verborgen terwijl het scherm wordt opgenomen of gedeeld."
     )
 
     public static let pl = GopayLocaleStrings(
@@ -134,7 +141,8 @@ public enum GopayLocales {
         expErrorPattern: "Wprowadź numer miesiąca i dwie ostatnie cyfry roku ważności karty.",
         cvvErrorPattern: "Numer CVC/CVV musi zawierać 3 cyfry",
         patternErrorMessage: "Niewłaściwy format",
-        requiredErrorMessage: "To pole jest obowiązkowe"
+        requiredErrorMessage: "To pole jest obowiązkowe",
+        screenCaptureNotice: "Formularz jest ukryty podczas nagrywania lub udostępniania ekranu."
     )
 
     public static let pt = GopayLocaleStrings(
@@ -149,7 +157,8 @@ public enum GopayLocales {
         expErrorPattern: "Introduza o número do mês e os dois últimos dígitos do ano de validade do seu cartão.",
         cvvErrorPattern: "O CVC/CVV deve ter 3 dígitos",
         patternErrorMessage: "Formato errado do valor",
-        requiredErrorMessage: "Este campo é obrigatório"
+        requiredErrorMessage: "Este campo é obrigatório",
+        screenCaptureNotice: "O formulário fica oculto enquanto o ecrã é gravado ou partilhado."
     )
 
     public static let bg = GopayLocaleStrings(
@@ -164,7 +173,8 @@ public enum GopayLocales {
         expErrorPattern: "Въведете номера на месеца и последните две числа на годината на изтичане на вашата карта.",
         cvvErrorPattern: "CVC/CVV трябва да съдържа 3 цифри",
         patternErrorMessage: "Неправилен формат",
-        requiredErrorMessage: "Това поле е задължително"
+        requiredErrorMessage: "Това поле е задължително",
+        screenCaptureNotice: "Формулярът е скрит, докато екранът се записва или споделя."
     )
 
     public static let uk = GopayLocaleStrings(
@@ -179,7 +189,8 @@ public enum GopayLocales {
         expErrorPattern: "Введіть місяць та дві останні цифри року закінчення терміну дії вашої картки.",
         cvvErrorPattern: "CVC/CVV повинен містити 3 цифри",
         patternErrorMessage: "Невірний формат",
-        requiredErrorMessage: "Це поле є обов'язковим"
+        requiredErrorMessage: "Це поле є обов'язковим",
+        screenCaptureNotice: "Форму приховано під час запису або демонстрації екрана."
     )
 
     public static let ru = GopayLocaleStrings(
@@ -194,7 +205,8 @@ public enum GopayLocales {
         expErrorPattern: "Введите номер месяца и последние два года срока действия Вашей карты.",
         cvvErrorPattern: "CVC/CVV должен содержать 3 цифры",
         patternErrorMessage: "Неверный формат",
-        requiredErrorMessage: "Это поле является обязательным"
+        requiredErrorMessage: "Это поле является обязательным",
+        screenCaptureNotice: "Форма скрыта во время записи или трансляции экрана."
     )
 
     public static let et = GopayLocaleStrings(
@@ -209,7 +221,8 @@ public enum GopayLocales {
         expErrorPattern: "Sisestage oma kaardi aegumiskuu number ja aegumisaasta kaks viimast numbrit.",
         cvvErrorPattern: "CVC/CVV peab koosnema kolmest numbrist",
         patternErrorMessage: "Vale väärtuse vorming",
-        requiredErrorMessage: "See väli on nõutav"
+        requiredErrorMessage: "See väli on nõutav",
+        screenCaptureNotice: "Vorm on peidetud, kui ekraani salvestatakse või jagatakse."
     )
 
     public static let hr = GopayLocaleStrings(
@@ -224,7 +237,8 @@ public enum GopayLocales {
         expErrorPattern: "Upišite broj mjeseca i zadnja dva broja prestanka važenja vaše kartice.",
         cvvErrorPattern: "CVC/CVV mora sadržati 3 broja",
         patternErrorMessage: "Neispravan format",
-        requiredErrorMessage: "Ovo polje je obvezno"
+        requiredErrorMessage: "Ovo polje je obvezno",
+        screenCaptureNotice: "Obrazac je skriven dok se zaslon snima ili dijeli."
     )
 
     public static let hu = GopayLocaleStrings(
@@ -239,7 +253,8 @@ public enum GopayLocales {
         expErrorPattern: "Írja be a kártya lejáratának hónapját, valamint az év utolsó két számjegyét.",
         cvvErrorPattern: "A CVC/CVV -nek 3 számjegyből kell állnia",
         patternErrorMessage: "Hibás formátum",
-        requiredErrorMessage: "Kötelező mező"
+        requiredErrorMessage: "Kötelező mező",
+        screenCaptureNotice: "Az űrlap rejtve marad, amíg a képernyőt rögzítik vagy megosztják."
     )
 
     public static let lt = GopayLocaleStrings(
@@ -254,7 +269,8 @@ public enum GopayLocales {
         expErrorPattern: "Įveskite mėnesio numerį ir paskutinius du kortelės galiojimo metų skaitmenis.",
         cvvErrorPattern: "CVC/CVV sudarytas iš 3 skaitmenų",
         patternErrorMessage: "Neteisingas vertės formatas",
-        requiredErrorMessage: "Šį lauką būtina užpildyti"
+        requiredErrorMessage: "Šį lauką būtina užpildyti",
+        screenCaptureNotice: "Forma paslėpta, kol ekranas įrašomas arba bendrinamas."
     )
 
     public static let lv = GopayLocaleStrings(
@@ -269,7 +285,8 @@ public enum GopayLocales {
         expErrorPattern: "Ievadiet mēneša numuru un pēdējos divus ciparus no jūsu kartes derīguma termiņa beigu gada.",
         cvvErrorPattern: "CVC/CVV jābūt 3 cipariem",
         patternErrorMessage: "Nepareizs vērtības formāts",
-        requiredErrorMessage: "Šis lauks ir nepieciešams"
+        requiredErrorMessage: "Šis lauks ir nepieciešams",
+        screenCaptureNotice: "Veidlapa ir paslēpta, kamēr ekrāns tiek ierakstīts vai kopīgots."
     )
 
     public static let ro = GopayLocaleStrings(
@@ -284,7 +301,8 @@ public enum GopayLocales {
         expErrorPattern: "Introduceți numărul lunii și ultimele două cifre ale anului de expirare a cardului.",
         cvvErrorPattern: "CVC/CVV trebuie să conțină 3 cifre",
         patternErrorMessage: "Format greșit",
-        requiredErrorMessage: "Acest câmp este obligatoriu"
+        requiredErrorMessage: "Acest câmp este obligatoriu",
+        screenCaptureNotice: "Formularul este ascuns cât timp ecranul este înregistrat sau partajat."
     )
 
     public static let sk = GopayLocaleStrings(
@@ -299,7 +317,8 @@ public enum GopayLocales {
         expErrorPattern: "Zadajte číslo mesiaca a posledné dve čísla roku exspirácie vašej karty.",
         cvvErrorPattern: "CVC/CVV musí obsahovať 3 číslice",
         patternErrorMessage: "Chybný formát",
-        requiredErrorMessage: "Toto pole je povinné"
+        requiredErrorMessage: "Toto pole je povinné",
+        screenCaptureNotice: "Počas nahrávania alebo zdieľania obrazovky je formulár skrytý."
     )
 
     public static let sl = GopayLocaleStrings(
@@ -314,7 +333,8 @@ public enum GopayLocales {
         expErrorPattern: "Vnesite številko meseca in zadnji dve številki leta poteka veljavnosti svoje kartice.",
         cvvErrorPattern: "CVC/CVV mora vsebovati 3 številke",
         patternErrorMessage: "Napačna oblika",
-        requiredErrorMessage: "To polje je obvezno"
+        requiredErrorMessage: "To polje je obvezno",
+        screenCaptureNotice: "Obrazec je skrit, medtem ko se zaslon snema ali deli."
     )
 
     /// All built-in locales keyed by ISO 639-1 language code.
