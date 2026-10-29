@@ -29,3 +29,33 @@ public struct GopayCardData: Encodable {
         self.cvv = cvv
     }
 }
+
+/// Masked, because the default description lists every stored property and would print the full
+/// PAN and CVV into any log or crash report. Same shape as the Android SDK's `CardData.toString()`.
+/// The mirror is masked the same way, so `dump(_:)` and anything else that reflects over the value
+/// see the masked fields too.
+extension GopayCardData: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        "GopayCardData(cardPan=\(Self.maskedPan(cardPan)), expMonth=\(expMonth), expYear=\(expYear), cvv=***)"
+    }
+
+    public var debugDescription: String { description }
+
+    public var customMirror: Mirror {
+        Mirror(
+            self,
+            children: [
+                "cardPan": Self.maskedPan(cardPan),
+                "expMonth": expMonth,
+                "expYear": expYear,
+                "cvv": "***"
+            ],
+            displayStyle: .struct
+        )
+    }
+
+    /// Last four digits, or a full mask when the value is too short to mask safely.
+    static func maskedPan(_ pan: String) -> String {
+        pan.count >= 13 ? "****\(pan.suffix(4))" : "****"
+    }
+}

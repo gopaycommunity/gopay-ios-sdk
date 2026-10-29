@@ -1301,6 +1301,9 @@ sandbox send real reports to the sandbox ingest, like any other run of the SDK.
   empties the form's visible fields, so the card is not left on screen holding a reference the SDK
   has already let go of. Swift strings cannot be securely overwritten, so this releases the
   references rather than zeroing bytes.
+- A `GopayCardData` you print, log or `dump` shows only the last four digits of the card number and
+  hides the CVV, so a card you collect yourself does not end up in a log or a crash report whole.
+  Its encoding for the JWE is unchanged.
 - Card data is encrypted with RSA-OAEP-256 + A256GCM using the merchant public key, fetched for
   every encryption and never cached.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
