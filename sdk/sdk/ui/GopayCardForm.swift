@@ -146,6 +146,13 @@ public struct GopayCardForm: View {
     /// so the SDK can tell two forms under the same ID apart (see
     /// ``GopaySDK/unregisterCardFormReset(formId:owner:)``).
     @State private var owner = CardFormOwner()
+
+    /// Whether the card number and the expiration offer the system's saved-card autofill.
+    ///
+    /// Off by default: the fields then announce no content type, so iOS does not offer a saved card
+    /// for them. On, the card number and the expiration declare themselves as card fields (the
+    /// expiration from iOS 17). The CVV never takes part.
+    public var allowsAutofill: Bool
     
     /// Internal state for card form data (never exposed).
     @State private var data: GopayCardFormData
@@ -183,20 +190,40 @@ public struct GopayCardForm: View {
     ///              onwards. Omit it if you do not need the state; the default binding discards
     ///              the writes.
     ///   - formId: Optional unique identifier for this form. If not provided, a UUID will be generated.
+    ///   - allowsAutofill: Offer the system's saved-card autofill on the card number and the
+    ///                     expiration (default: `false`). The CVV never takes part.
     public init(
         theme: GopayCardFormTheme = GopayCardFormTheme(),
         locale: String? = nil,
         localeStrings: GopayLocaleStrings? = nil,
         validation: GopayCardFormValidationDisplay = .hidden,
         isValid: Binding<Bool?> = .constant(nil),
-        formId: String? = nil
+        formId: String? = nil,
+        allowsAutofill: Bool = false
     ) {
         self.theme = theme
         self.localeStrings = localeStrings ?? GopayLocales.resolve(locale)
         self.validation = validation
         self._isValid = isValid
         self.explicitFormId = formId
+        self.allowsAutofill = allowsAutofill
         self._data = State(initialValue: GopayCardFormData())
+    }
+
+    // MARK: - Autofill
+
+    /// What the card number announces to the system: nothing unless the host opted in with
+    /// ``allowsAutofill``.
+    private var cardNumberContentType: UITextContentType? {
+        allowsAutofill ? .creditCardNumber : nil
+    }
+
+    /// What the expiration announces to the system. The content type only exists from iOS 17.
+    private var expirationContentType: UITextContentType? {
+        if allowsAutofill, #available(iOS 17.0, *) {
+            return .creditCardExpiration
+        }
+        return nil
     }
 
     // MARK: - Inline validation error helpers
@@ -420,7 +447,7 @@ public struct GopayCardForm: View {
                     textColor: UIColor.from(theme.inputTextColor),
                     placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                     accessibilityLabel: hiddenLabel(localeStrings.panLabel),
-                    textContentType: .creditCardNumber,
+                    textContentType: cardNumberContentType,
                     isFocused: isCardNumberFocused,
                     onFocusChange: { isFocused in
                         isCardNumberFocused = isFocused
@@ -464,6 +491,7 @@ public struct GopayCardForm: View {
                         textColor: UIColor.from(theme.inputTextColor),
                         placeholderColor: theme.placeholderColor.map { UIColor.from($0, fallback: .placeholderText) },
                         accessibilityLabel: hiddenLabel(localeStrings.expLabel),
+                        textContentType: expirationContentType,
                         isFocused: isExpirationFocused,
                         onFocusChange: { isFocused in
                             isExpirationFocused = isFocused

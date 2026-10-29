@@ -671,6 +671,15 @@ since 2.2: the form holds the card under its `formId`, `GopaySDK.shared.submitCa
 turns it into a JWE and `clearCardFormData(formId:)` drops it, with the same three `validation`
 modes on both platforms.
 
+**Autofill is off unless you turn it on.** The card number and the expiration declare no content
+type, so iOS does not offer a saved card for them, and no field is autocorrected or spell-checked.
+iOS has no per-field switch that stops the keyboard learning from what is typed, so unlike the
+Android form, this one cannot ask for that. Pass `allowsAutofill: true` to let the card number and
+the expiration (iOS 17 and later) offer saved cards; the CVV is never offered. The Android form
+has the same `allowsAutofill`, off by default. Either way every field stays readable to VoiceOver
+with its label: the card number is read out as typed, so the user can check it, and the CVV is
+announced as a secure field.
+
 The SDK clears the form's card data from memory after a successful `submitCardForm()` and when
 the form disappears — so call `submitCardForm()` while the form is on screen and forward the
 JWE promptly. **The visible fields are emptied too**: after a successful `submitCardForm()` the
@@ -1077,6 +1086,7 @@ listed in [`sdk/docs/API_3_0.md`](sdk/docs/API_3_0.md).
 | `session.chargeWithWallet(browserData:challengePreference:)` | `chargeWithApplePay(...)` | the managed wallet sheet and charge |
 | `GopayCardForm(formId:)` + `submitCardForm(formId:)` + `clearCardFormData(formId:)` | — | the card form model, now on Android too |
 | `GopayCardForm(validation:)` with `.hidden`, `.live`, `.onSubmit` | — | the validation display modes, now on Android too |
+| `GopayCardForm(allowsAutofill:)` | — | the system's autofill on the card number and the expiration, off by default; the CVV never |
 
 An alias is one body under a second name: it does exactly what the shared name does, with the
 same arguments and the same codes. The response types stay platform-specific

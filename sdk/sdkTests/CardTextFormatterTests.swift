@@ -28,6 +28,26 @@ struct CardTextFormatterTests {
         #expect(CardTextFormatter.cardNumber.sanitize("123456") == "123456")
     }
 
+    // MARK: - Expiration digits
+
+    @Test func expiration_digits_fourDigitYearKeepsItsLastTwo() {
+        #expect(CardTextFormatter.expirationDigits("12/2027") == "1227")
+        #expect(CardTextFormatter.expirationDigits("12 / 2027") == "1227")
+        #expect(CardTextFormatter.expirationDigits("1/2027") == "0127")
+    }
+
+    @Test func expiration_digits_sixDigitsWithoutSeparatorKeepTheMonthAndTheYearsLastTwo() {
+        #expect(CardTextFormatter.expirationDigits("122027") == "1227")
+    }
+
+    @Test func expiration_digits_typedInputIsUnchanged() {
+        #expect(CardTextFormatter.expirationDigits("1227") == "1227")
+        #expect(CardTextFormatter.expirationDigits("12/27") == "1227")
+        #expect(CardTextFormatter.expirationDigits("12/") == "12")
+        // A fifth digit typed after a complete date is cut by the cap, as before.
+        #expect(CardTextFormatter.expirationDigits("12/271") == "12271")
+    }
+
     // MARK: - Expiration sanitize
 
     @Test func expiration_sanitize_allowsAnyTwoDigitsUpTo12() {

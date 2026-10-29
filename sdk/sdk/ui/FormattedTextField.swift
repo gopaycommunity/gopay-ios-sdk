@@ -20,6 +20,8 @@ extension UIColor {
 /// driving a `UITextField` directly and repositioning the caret itself.
 struct CardTextFormatter {
     let maxDigits: Int
+    /// The digits the field keeps from its proposed text, before they are capped at `maxDigits`.
+    var digits: (String) -> String = { $0.filter(\.isNumber) }
     var sanitize: (String) -> String = { $0 }
     let format: (String) -> String
 
@@ -33,6 +35,7 @@ struct CardTextFormatter {
 
     static let expiration = CardTextFormatter(
         maxDigits: 4,
+        digits: expirationDigits,
         sanitize: { digits in
             if digits.count <= 2 {
                 if let month = Int(digits), month > 12 {
@@ -55,6 +58,26 @@ struct CardTextFormatter {
     )
 
     static let cvv = CardTextFormatter(maxDigits: 3) { $0 }
+
+    /// The month and two-digit year in an expiration typed, pasted or autofilled.
+    ///
+    /// Autofill and pasting hand over the whole date at once, often with a four-digit year
+    /// (`12/2027`, `122027`). Capped at four digits as typed input is, that would read `12/20`, a
+    /// card that has expired. A month and a four-digit year around a separator, or six digits
+    /// without one, become the month and the last two digits of the year; anything else keeps its
+    /// digits as before.
+    static func expirationDigits(_ text: String) -> String {
+        let groups = text.split(whereSeparator: { !$0.isNumber }).map(String.init)
+        if groups.count == 2, (1...2).contains(groups[0].count), groups[1].count == 4 {
+            let month = groups[0].count == 1 ? "0" + groups[0] : groups[0]
+            return month + groups[1].suffix(2)
+        }
+        let digits = text.filter(\.isNumber)
+        if groups.count == 1, digits.count == 6 {
+            return String(digits.prefix(2) + digits.suffix(2))
+        }
+        return digits
+    }
 }
 
 /// A `UITextField`-backed field that formats digits-only input in real time
@@ -161,7 +184,7 @@ struct FormattedTextField: UIViewRepresentable {
             let digitsBeforeCaret = proposedText.prefix(caretOffset).filter(\.isNumber).count
 
             let formatter = parent.formatter
-            let cappedDigits = String(proposedText.filter(\.isNumber).prefix(formatter.maxDigits))
+            let cappedDigits = String(formatter.digits(proposedText).prefix(formatter.maxDigits))
             let newDigits = formatter.sanitize(cappedDigits)
             let formatted = formatter.format(newDigits)
 

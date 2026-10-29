@@ -28,13 +28,7 @@ struct CardFormRowLayoutTests {
         window.isHidden = false
         window.layoutIfNeeded()
 
-        var found: [UITextField] = []
-        func walk(_ view: UIView) {
-            if let field = view as? UITextField { found.append(field) }
-            view.subviews.forEach(walk)
-        }
-        walk(window)
-        return found
+        return textFields(in: window)
     }
 
     /// Lays the form out in the given language and returns the three inputs in window coordinates,
@@ -52,13 +46,7 @@ struct CardFormRowLayoutTests {
         window.isHidden = false
         window.layoutIfNeeded()
 
-        var found: [UITextField] = []
-        func walk(_ view: UIView) {
-            if let field = view as? UITextField { found.append(field) }
-            view.subviews.forEach(walk)
-        }
-        walk(window)
-        return found.map { $0.convert($0.bounds, to: window) }
+        return textFields(in: window).map { $0.convert($0.bounds, to: window) }
     }
 
     /// How tall the whole form lays out, for checking what the padding around a field adds.
