@@ -182,7 +182,7 @@ GopaySDK.shared.initialize(
         environment: .sandbox,                 // or .development(baseURL:) / .production
         clientId: "<your-client-id>",
         shareableKey: "<your-shareable-key>",
-        enableDebugLogging: true,
+        enableDebugLogging: true,              // Debug builds only, see "What your app must do"
         errorCallback: { error in print("GopaySDK error:", error) }
     )
 )
@@ -1338,6 +1338,47 @@ sandbox send real reports to the sandbox ingest, like any other run of the SDK.
   every encryption and never cached.
 - Payment creation needs merchant credentials and must stay on your server; the SDK cannot create
   payments and never sees the merchant secret.
+
+### What your app must do
+
+A checklist for a secure release. The same list, in the same order, is in the Android SDK's README.
+
+- **Ship release builds with debug off.** Turn `enableDebugLogging` on in Debug builds only, so no
+  release build writes the SDK's debug output to the device log:
+
+  ```swift
+  #if DEBUG
+  let enableDebugLogging = true
+  #else
+  let enableDebugLogging = false
+  #endif
+
+  GopaySDK.shared.initialize(
+      with: GopaySDKConfig(environment: .production, /* … */ enableDebugLogging: enableDebugLogging)
+  )
+  ```
+- **Use the SDK as released.** Do not fork or patch it. Security fixes reach your app only through
+  released versions, so keep the dependency current.
+- **Know what third-party keyboards and accessibility services see.** A third-party keyboard sees
+  every key the user taps, the card number included, and only your app can turn such keyboards
+  off, the SDK cannot. Return `false` for `.keyboard` from your app delegate:
+
+  ```swift
+  func application(
+      _ application: UIApplication,
+      shouldAllowExtensionPointIdentifier extensionPointIdentifier: UIApplication.ExtensionPointIdentifier
+  ) -> Bool {
+      extensionPointIdentifier != .keyboard
+  }
+  ```
+
+  In a SwiftUI app, attach the delegate with `@UIApplicationDelegateAdaptor`. This applies to your
+  whole app, so the user gets the system keyboard everywhere in it. Accessibility
+  on iOS is the system's own: VoiceOver reads the form's labels, and the CVV is announced as a
+  secure field.
+- **Tell your customers about the operational data.** The SDK sends GoPay diagnostic data that you
+  reflect in your privacy notice and in your app's App Store privacy details, see
+  [Operational data](#operational-data) and [App Store privacy and PCI DSS](#app-store-privacy-and-pci-dss).
 
 ### App Store privacy and PCI DSS
 
