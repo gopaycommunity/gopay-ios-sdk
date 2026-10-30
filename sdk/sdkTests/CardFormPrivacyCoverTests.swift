@@ -78,7 +78,7 @@ struct CardFormPrivacyCoverTests {
 
     @Test func protectionIsOffInADebugBuild() {
         // The test target builds in Debug, which is where the host's own tests and screenshots run.
-        #expect(!CardFormCaptureProtection.default.isEnabled)
+        #expect(!CardFormCaptureProtection.live.isEnabled)
     }
 }
 

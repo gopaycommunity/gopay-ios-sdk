@@ -65,7 +65,7 @@ struct CardFormCaptureProtection {
     /// debuggable build: screenshots and recordings of the form keep working while it is being
     /// developed and tested, UI tests and snapshot tests included. Decided when the SDK is
     /// compiled, so it follows the configuration the host builds the SDK in, not a runtime flag.
-    static let `default` = CardFormCaptureProtection(
+    static let live = CardFormCaptureProtection(
         isEnabled: {
             #if DEBUG
             return false
@@ -88,7 +88,7 @@ struct CardFormCaptureProtection {
 // MARK: - Test hook
 
 private struct CardFormCaptureProtectionKey: EnvironmentKey {
-    static let defaultValue = CardFormCaptureProtection.default
+    static let defaultValue = CardFormCaptureProtection.live
 }
 
 extension EnvironmentValues {

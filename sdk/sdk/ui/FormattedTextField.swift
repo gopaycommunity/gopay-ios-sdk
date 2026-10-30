@@ -214,7 +214,7 @@ struct FormattedTextField: UIViewRepresentable {
             return formatted.count
         }
 
-        func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+        func textFieldShouldBeginEditing(_: UITextField) -> Bool {
             !parent.refusesInput
         }
 
