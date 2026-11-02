@@ -4,9 +4,7 @@
 <dict>
 	<key>com.apple.developer.in-app-payments</key>
 	<array>
-		<string>merchant.dev.gopay.com</string>
-		<string>merchant.gopay.com</string>
-		<string>merchant.test.gopay.com</string>
+		<string>merchant.com.gopay.sdk</string>
 	</array>
 </dict>
 </plist>
