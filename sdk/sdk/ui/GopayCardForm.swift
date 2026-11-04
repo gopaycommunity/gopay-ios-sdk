@@ -441,6 +441,7 @@ public struct GopayCardForm: View {
                             cardNumberEdited = true
                             GopaySDK.shared.updateCardFormData(data, formId: formId)
                             updateValidationBinding()
+                            reportInput()
                             if newDigits.count == 16 {
                                 isCardNumberFocused = false
                                 isExpirationFocused = true
@@ -461,6 +462,9 @@ public struct GopayCardForm: View {
                             isExpirationFocused = false
                             isCvvFocused = false
                         }
+                    },
+                    onLeave: { isOnActiveScreen in
+                        reportLeft(.pan, edited: cardNumberEdited, isOnActiveScreen: isOnActiveScreen)
                     }
                 )
             }
@@ -486,6 +490,7 @@ public struct GopayCardForm: View {
                                 expirationEdited = true
                                 GopaySDK.shared.updateCardFormData(data, formId: formId)
                                 updateValidationBinding()
+                                reportInput()
                                 if newDigits.count == 4 {
                                     isExpirationFocused = false
                                     isCvvFocused = true
@@ -512,6 +517,9 @@ public struct GopayCardForm: View {
                                 GopaySDK.shared.updateCardFormData(data, formId: formId)
                                 updateValidationBinding()
                             }
+                        },
+                        onLeave: { isOnActiveScreen in
+                            reportLeft(.expiry, edited: expirationEdited, isOnActiveScreen: isOnActiveScreen)
                         }
                     )
                 }
@@ -532,6 +540,7 @@ public struct GopayCardForm: View {
                                 cvvEdited = true
                                 GopaySDK.shared.updateCardFormData(data, formId: formId)
                                 updateValidationBinding()
+                                reportInput()
                             }
                         ),
                         formatter: .cvv,
@@ -548,6 +557,9 @@ public struct GopayCardForm: View {
                                 isCardNumberFocused = false
                                 isExpirationFocused = false
                             }
+                        },
+                        onLeave: { isOnActiveScreen in
+                            reportLeft(.cvv, edited: cvvEdited, isOnActiveScreen: isOnActiveScreen)
                         }
                     )
                 }
@@ -594,9 +606,12 @@ public struct GopayCardForm: View {
             // in the SDK and this one empties its own fields itself. `onDisappear` is on the main
             // thread, where the wipe runs synchronously, so the second call finds nothing to do
             // in the first case and does the whole job in the second.
+            //
+            // The telemetry goes first, so its summary describes the form as the customer left
+            // it rather than as the wipe leaves it.
+            GopaySDK.shared.telemetry.cardFormUnmounted(owner: owner)
             GopaySDK.shared.unregisterCardFormReset(formId: formId, owner: owner)
             resetFields()
-            GopaySDK.shared.telemetry.cardFormUnmounted(owner: owner)
         }
     }
     
@@ -678,6 +693,25 @@ public struct GopayCardForm: View {
             attempted.wrappedValue = false
         }
         updateValidationBinding()
+        GopaySDK.shared.telemetry.cardFormCleared(owner: owner)
+    }
+
+    // MARK: - Telemetry
+
+    /// Tells the telemetry the states the fields are in after an edit: states only, never what
+    /// the fields hold. Whatever the validation display, which only decides what the user sees.
+    private func reportInput() {
+        GopaySDK.shared.telemetry.cardFormInput(owner: owner, states: data.progressStates)
+    }
+
+    /// Tells the telemetry the user left `field`. It takes the blur a frame later, so a field
+    /// resigned as the form leaves the screen is not reported, nor one whose screen is no longer
+    /// the active one by then, and none while a screen capture keeps the form refusing input: the
+    /// cover took the focus, the customer did not leave.
+    private func reportLeft(_ field: CardFormProgress.Field, edited: Bool, isOnActiveScreen: @escaping () -> Bool) {
+        GopaySDK.shared.telemetry.cardFormFieldLeft(
+            owner: owner, field: field, edited: edited, inputRefused: refusesInput, isOnActiveScreen: isOnActiveScreen
+        )
     }
 
     /// What ``GopaySDK/submitCardForm(formId:)`` tells the form: in the `.onSubmit` mode the

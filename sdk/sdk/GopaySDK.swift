@@ -377,11 +377,17 @@ public class GopaySDK {
     private func submitStoredCard(formId: String?) async throws -> String {
         guard config != nil else { throw notInitializedError() }
         let (resolvedId, stored) = storedCardForm(formId: formId)
+        // The form on screen under that ID now, looked up once: a second form registering under
+        // the same ID while the key is on its way must not get this submit's telemetry.
+        let owner = resolvedId.flatMap { cardFormOwner(formId: $0) }
         // The submit is what the `.onSubmit` validation mode waits for, so the form is told
         // first, before the card is judged: an empty or invalid card then shows its errors, as
         // the Android form shows them on `submitCardForm`.
         if let id = resolvedId {
             notifyCardFormSubmitAttempted(formId: id)
+            // The pay button as the user pressed it, with the validity the form had then: before
+            // the card is judged, so an empty or invalid card is reported too.
+            telemetry.cardFormSubmitRequested(owner: owner)
         }
         // A form whose fields are all empty holds no card, the same answer as no form at all:
         // hosts key their "enter the card again" path on this message, and the Android SDK
@@ -398,9 +404,18 @@ public class GopaySDK {
             expYear: data.expirationYear,
             cvv: data.cvv
         )
-        let jwe = try await encrypt(cardData)
+        let jwe: String
+        do {
+            jwe = try await encrypt(cardData)
+        } catch {
+            // A cancelled task is the host changing its mind, not the encryption failing.
+            if !(error is CancellationError) {
+                telemetry.cardFormEncryptFailed(owner: owner)
+            }
+            throw error
+        }
         // The submit as the user made it: when, never what.
-        telemetry.cardFormSubmitted(owner: cardFormOwner(formId: id))
+        telemetry.cardFormSubmitted(owner: owner)
         // Only clear after encryption succeeded — on failure (e.g. key fetch offline) the user
         // shouldn't have to retype the card; authorization hasn't happened yet. Clearing also
         // empties the fields the form still shows, so the card does not outlive the JWE made

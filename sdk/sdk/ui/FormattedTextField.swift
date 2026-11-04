@@ -105,6 +105,11 @@ struct FormattedTextField: UIViewRepresentable {
     /// `onFocusChange` reports back when focus changes for other reasons (the user tapping in).
     var isFocused: Bool = false
     var onFocusChange: (Bool) -> Void = { _ in }
+    /// Called right after `onFocusChange(false)` with a check that answers, whenever it is asked,
+    /// whether the field is still on a screen the user is looking at: in a window, that window
+    /// key, the app active, and its screen not on its way out. A field resigned because its screen
+    /// went away, or the app did, is not a field the user left.
+    var onLeave: (_ isOnActiveScreen: @escaping () -> Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> UITextField {
         let textField = UITextField()
@@ -118,7 +123,7 @@ struct FormattedTextField: UIViewRepresentable {
         // own setting; that would undo a size a preview, a test or a host had overridden.
         textField.adjustsFontForContentSizeCategory = false
         textField.addTarget(context.coordinator, action: #selector(Coordinator.editingBegan), for: .editingDidBegin)
-        textField.addTarget(context.coordinator, action: #selector(Coordinator.editingEnded), for: .editingDidEnd)
+        textField.addTarget(context.coordinator, action: #selector(Coordinator.editingEnded(_:)), for: .editingDidEnd)
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         // The placeholder is as wide as the field's intrinsic width. Under a large Dynamic Type
         // size it would otherwise push the whole form past the edge of the screen; the field can
@@ -219,6 +224,27 @@ struct FormattedTextField: UIViewRepresentable {
         }
 
         @objc func editingBegan() { parent.onFocusChange(true) }
-        @objc func editingEnded() { parent.onFocusChange(false) }
+        @objc func editingEnded(_ textField: UITextField) {
+            parent.onFocusChange(false)
+            parent.onLeave { [weak textField] in FormattedTextField.isOnActiveScreen(textField) }
+        }
+    }
+
+    /// In a window, that window key, the app active, and no view controller holding the view on
+    /// its way out. A sheet shares the window it is presented in, so its going away shows only on
+    /// the view controllers: being dismissed, or being popped off a navigation stack.
+    static func isOnActiveScreen(_ view: UIView?) -> Bool {
+        guard let window = view?.window, window.isKeyWindow,
+              UIApplication.shared.applicationState == .active
+        else { return false }
+        var responder: UIResponder? = view
+        while let next = responder?.next {
+            if let controller = next as? UIViewController,
+               controller.isBeingDismissed || controller.isMovingFromParent {
+                return false
+            }
+            responder = next
+        }
+        return true
     }
 }

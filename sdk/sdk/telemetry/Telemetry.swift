@@ -32,7 +32,8 @@ final class Telemetry: @unchecked Sendable {
         /// Markers bounded by design: init, the session's start and leave, the 3DS leave, the
         /// card form's ready, submit and unmount, the wallet submit.
         case lifecycle
-        /// Wallet steps and availability answers, which repeat with the user.
+        /// Wallet steps and availability answers, which repeat with the user, and the card form's
+        /// summary, one per visit.
         case step
         /// SDK errors.
         case error
@@ -72,6 +73,33 @@ final class Telemetry: @unchecked Sendable {
         case completePayment
         /// The sheet closed without an authorization.
         case cancel
+    }
+
+    /// The card form's steps, by the names the browser SDK gives them, and the budget each spends.
+    enum CardFormStep: Sendable {
+        case started, completed, submitRequest, interaction
+        case fieldErrors(CardFormProgress.Trigger)
+
+        var name: String {
+            switch self {
+            case .started: return "started"
+            case .completed: return "completed"
+            case .submitRequest: return "submit-request"
+            case .interaction: return "interaction"
+            case .fieldErrors: return "field-errors"
+            }
+        }
+
+        /// The errors of a submit count with the steps: they are the moment the customer tried to
+        /// pay, and typing must not be able to silence it. The summary sits with the wallet steps,
+        /// one per visit.
+        var budget: Budget {
+            switch self {
+            case .started, .completed, .submitRequest, .fieldErrors(.submit): return .cardForm
+            case .fieldErrors: return .fieldErrors
+            case .interaction: return .step
+            }
+        }
     }
 
     /// One value in a `params` object.
@@ -125,8 +153,8 @@ final class Telemetry: @unchecked Sendable {
     /// belongs to no payment of its own, a card form's or a probe's, is attributed to the last
     /// one, as the browser SDK attributes everything to the payment attached to it.
     private var attached: [String] = []
-    /// When each card form on screen became ready, keyed by the form's owner token.
-    private var readyAt: [ObjectIdentifier: UInt64] = [:]
+    /// Each card form on screen, from its ready to its unmount, keyed by the form's owner token.
+    private var cardForms: [ObjectIdentifier: CardFormVisit] = [:]
     /// The last answer each availability probe reported, so a probe called from a view body does
     /// not report the same answer on every render.
     private var probeAnswers: [String: Bool] = [:]
@@ -276,11 +304,12 @@ final class Telemetry: @unchecked Sendable {
     /// the browser SDK's encrypt-only flow.
     static let cardFormFlow = "return-payload"
 
-    /// A ``GopayCardForm`` appeared, timed from the SDK's initialization.
+    /// A ``GopayCardForm`` appeared, timed from the SDK's initialization. Its first visit starts
+    /// here, untouched.
     func cardFormReady(owner: AnyObject) {
         let now = Self.now()
         lock.lock()
-        readyAt[ObjectIdentifier(owner)] = now
+        cardForms[ObjectIdentifier(owner)] = CardFormVisit(readyAt: now)
         lock.unlock()
         post(.lifecycle, paymentId: nil, duration: Self.ms(since: createdAt, until: now), flow: Self.cardFormFlow) {
             .jsEvent(functionName: "PAYMENT_CARD.ready", errorCode: nil, params: nil, returnValue: nil)
@@ -288,29 +317,41 @@ final class Telemetry: @unchecked Sendable {
     }
 
     /// ``GopaySDK/submitCardForm(formId:)`` made a JWE from the form `owner` registered. Timed
-    /// from the form's ready; carries nothing about what was typed.
+    /// from the form's ready; carries nothing about what was typed. The JWE ends the visit: its
+    /// summary goes now, with the card as it was, before the SDK empties the form.
     func cardFormSubmitted(owner: AnyObject?) {
-        let since = owner.flatMap { owner -> UInt64? in
+        let now = Self.now()
+        var readyAt: UInt64?
+        var summary: CardFormProgress.Report?
+        if let owner = owner {
             lock.lock()
-            defer { lock.unlock() }
-            return readyAt[ObjectIdentifier(owner)]
+            if let visit = cardForms[ObjectIdentifier(owner)] {
+                readyAt = visit.readyAt
+                summary = visit.end(.submit)
+            }
+            lock.unlock()
         }
-        post(
-            .lifecycle, paymentId: nil, duration: since.map { Self.ms(since: $0) },
-            paymentMethod: "card", flow: Self.cardFormFlow
-        ) {
+        let duration = readyAt.map { Self.ms(since: $0, until: now) }
+        post(.lifecycle, paymentId: nil, duration: duration, paymentMethod: "card", flow: Self.cardFormFlow) {
             .interaction(elementId: "card-form")
+        }
+        if let summary = summary {
+            postCardFormStep(.interaction, summary, duration: duration)
         }
     }
 
     /// A ``GopayCardForm`` disappeared, timed from its ready, with whether a charge was still
-    /// running in the process when it went (see ``chargesInFlight``).
+    /// running in the process when it went (see ``chargesInFlight``), and then the summary of the
+    /// visit still open, if any: a form whose last visit ended with a JWE has none.
     func cardFormUnmounted(owner: AnyObject) {
+        let now = Self.now()
         lock.lock()
-        let since = readyAt.removeValue(forKey: ObjectIdentifier(owner))
+        let visit = cardForms.removeValue(forKey: ObjectIdentifier(owner))
+        let summary = visit?.end(nil)
         lock.unlock()
+        let duration = visit.map { Self.ms(since: $0.readyAt, until: now) }
         let chargeInFlight = Self.chargesInFlight.isRunning
-        post(.lifecycle, paymentId: nil, duration: since.map { Self.ms(since: $0) }, flow: Self.cardFormFlow) {
+        post(.lifecycle, paymentId: nil, duration: duration, flow: Self.cardFormFlow) {
             .jsEvent(
                 functionName: "PAYMENT_CARD.unmount",
                 errorCode: nil,
@@ -318,12 +359,202 @@ final class Telemetry: @unchecked Sendable {
                 returnValue: chargeInFlight ? "charge-aborted" : "idle"
             )
         }
+        if let summary = summary {
+            postCardFormStep(.interaction, summary, duration: duration)
+        }
     }
 
     /// The user authorized in the Apple Pay sheet. No duration, as in the browser SDK.
     func walletSubmitted(paymentId: String) {
         post(.lifecycle, paymentId: paymentId, duration: nil, paymentMethod: "applepay") {
             .interaction(elementId: "applepay-button")
+        }
+    }
+
+    // MARK: - Card form steps
+
+    /// The customer changed a field of the form `owner`; `states` are the three fields after it.
+    /// Typing into a form whose visit ended with a JWE starts a new visit.
+    func cardFormInput(owner: AnyObject, states: CardFormProgress.States) {
+        let now = Self.now()
+        lock.lock()
+        var steps: [(CardFormStep, CardFormProgress.Report)] = []
+        var duration: Int?
+        if let visit = openVisit(of: owner, restarting: true) {
+            let since = Self.ms(since: visit.readyAt, until: now)
+            duration = since
+            // Typing after a failed submit is a new attempt; the visit no longer ends with it.
+            visit.ended = .unmount
+            if let report = visit.progress.progress(states, sinceReady: since) {
+                steps.append((.started, report))
+            }
+            if let report = visit.progress.validity(states.isValid, sinceReady: since) {
+                steps.append((.completed, report))
+            }
+            if let report = visit.progress.fieldErrors(states.errors(judged: visit.judged), trigger: .input) {
+                steps.append((.fieldErrors(.input), report))
+            }
+        }
+        lock.unlock()
+        steps.forEach { postCardFormStep($0.0, $0.1, duration: duration) }
+    }
+
+    /// The customer left `field`. Its errors stand from here on when they had edited it, so a
+    /// field left half done is an error and a field typed through to the next one is not.
+    ///
+    /// Taken one frame later: a form leaving the screen resigns its field in the same frame it
+    /// disappears, and that is not the customer leaving a field. By then the form's visit is gone
+    /// with its unmount, and the blur with it. The states are the ones last reported; leaving a
+    /// field changes none.
+    ///
+    /// - Parameters:
+    ///   - inputRefused: The form refuses input because the screen is being captured, and took the
+    ///     focus away itself; the customer did not leave the field, so nothing is reported.
+    ///   - isOnActiveScreen: Asked when the blur is taken: whether the field is still in a window,
+    ///     that window key, the app active, and its screen not being dismissed or popped. When not,
+    ///     its screen or the app went away and took the focus with it, and nothing is reported.
+    ///     The Android form drops such a blur by its window focus; a sheet on iOS shares its
+    ///     window, so its dismissal is read from the view controllers instead.
+    func cardFormFieldLeft(
+        owner: AnyObject,
+        field: CardFormProgress.Field,
+        edited: Bool,
+        inputRefused: Bool = false,
+        isOnActiveScreen: @escaping () -> Bool = { true }
+    ) {
+        guard !inputRefused else { return }
+        DispatchQueue.main.async { [weak self, weak owner] in
+            guard let self = self, let owner = owner, isOnActiveScreen() else { return }
+            let now = Self.now()
+            self.lock.lock()
+            var report: CardFormProgress.Report?
+            var duration: Int?
+            if let visit = self.openVisit(of: owner, restarting: false) {
+                duration = Self.ms(since: visit.readyAt, until: now)
+                if edited {
+                    visit.judged.insert(field)
+                }
+                report = visit.progress.fieldErrors(visit.progress.states.errors(judged: visit.judged), trigger: .blur)
+            }
+            self.lock.unlock()
+            if let report = report {
+                self.postCardFormStep(.fieldErrors(.blur), report, duration: duration)
+            }
+        }
+    }
+
+    /// ``GopaySDK/submitCardForm(formId:)`` was asked for the form `owner` registered, before the
+    /// card is judged: `submit-request` with the validity the form had, then the errors of the
+    /// submit, every field's from now on, whether or not the form shows them. A submit into a form
+    /// whose visit ended with a JWE starts a new visit.
+    func cardFormSubmitRequested(owner: AnyObject?) {
+        guard let owner = owner else { return }
+        let now = Self.now()
+        lock.lock()
+        var steps: [(CardFormStep, CardFormProgress.Report)] = []
+        var duration: Int?
+        if let visit = openVisit(of: owner, restarting: true) {
+            duration = Self.ms(since: visit.readyAt, until: now)
+            steps.append((.submitRequest, visit.progress.submitRequest()))
+            visit.judged = Set(CardFormProgress.Field.allCases)
+            let errors = visit.progress.states.errors(judged: visit.judged)
+            if let report = visit.progress.fieldErrors(errors, trigger: .submit) {
+                steps.append((.fieldErrors(.submit), report))
+            }
+        }
+        lock.unlock()
+        steps.forEach { postCardFormStep($0.0, $0.1, duration: duration) }
+    }
+
+    /// The submit of the form `owner` registered failed to encrypt the card. The form keeps the
+    /// card, so this is how its visit ends unless the customer types again.
+    func cardFormEncryptFailed(owner: AnyObject?) {
+        guard let owner = owner else { return }
+        lock.lock()
+        openVisit(of: owner, restarting: false)?.ended = .encryptError
+        lock.unlock()
+    }
+
+    /// The SDK emptied the fields of the form `owner`. After a JWE the visit is already over and
+    /// the next one starts with the next input; on the host's clear mid-visit the form is back to
+    /// untouched, with nothing standing, and nothing is reported.
+    func cardFormCleared(owner: AnyObject) {
+        lock.lock()
+        if let visit = openVisit(of: owner, restarting: false) {
+            visit.progress.cleared()
+            visit.judged = []
+        }
+        lock.unlock()
+    }
+
+    /// The visit of the form `owner` that is still open, under ``lock``. A visit that ended with a
+    /// JWE is none, unless `restarting`, which opens the next one on the same form.
+    private func openVisit(of owner: AnyObject, restarting: Bool) -> CardFormVisit? {
+        guard let visit = cardForms[ObjectIdentifier(owner)] else { return nil }
+        if visit.isOver {
+            guard restarting else { return nil }
+            visit.restart()
+        }
+        return visit
+    }
+
+    /// One step of the card form as `PAYMENT_CARD.<step>`, timed from the form's ready, or nothing
+    /// when its params do not pass ``CardFormProgress/vetted(_:message:)``.
+    private func postCardFormStep(_ step: CardFormStep, _ report: CardFormProgress.Report, duration: Int?) {
+        guard let params = CardFormProgress.vetted(report.params, message: report.message) else { return }
+        let message = report.message
+        post(step.budget, paymentId: nil, duration: duration, flow: Self.cardFormFlow) {
+            .jsEvent(
+                functionName: "PAYMENT_CARD.\(step.name)",
+                errorCode: nil,
+                params: Self.describeParams(params),
+                returnValue: message
+            )
+        }
+    }
+
+    /// One card form on screen from its ready to its unmount, and its current visit: what the
+    /// customer did between the ready, or the JWE before, and how that visit ended. Guarded by the
+    /// telemetry's lock.
+    final class CardFormVisit {
+        let readyAt: UInt64
+        private(set) var progress = CardFormVisit.primed()
+        /// The fields whose errors stand: left after being edited, or all of them after a submit,
+        /// until the form is emptied.
+        var judged: Set<CardFormProgress.Field> = []
+        /// How the visit ends if the form leaves now.
+        var ended: CardFormProgress.End = .unmount
+        /// The visit ended with a JWE; the form stays on screen, emptied by the SDK, until the
+        /// customer types into it or submits again.
+        private(set) var isOver = false
+
+        init(readyAt: UInt64) {
+            self.readyAt = readyAt
+        }
+
+        /// Ends the visit, `.submit` for a JWE or as ``ended`` says, and hands back its summary;
+        /// `nil` when it already ended.
+        func end(_ how: CardFormProgress.End?) -> CardFormProgress.Report? {
+            guard !isOver else { return nil }
+            isOver = true
+            return progress.summary(how ?? ended)
+        }
+
+        /// The next visit on the same form, from an emptied form.
+        func restart() {
+            progress = Self.primed()
+            judged = []
+            ended = .unmount
+            isOver = false
+        }
+
+        /// A tracker that has seen the form untouched, so a visit nobody types into still ends
+        /// with its states: "never started", every field `empty`.
+        private static func primed() -> CardFormProgress {
+            let progress = CardFormProgress()
+            _ = progress.progress(.untouched, sinceReady: nil)
+            _ = progress.validity(false, sinceReady: nil)
+            return progress
         }
     }
 

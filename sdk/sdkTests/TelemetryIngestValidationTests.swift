@@ -68,6 +68,13 @@ struct TelemetryIngestValidationTests {
         )
         telemetry.sessionStarted(paymentId: paymentId)
         telemetry.cardFormReady(owner: owner)
+        let typed = CardFormProgress.States(pan: .partial, expiry: .empty, cvv: .empty)
+        let complete = CardFormProgress.States(pan: .complete, expiry: .complete, cvv: .complete)
+        telemetry.cardFormInput(owner: owner, states: typed)
+        telemetry.cardFormFieldLeft(owner: owner, field: .pan, edited: true)
+        await nextFrame()
+        telemetry.cardFormInput(owner: owner, states: complete)
+        telemetry.cardFormSubmitRequested(owner: owner)
         telemetry.cardFormSubmitted(owner: owner)
         telemetry.apiCall(
             Telemetry.ApiCallRecord(
@@ -107,7 +114,7 @@ struct TelemetryIngestValidationTests {
         telemetry.error(GopaySDKError.transport(URLError(.notConnectedToInternet)), paymentId: paymentId)
         telemetry.error(GopaySDKError(.validationInvalidInput, message: "paymentId must not be empty"), paymentId: nil)
         telemetry.sessionClosed(paymentId: paymentId)
-        let expected = 22
+        let expected = 28
 
         for _ in 0..<300 where answers.all.count < expected {
             try await Task.sleep(nanoseconds: 100_000_000)

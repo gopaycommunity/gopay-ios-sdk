@@ -907,9 +907,10 @@ extension SessionNetworkTests {
         probe.telemetry.cardFormUnmounted(owner: owner)
         Telemetry.chargesInFlight.finish()
 
-        let events = await probe.events(3)
-        let idle = events[1], aborted = events[2]
-        #expect(idle["function_name"] as? String == "PAYMENT_CARD.unmount")
+        // The summary of the visit follows the first unmount; the second has no visit left.
+        let events = await probe.events(4).filter { $0["function_name"] as? String == "PAYMENT_CARD.unmount" }
+        let idle = events[0], aborted = events[1]
+        #expect(events.count == 2)
         #expect(idle["return_value"] as? String == "idle")
         #expect(idle["params"] as? String == #"{"charge_in_flight":false}"#)
         #expect(idle["duration"] is Int)
@@ -1054,6 +1055,68 @@ extension SessionNetworkTests {
         #expect(submits.count == 2)
         #expect(submits[0]["duration"] is NSNull, "the registered form never became ready; another one did")
         #expect(submits[1]["duration"] is Int)
+    }
+
+    /// The pay button is reported before the card is judged, so an invalid card's press is there
+    /// with its errors although the submit throws; a failed encryption is how the visit ends.
+    @Test func reportsThePayButtonBeforeTheCardIsJudgedAndAFailedEncryptionAsTheEnd() async throws {
+        StubURLProtocol.reset { _ in (503, Data()) }
+        let probe = TelemetryProbe(clientId: "c")
+        let sdk = sdk(telemetry: probe.telemetry)
+        let owner = CardFormOwner()
+        let half = GopayCardFormData(cardNumber: "4444", expirationMonth: "12", expirationYear: "28", cvv: "123")
+        let card = GopayCardFormData(cardNumber: "4444444444444448", expirationMonth: "12", expirationYear: "28", cvv: "123")
+        sdk.registerCardFormReset({}, formId: "f1", owner: owner)
+        probe.telemetry.cardFormReady(owner: owner)
+
+        sdk.updateCardFormData(half, formId: "f1")
+        probe.telemetry.cardFormInput(owner: owner, states: half.progressStates)
+        await #expect(throws: GopaySDKError.self) { _ = try await sdk.submitCardForm(formId: "f1") }
+        sdk.updateCardFormData(card, formId: "f1")
+        probe.telemetry.cardFormInput(owner: owner, states: card.progressStates)
+        await #expect(throws: GopaySDKError.self) { _ = try await sdk.submitCardForm(formId: "f1") }
+        probe.telemetry.cardFormUnmounted(owner: owner)
+
+        let steps = await probe.settledEvents(9).filter {
+            ($0["function_name"] as? String)?.hasPrefix("PAYMENT_CARD.") == true
+        }
+        #expect(steps.compactMap { $0["function_name"] as? String } == [
+            "PAYMENT_CARD.ready", "PAYMENT_CARD.started",
+            "PAYMENT_CARD.submit-request", "PAYMENT_CARD.field-errors",
+            "PAYMENT_CARD.completed",
+            "PAYMENT_CARD.submit-request", "PAYMENT_CARD.field-errors",
+            "PAYMENT_CARD.unmount", "PAYMENT_CARD.interaction",
+        ])
+        #expect(steps[2]["params"] as? String == #"{"valid":false}"#)
+        #expect(steps[3]["params"] as? String == #"{"count":1,"errors":"pan:pattern","raised":"pan:pattern","trigger":"submit"}"#)
+        #expect(steps[5]["params"] as? String == #"{"valid":true}"#)
+        #expect(steps[8]["return_value"] as? String == "encrypt-error: completed")
+    }
+
+    /// A submit the host cancels while the key is on its way did not fail to encrypt: the form
+    /// keeps the card, and its visit ends however it ends next.
+    @Test func doesNotCallACancelledSubmitAFailedEncryption() async throws {
+        let key = try TestEncryptionKey()
+        StubURLProtocol.reset(delay: 0.3) { req in
+            (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, key.publicJWKJSON) : (404, Data())
+        }
+        let probe = TelemetryProbe(clientId: "c")
+        let sdk = sdk(telemetry: probe.telemetry)
+        let owner = CardFormOwner()
+        let card = GopayCardFormData(cardNumber: "4444444444444448", expirationMonth: "12", expirationYear: "28", cvv: "123")
+        sdk.registerCardFormReset({}, formId: "f1", owner: owner)
+        probe.telemetry.cardFormReady(owner: owner)
+        sdk.updateCardFormData(card, formId: "f1")
+        probe.telemetry.cardFormInput(owner: owner, states: card.progressStates)
+
+        let submit = Task { try await sdk.submitCardForm(formId: "f1") }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        submit.cancel()
+        await #expect(throws: CancellationError.self) { try await submit.value }
+        probe.telemetry.cardFormUnmounted(owner: owner)
+
+        let summary = await probe.settledEvents(7).last { $0["function_name"] as? String == "PAYMENT_CARD.interaction" }
+        #expect(summary?["return_value"] as? String == "unmount: completed")
     }
 }
 
