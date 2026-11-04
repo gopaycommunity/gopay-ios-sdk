@@ -175,9 +175,12 @@ struct CardFormPrivacyCoverHostedTests {
     }
 
     /// Async, unlike the rest of the suite: the field moves the focus in a block it queues on the
-    /// main queue, and a test running on that queue only lets it run while it is suspended.
-    private func settle() async throws {
-        try await Task.sleep(nanoseconds: 200_000_000)
+    /// main queue, and a test running on that queue only lets it run while it is suspended. Polls
+    /// instead of pausing once: a loaded CI runner takes many times longer than a quiet Mac.
+    private func settle(until condition: @autoclosure () -> Bool) async throws {
+        for _ in 0..<100 where !condition() {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
     }
 
     @Test func aRecordingEndsTheInput() async throws {
@@ -185,18 +188,19 @@ struct CardFormPrivacyCoverHostedTests {
         let (window, field) = host(isEnabled: true, screen: screen)
         window.makeKeyAndVisible()
         field.becomeFirstResponder()
-        try await settle()
+        try await settle(until: field.isFirstResponder)
         try #require(field.isFirstResponder)
         screen.isCaptured = true
         NotificationCenter.default.post(name: UIScreen.capturedDidChangeNotification, object: nil)
-        try await settle()
+        try await settle(until: !field.isFirstResponder)
         #expect(!field.isFirstResponder)
         // A tap through the cover does not bring the keyboard back.
         #expect(!field.becomeFirstResponder())
         screen.isCaptured = false
         NotificationCenter.default.post(name: UIScreen.capturedDidChangeNotification, object: nil)
-        try await settle()
-        #expect(field.becomeFirstResponder())
+        // The field accepts the focus again only once the form has read the capture's end.
+        try await settle(until: field.becomeFirstResponder())
+        #expect(field.isFirstResponder)
         field.resignFirstResponder()
     }
 }
