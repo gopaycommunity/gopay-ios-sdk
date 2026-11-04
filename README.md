@@ -1264,13 +1264,29 @@ an Apple Pay payment is reported as it happens (the sheet opening, the authoriza
 the result the sheet was given, or the sheet being closed without paying), and so is the answer to
 whether the device can pay with Apple Pay. Every event carries the SDK version, the platform, which
 payment method and flow it belongs to, the id of the payment being paid, your `clientId`, a random
-id for the SDK instance and one for the app process, the event's position among those the SDK
-instance sent, and your app's bundle identifier.
+id for the app process, the event's position among those the app process sent, and your app's
+bundle identifier. The numbering runs across every SDK instance of the process, so a re-initialized
+SDK continues it; the browser SDK numbers per browser tab.
 
-One event describes something your customer did rather than something the SDK did: that they
-submitted the card form, or authorised in the Apple Pay sheet, and how long the form had been on
-screen before they did. That is the whole of it: no field contents, no keystrokes, no timing of
-individual fields, nothing derived from the card data, not even the length of the encrypted payload.
+Every event also carries the time on the device's own clock (`client_time`), so a report that
+arrives late can be told from one that happened late. And when a report fails to arrive, because
+the device is offline or the ingest answers with an error, the SDK counts it and sends the running
+total with the next event that does arrive (`unsent`), so a gap in the numbering of the events can
+be told to have been lost before reaching GoPay or after.
+
+Some events describe something your customer did rather than something the SDK did. One is that
+they submitted the card form, or authorised in the Apple Pay sheet. The others say how they got on
+with the card form: that they started filling it in, and whether a field arrived whole (a paste);
+when the card became complete; which fields were in error, with which code (`required` for an empty
+field, `pattern` for anything else the form refuses) and what raised it (`submit`, `input` or
+`blur`); when your code asked for the JWE and whether the card was complete then; and, when the
+visit ends, a summary with counts and how it ended. A visit ends with the JWE (`submit`, with the
+card as it was before the SDK empties the form; typing into the form again starts a new visit),
+or with the form leaving the screen (`encrypt-error` when the last submit failed to encrypt and
+nothing was typed after it, `unmount` otherwise). These steps carry only states (`empty`,
+`partial`, `complete`), codes, yes or no, counts, and times counted from the form appearing. That is the whole of it: no field contents, no keystrokes, no lengths or digit
+counts, no timing of individual fields, nothing derived from the card data, not even the length of
+the encrypted payload.
 
 **What it never contains.** Card numbers, CVV, the encrypted card payload, card tokens, wallet
 payment data, `payment_secret`, access tokens, credentials, 3DS or ACS redirect parameters, and
@@ -1297,9 +1313,10 @@ checkout, and your customers' data is being processed in your app. The reports g
 environment sends none.
 
 Delivery is fire-and-forget: each report gives up after 10 seconds, nothing is retried, nothing is
-stored on the device, and every failure is discarded silently. Nothing here can delay or fail a
-payment. Four separate caps limit how much one payment session can produce (API reports, lifecycle
-markers, Apple Pay steps and errors), so a flood of any single kind cannot crowd out the others.
+stored on the device, and a failed one is counted but never shown or thrown. Nothing here can delay
+or fail a payment. Six separate caps limit how much one payment session can produce (API reports,
+lifecycle markers, Apple Pay steps and card form summaries, errors, card form steps, and card form
+field errors), so a flood of any single kind cannot crowd out the others.
 The caps start over with every payment session, because the SDK lives as long as your app, not as
 long as one checkout. Unit or integration tests of your own that initialize the SDK against the
 sandbox send real reports to the sandbox ingest, like any other run of the SDK.
