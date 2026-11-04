@@ -350,10 +350,13 @@ final class CardFormProgress {
     ]
 
     private static let allowedMessages: Set<String> = {
-        let summaries = End.allCases.flatMap { end in
-            Outcome.allCases.map { "\(end.rawValue): \($0.rawValue)" }
+        var messages = Set(Message.allCases.map(\.rawValue))
+        for end in End.allCases {
+            for outcome in Outcome.allCases {
+                messages.insert("\(end.rawValue): \(outcome.rawValue)")
+            }
         }
-        return Set(Message.allCases.map(\.rawValue)).union(summaries)
+        return messages
     }()
 }
 

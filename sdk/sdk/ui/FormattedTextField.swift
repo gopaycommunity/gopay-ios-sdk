@@ -109,7 +109,9 @@ struct FormattedTextField: UIViewRepresentable {
     /// whether the field is still on a screen the user is looking at: in a window, that window
     /// key, the app active, and its screen not on its way out. A field resigned because its screen
     /// went away, or the app did, is not a field the user left.
-    var onLeave: (_ isOnActiveScreen: @escaping () -> Bool) -> Void = { _ in }
+    var onLeave: (_ isOnActiveScreen: @escaping () -> Bool) -> Void = { _ in
+        // Nobody listens by default; only the card form reports a field the user left.
+    }
 
     func makeUIView(context: Context) -> UITextField {
         let textField = UITextField()
