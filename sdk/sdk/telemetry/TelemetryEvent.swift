@@ -43,7 +43,6 @@ struct TelemetryEvent: Encodable, Sendable {
 
     var clientId: String?
     var paymentSessionId: String?
-    var sdkInstanceId: String
     /// Set when the event is actually sent; see ``TelemetryTransport``.
     var seq = 0
     var sdkVersion: String
@@ -55,13 +54,19 @@ struct TelemetryEvent: Encodable, Sendable {
     var origin: String
     /// Whole milliseconds, or `nil` when there is nothing to time from.
     var duration: Int?
+    /// The device's wall clock when the event happened, in epoch milliseconds: against the time
+    /// the ingest received it, the device's clock skew. The one wall-clock reading in telemetry;
+    /// every duration comes from the monotonic clock.
+    var clientTime: Int
+    /// How many events the process has failed to deliver so far, `nil` while none has. Set when
+    /// the event is actually sent; see ``Telemetry/ProcessCounters``.
+    var unsent: Int?
     var payload: Payload
 
     private enum CodingKeys: String, CodingKey {
         case eventType = "event_type"
         case clientId = "client_id"
         case paymentSessionId = "payment_session_id"
-        case sdkInstanceId = "sdk_instance_id"
         case seq
         case sdkVersion = "sdk_version"
         case integration
@@ -71,6 +76,8 @@ struct TelemetryEvent: Encodable, Sendable {
         case transactionId = "transaction_id"
         case origin
         case duration
+        case clientTime = "client_time"
+        case unsent
         case action
         case httpMethod = "http_method"
         case target
@@ -91,7 +98,6 @@ struct TelemetryEvent: Encodable, Sendable {
         try c.encode(payload.eventType, forKey: .eventType)
         try c.encodeIfPresent(clientId, forKey: .clientId)
         try c.encodeIfPresent(paymentSessionId, forKey: .paymentSessionId)
-        try c.encode(sdkInstanceId, forKey: .sdkInstanceId)
         try c.encode(seq, forKey: .seq)
         try c.encode(sdkVersion, forKey: .sdkVersion)
         try c.encode(integration, forKey: .integration)
@@ -101,6 +107,8 @@ struct TelemetryEvent: Encodable, Sendable {
         try c.encode(transactionId, forKey: .transactionId)
         try c.encode(origin, forKey: .origin)
         try c.encodeOrNull(duration, forKey: .duration)
+        try c.encode(clientTime, forKey: .clientTime)
+        try c.encodeIfPresent(unsent, forKey: .unsent)
         switch payload {
         case let .apiCall(action, httpMethod, target, statusCode, requestBody, responseBody):
             try c.encode(action, forKey: .action)

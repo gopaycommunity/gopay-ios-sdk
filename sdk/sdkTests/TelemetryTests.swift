@@ -14,9 +14,9 @@ import PassKit
 
 // MARK: - Ingest stub
 
-/// Answers every upload with 204, or fails it for an endpoint made with `failing: true`, and keeps
-/// what arrived per endpoint. Each test makes its own endpoint, so suites running in parallel never
-/// read each other's events.
+/// Answers every upload with 204, or with the status an endpoint was made with, or fails it for an
+/// endpoint made with `failing: true`, and keeps what arrived per endpoint. Each test makes its own
+/// endpoint, so suites running in parallel never read each other's events.
 final class TelemetryIngestStub: URLProtocol {
     struct Upload {
         let headers: [String: String]
@@ -26,12 +26,16 @@ final class TelemetryIngestStub: URLProtocol {
     private static let lock = NSLock()
     private static var uploads: [String: [Upload]] = [:]
     private static var failing: Set<String> = []
+    private static var statuses: [String: Int] = [:]
 
-    static func makeEndpoint(failing: Bool = false) -> URL {
+    static func makeEndpoint(failing: Bool = false, status: Int = 204) -> URL {
         let url = URL(string: "https://ingest.test/\(UUID().uuidString)/events")!
+        lock.lock()
         if failing {
-            lock.lock(); self.failing.insert(url.absoluteString); lock.unlock()
+            self.failing.insert(url.absoluteString)
         }
+        statuses[url.absoluteString] = status
+        lock.unlock()
         return url
     }
 
@@ -55,12 +59,13 @@ final class TelemetryIngestStub: URLProtocol {
         Self.lock.lock()
         Self.uploads[key, default: []].append(upload)
         let fails = Self.failing.contains(key)
+        let status = Self.statuses[key] ?? 204
         Self.lock.unlock()
         if fails {
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
             return
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -82,18 +87,26 @@ final class TelemetryIngestStub: URLProtocol {
     }
 }
 
-/// A telemetry instance wired to its own stub endpoint, and the events it sent.
+/// A telemetry instance wired to its own stub endpoint, and the events it sent. Numbered by its own
+/// counters unless given some to share, so tests running in parallel each see their own `seq`.
 struct TelemetryProbe {
     let endpoint: URL
     let telemetry: Telemetry
 
-    init(clientId: String? = "client-1", failing: Bool = false, origin: String = "cz.example.shop") {
-        endpoint = TelemetryIngestStub.makeEndpoint(failing: failing)
+    init(
+        clientId: String? = "client-1",
+        failing: Bool = false,
+        status: Int = 204,
+        origin: String = "cz.example.shop",
+        counters: Telemetry.ProcessCounters = Telemetry.ProcessCounters()
+    ) {
+        endpoint = TelemetryIngestStub.makeEndpoint(failing: failing, status: status)
         telemetry = Telemetry(
             endpoint: endpoint,
             clientId: clientId,
             origin: origin,
-            configuration: TelemetryIngestStub.configuration()
+            configuration: TelemetryIngestStub.configuration(),
+            counters: counters
         )
     }
 
@@ -127,9 +140,9 @@ struct TelemetryProbe {
 /// it requires, plus the attribution rule. Any other key drops the whole event on the ingest.
 enum TelemetrySchema {
     static let common: Set<String> = [
-        "event_type", "payment_session_id", "shareable_key", "client_id", "sdk_instance_id", "seq",
+        "event_type", "payment_session_id", "shareable_key", "client_id", "seq",
         "sdk_version", "integration", "payment_method", "flow", "error_code", "trace_id", "transaction_id",
-        "origin", "duration",
+        "origin", "duration", "client_time", "unsent",
     ]
     static let byType: [String: (allowed: Set<String>, required: Set<String>)] = [
         "navigation": (["navigation_type", "target"], ["navigation_type", "target"]),
@@ -139,7 +152,7 @@ enum TelemetrySchema {
     ]
     /// Keys whose value, when present, must not be empty.
     static let nonEmpty: Set<String> = [
-        "payment_session_id", "client_id", "sdk_instance_id", "sdk_version", "integration", "payment_method",
+        "payment_session_id", "client_id", "sdk_version", "integration", "payment_method",
         "flow", "error_code", "http_method",
     ]
 
@@ -150,7 +163,7 @@ enum TelemetrySchema {
         }
         let keys = Set(event.keys)
         #expect(keys.isSubset(of: common.union(shape.allowed)), "keys outside the schema: \(keys.subtracting(common.union(shape.allowed)))")
-        #expect(shape.required.union(["event_type", "trace_id", "origin", "duration"]).isSubset(of: keys))
+        #expect(shape.required.union(["event_type", "trace_id", "origin", "duration", "client_time"]).isSubset(of: keys))
         #expect(keys.contains("client_id") || keys.contains("payment_session_id"), "no attribution key")
         for key in nonEmpty {
             if let value = event[key] {
@@ -159,6 +172,9 @@ enum TelemetrySchema {
         }
         #expect((event["seq"] as? Int).map { $0 >= 1 } == true)
         #expect(event["duration"] is NSNull || event["duration"] is Int)
+        // Epoch milliseconds, a whole number: later than 2023 and not in seconds.
+        #expect((event["client_time"] as? Int).map { $0 > 1_700_000_000_000 } == true)
+        #expect(event["unsent"] == nil || (event["unsent"] as? Int).map { $0 >= 1 } == true, "absent, never 0")
     }
 }
 
@@ -201,8 +217,11 @@ struct TelemetryTests {
         #expect(event["duration"] is NSNull, "null, not a fabricated zero")
         #expect(event["client_id"] as? String == "client-1")
         #expect(event["payment_session_id"] == nil, "absent before a session, never empty")
-        #expect(event["sdk_instance_id"] as? String == probe.telemetry.instanceId)
+        #expect(event["sdk_instance_id"] == nil, "no id of the SDK instance, the process's transaction is the scope")
         #expect(event["seq"] as? Int == 1)
+        #expect(event["unsent"] == nil, "absent while nothing failed, not 0")
+        let clientTime = try #require(event["client_time"] as? Int)
+        #expect(abs(clientTime - Int(Date().timeIntervalSince1970 * 1000)) < 60_000, "the device's wall clock, in ms")
         #expect(event["sdk_version"] as? String == GopaySDK.version)
         #expect(event["integration"] as? String == "ios-sdk")
         #expect(event["origin"] as? String == "cz.example.shop")
@@ -229,17 +248,51 @@ struct TelemetryTests {
         #expect(events[1]["payment_session_id"] as? String == "3273103424")
     }
 
-    @Test func givesEachInstanceItsOwnIdAndNumbering() async {
-        let first = TelemetryProbe()
-        let second = TelemetryProbe()
+    /// A re-initialized SDK is a second instance in the same process: it goes on with the numbering
+    /// instead of starting a second series from 1, as the transaction it shares does.
+    @Test func continuesTheNumberingAcrossInstancesOfOneProcess() async {
+        let counters = Telemetry.ProcessCounters()
+        let first = TelemetryProbe(counters: counters)
+        let second = TelemetryProbe(counters: counters)
         first.telemetry.initialized()
+        _ = await first.events(1)
         second.telemetry.initialized()
+        second.telemetry.sessionStarted(paymentId: "1")
 
-        let a = await first.events(1)
-        let b = await second.events(1)
-        #expect(a.first?["seq"] as? Int == 1)
-        #expect(b.first?["seq"] as? Int == 1)
-        #expect(a.first?["sdk_instance_id"] as? String != b.first?["sdk_instance_id"] as? String)
+        #expect(await first.events(1).compactMap { $0["seq"] as? Int } == [1])
+        #expect(await second.events(2).compactMap { $0["seq"] as? Int } == [2, 3])
+    }
+
+    @Test func sharesTheProcessCountersOutsideTests() {
+        let config = GopaySDKConfig(environment: .sandbox, clientId: "c")
+        #expect(Telemetry(config: config).counters === Telemetry.ProcessCounters.shared)
+        #expect(Telemetry(config: config).counters === Telemetry(config: config).counters)
+    }
+
+    /// An event that failed to arrive, by the network or by a status outside 2xx, rides on every
+    /// later event as the running total; one the ingest answered with 204 does not count.
+    @Test func carriesTheCountOfEventsThatDidNotArriveOnTheNextOnes() async throws {
+        let counters = Telemetry.ProcessCounters()
+        let offline = TelemetryProbe(failing: true, counters: counters)
+        let refused = TelemetryProbe(status: 500, counters: counters)
+        let healthy = TelemetryProbe(counters: counters)
+
+        healthy.telemetry.initialized()
+        _ = await healthy.events(1)
+        #expect(counters.unsent == nil)
+        offline.telemetry.initialized()
+        _ = await offline.events(1)
+        try await waitFor { counters.unsent == 1 }
+        healthy.telemetry.sessionStarted(paymentId: "1")
+        refused.telemetry.initialized()
+        _ = await refused.events(1)
+        try await waitFor { counters.unsent == 2 }
+        healthy.telemetry.sessionClosed(paymentId: "1")
+
+        let events = await healthy.events(3)
+        #expect(events[0]["unsent"] == nil)
+        #expect(events[1]["unsent"] as? Int == 1)
+        #expect(events[2]["unsent"] as? Int == 2, "cumulative, not reset by the event that carried it")
     }
 
     /// The ingest drops an event with neither attribution key, so it is never sent, and a number is
@@ -317,8 +370,8 @@ struct TelemetryTests {
     @Test func dropsTheBodiesOfAnEventThatWouldNotFit() throws {
         let wide = String(repeating: "😀", count: 3000)
         let event = TelemetryEvent(
-            clientId: "c", sdkInstanceId: "i", sdkVersion: "1", integration: "ios-sdk", traceId: "t",
-            transactionId: "x", origin: "o",
+            clientId: "c", sdkVersion: "1", integration: "ios-sdk", traceId: "t",
+            transactionId: "x", origin: "o", clientTime: 1_762_000_000_000,
             payload: .apiCall(action: "charge", httpMethod: "POST", target: "/payments/{id}/charge", statusCode: 400,
                               requestBody: wide, responseBody: wide)
         )
@@ -382,8 +435,8 @@ struct TelemetryTests {
 
         // That a submit happened and when; nothing else, not a length, not a hash.
         #expect(Set(submit.keys) == [
-            "event_type", "client_id", "sdk_instance_id", "seq", "sdk_version", "integration", "payment_method",
-            "flow", "trace_id", "transaction_id", "origin", "duration", "interaction_type", "element_id",
+            "event_type", "client_id", "seq", "sdk_version", "integration", "payment_method", "flow",
+            "trace_id", "transaction_id", "origin", "duration", "client_time", "interaction_type", "element_id",
         ])
         #expect(submit["interaction_type"] as? String == "submit")
         #expect(submit["element_id"] as? String == "card-form")
@@ -1004,6 +1057,14 @@ extension SessionNetworkTests {
     }
 }
 
+/// Waits up to two seconds for something another thread does, then fails.
+private func waitFor(_ condition: () -> Bool) async throws {
+    for _ in 0..<200 where !condition() {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(condition(), "timed out waiting")
+}
+
 /// Lines a test collects from any thread.
 final class Lines: @unchecked Sendable {
     private let lock = NSLock()
@@ -1049,11 +1110,9 @@ extension GopayLocalesTests {
         let calls = events.filter { $0["event_type"] as? String == "api_call" }
         #expect(calls.compactMap { $0["target"] as? String } == ["/oauth2/token", "/cards/public-key"])
         #expect(calls.allSatisfy { $0["status_code"] is NSNull })
-        #expect(Set(events.compactMap { $0["sdk_instance_id"] as? String }) == [first.telemetry.instanceId])
 
+        // The second initialize made a second telemetry, which is the one its init went through.
         let again = try #require(await second.events(1).first)
         #expect(again["navigation_type"] as? String == "init")
-        #expect(again["sdk_instance_id"] as? String == second.telemetry.instanceId)
-        #expect(first.telemetry.instanceId != second.telemetry.instanceId)
     }
 }

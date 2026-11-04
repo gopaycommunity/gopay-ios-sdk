@@ -12,7 +12,8 @@ import Foundation
 /// Fire and forget, and never in the way of a payment. Every emitter is synchronous, takes a lock
 /// only for as long as it appends to a queue, and returns; building the event, redacting it and
 /// handing it to `URLSession` happen later, in ``TelemetryTransport``. Nothing awaits the upload,
-/// nothing retries it, the response is not read, and every failure is dropped silently.
+/// nothing retries it, and of the response only the status is read, to count an event that did
+/// not arrive (see ``ProcessCounters``); every failure is otherwise dropped silently.
 ///
 /// Mirrors the Android `GwLoggerTelemetry`.
 final class Telemetry: @unchecked Sendable {
@@ -35,6 +36,12 @@ final class Telemetry: @unchecked Sendable {
         case step
         /// SDK errors.
         case error
+        /// The card form's steps: started, completed, the pay button, and the errors of a submit,
+        /// which typing must not be able to silence.
+        case cardForm
+        /// The card form's field errors raised while typing, which repeat with a customer who keeps
+        /// getting the card wrong and must not spend the steps that say whether they got there.
+        case fieldErrors
 
         var limit: Int {
             switch self {
@@ -42,6 +49,8 @@ final class Telemetry: @unchecked Sendable {
             case .lifecycle: return 75
             case .step: return 150
             case .error: return 50
+            case .cardForm: return 60
+            case .fieldErrors: return 30
             }
         }
     }
@@ -99,9 +108,9 @@ final class Telemetry: @unchecked Sendable {
 
     /// Where the events go, `nil` for ``disabled``.
     let endpoint: URL?
-    /// One per SDK instance, i.e. per ``GopaySDK/initialize(with:)``; ties an init to the payments
-    /// made through it.
-    let instanceId = Telemetry.newId()
+    /// The numbering and the delivery count this instance shares, ``ProcessCounters/shared``
+    /// outside tests.
+    let counters: ProcessCounters
 
     private let clientId: String?
     private let origin: String
@@ -129,6 +138,7 @@ final class Telemetry: @unchecked Sendable {
     ///   - debugSink: Where that line goes; tests collect it instead of printing it.
     ///   - origin: The host app, by its bundle identifier.
     ///   - configuration: The upload session's configuration; tests swap in a stub protocol.
+    ///   - counters: The process's numbering and delivery count; tests pass their own.
     ///   - onResponse: Called with the status and body of each upload's response. Tests only.
     init(
         endpoint: URL?,
@@ -137,15 +147,18 @@ final class Telemetry: @unchecked Sendable {
         debugSink: @escaping @Sendable (String) -> Void = { print($0) },
         origin: String = Bundle.main.bundleIdentifier ?? "",
         configuration: URLSessionConfiguration = Telemetry.sessionConfiguration(),
+        counters: ProcessCounters = .shared,
         onResponse: (@Sendable (Int?, Data?) -> Void)? = nil
     ) {
         self.endpoint = endpoint
+        self.counters = counters
         self.clientId = Self.nonEmpty(clientId)
         self.origin = TelemetryRedaction.capped(origin, at: Self.maxOriginLength)
         self.transport = endpoint.map {
             TelemetryTransport(
                 endpoint: $0,
                 session: URLSession(configuration: configuration),
+                counters: counters,
                 debugSink: debugLogging ? debugSink : nil,
                 onResponse: onResponse
             )
@@ -455,14 +468,13 @@ final class Telemetry: @unchecked Sendable {
         // The ingest needs one of the two to attribute an event and drops it without either.
         guard clientId != nil || paymentId != nil else { return }
         let clientId = self.clientId
-        let instanceId = self.instanceId
         let origin = self.origin
         let traceId = Self.newId()
+        let clientTime = Self.wallClockMs()
         queue.append(PendingEvent(budget: budget, resetsBudgets: resetsBudgets) {
             TelemetryEvent(
                 clientId: clientId,
                 paymentSessionId: paymentId,
-                sdkInstanceId: instanceId,
                 sdkVersion: GopaySDK.version,
                 integration: Self.integration,
                 paymentMethod: paymentMethod,
@@ -471,6 +483,7 @@ final class Telemetry: @unchecked Sendable {
                 transactionId: Self.processTransactionId,
                 origin: origin,
                 duration: duration,
+                clientTime: clientTime,
                 payload: payload()
             )
         })
@@ -511,6 +524,11 @@ final class Telemetry: @unchecked Sendable {
     /// Monotonic nanoseconds, unaffected by the wall clock being changed mid-flow.
     static func now() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
+    }
+
+    /// The wall clock in whole epoch milliseconds, for `client_time` and nothing else.
+    static func wallClockMs() -> Int {
+        Int((Date().timeIntervalSince1970 * 1000).rounded())
     }
 
     /// Whole milliseconds between two ``now()`` readings.
@@ -561,6 +579,49 @@ final class Telemetry: @unchecked Sendable {
         }
     }
 
+    /// What every SDK instance in the process shares with ``processTransactionId``: the numbering
+    /// of the events sent, and the count of those that did not arrive. A re-initialized SDK goes
+    /// on with the same series rather than starting a second one from 1, so a gap in `seq` within
+    /// one `transaction_id` is an event lost, and `unsent` says whether it was lost before the
+    /// ingest or after. The Android `Telemetry` keeps the same two beside its transaction id.
+    final class ProcessCounters: @unchecked Sendable {
+        /// The process's own; tests make their own so they do not read each other's numbers.
+        static let shared = ProcessCounters()
+
+        private let lock = NSLock()
+        private var lastSequence = 0
+        private var unsentCount = 0
+
+        /// Numbers one event and spends the number only when the event can go: `send` gets the
+        /// next number and returns what it made with it, or `nil` when the event cannot be sent,
+        /// which leaves the number to the next one. Held under the lock throughout, so two SDK
+        /// instances sending at once never get the same number.
+        func numbered<T>(_ send: (Int) -> T?) -> T? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let sent = send(lastSequence + 1) else { return nil }
+            lastSequence += 1
+            return sent
+        }
+
+        /// An event handed to `URLSession` did not arrive: no response, or one outside 2xx. A 204
+        /// for a payload the ingest dropped arrived, and is the ingest's to count.
+        func countUnsent() {
+            lock.lock()
+            unsentCount += 1
+            lock.unlock()
+        }
+
+        /// The events not delivered so far, `nil` while there are none: the ingest is to see the
+        /// key missing rather than a 0. Never reset, because the event that carries it can be lost
+        /// too, and a later one still holds the total.
+        var unsent: Int? {
+            lock.lock()
+            defer { lock.unlock() }
+            return unsentCount > 0 ? unsentCount : nil
+        }
+    }
+
     /// A count of things running at once, readable from any thread.
     final class InFlightCounter: @unchecked Sendable {
         private let lock = NSLock()
@@ -594,22 +655,25 @@ actor TelemetryTransport {
 
     private let endpoint: URL
     private let session: URLSession
+    /// Numbers the events and counts the ones that did not arrive, for the whole process. A
+    /// number is spent only on an event that was actually handed to `URLSession`, so a gap in the
+    /// sequence means an event lost on the way.
+    private let counters: Telemetry.ProcessCounters
     /// Where the one-line debug log goes; `nil` while debug logging is off.
     private let debugSink: (@Sendable (String) -> Void)?
     private let onResponse: (@Sendable (Int?, Data?) -> Void)?
     private var spent: [Telemetry.Budget: Int] = [:]
-    /// The number the last event sent carried. A number is spent only on an event that was
-    /// actually handed to `URLSession`, so a gap in the sequence means an event lost on the way.
-    private var lastSequence = 0
 
     init(
         endpoint: URL,
         session: URLSession,
+        counters: Telemetry.ProcessCounters,
         debugSink: (@Sendable (String) -> Void)?,
         onResponse: (@Sendable (Int?, Data?) -> Void)?
     ) {
         self.endpoint = endpoint
         self.session = session
+        self.counters = counters
         self.debugSink = debugSink
         self.onResponse = onResponse
     }
@@ -633,8 +697,11 @@ actor TelemetryTransport {
         let used = spent[pending.budget, default: 0]
         guard used < pending.budget.limit else { return }
         var event = pending.build()
-        event.seq = lastSequence + 1
-        guard let body = Self.fittingBody(of: event) else { return }
+        event.unsent = counters.unsent
+        guard let body = counters.numbered({ number -> Data? in
+            event.seq = number
+            return Self.fittingBody(of: event)
+        }) else { return }
 
         var request = URLRequest(url: endpoint, timeoutInterval: Telemetry.requestTimeout)
         request.httpMethod = "POST"
@@ -642,12 +709,16 @@ actor TelemetryTransport {
         request.setValue(DefaultNetworkClient.userAgent, forHTTPHeaderField: "User-Agent")
         request.httpBody = body
 
-        lastSequence = event.seq
         spent[pending.budget] = used + 1
         debugSink?("[GopaySDK] telemetry: \(event.payload.eventType) \(event.payload.name)")
         let onResponse = self.onResponse
-        session.dataTask(with: request) { data, response, _ in
-            onResponse?((response as? HTTPURLResponse)?.statusCode, data)
+        let counters = self.counters
+        session.dataTask(with: request) { data, response, error in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            if error != nil || !(200..<300).contains(status ?? 0) {
+                counters.countUnsent()
+            }
+            onResponse?(status, data)
         }.resume()
     }
 
