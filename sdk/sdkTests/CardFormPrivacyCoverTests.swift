@@ -178,7 +178,9 @@ struct CardFormPrivacyCoverHostedTests {
     /// main queue, and a test running on that queue only lets it run while it is suspended. Polls
     /// instead of pausing once: a loaded CI runner takes many times longer than a quiet Mac.
     private func settle(until condition: @autoclosure () -> Bool) async throws {
-        for _ in 0..<100 where !condition() {
+        var attempts = 100
+        while attempts > 0, !condition() {
+            attempts -= 1
             try await Task.sleep(nanoseconds: 50_000_000)
         }
     }
