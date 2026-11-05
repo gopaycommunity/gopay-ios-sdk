@@ -63,6 +63,22 @@ struct CardFormDataLifecycleTests {
         #expect(sdk.mostRecentFormId == "f1")
     }
 
+    /// A submit without an ID reads the form that synced last, whatever the IDs are called, and
+    /// falls back to the one before it when that one is cleared. The Android `CardFormStore`
+    /// keeps the same order.
+    @Test func aSubmitWithoutAnIdReadsTheFormThatSyncedLast() {
+        let sdk = GopaySDK()
+        for id in ["c", "a", "b"] {
+            sdk.updateCardFormData(makeData(), formId: id)
+        }
+        #expect(sdk.mostRecentFormId == "b")
+        sdk.updateCardFormData(makeData(), formId: "a")
+        #expect(sdk.mostRecentFormId == "a")
+
+        sdk.clearCardFormData(formId: "a")
+        #expect(sdk.mostRecentFormId == "b")
+    }
+
     @Test func clearWithoutFormIdRemovesEverything() {
         let sdk = GopaySDK()
         sdk.updateCardFormData(makeData(), formId: "f1")
@@ -180,12 +196,16 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(filledData(), formId: "f1")
 
         let wiped = Locked(false)
-        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1", owner: CardFormOwner())
+        // Held for the whole test, as the form holds its owner for its whole life: the SDK keeps
+        // it weakly, and a form that is gone is not a form a submit picks.
+        let form = CardFormOwner()
+        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1", owner: form)
 
         _ = try await sdk.submitCardForm()
         await drainMainQueue()
 
         #expect(wiped.value)
+        withExtendedLifetime(form) {}
     }
 
     @Test func aSubmitThatFailsToEncryptDoesNotRunTheWipe() async throws {
@@ -196,7 +216,8 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(filledData(), formId: "f1")
 
         let wiped = Locked(false)
-        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1", owner: CardFormOwner())
+        let form = CardFormOwner()
+        sdk.registerCardFormReset({ wiped.value = true }, formId: "f1", owner: form)
 
         await #expect(throws: GopaySDKError.self) {
             _ = try await sdk.submitCardForm()
@@ -204,6 +225,7 @@ extension SessionNetworkTests {
         await drainMainQueue()
 
         #expect(wiped.value == false)
+        withExtendedLifetime(form) {}
     }
 
     @Test func unregisteringWipesTheFieldsAndDropsTheHandlerAndTheCard() async throws {
@@ -240,13 +262,13 @@ extension SessionNetworkTests {
         let firstWipes = Locked(0)
         let secondWipes = Locked(0)
         let secondAttempts = Locked(0)
-        sdk.updateCardFormData(filledData(), formId: "shared")
         sdk.registerCardFormReset({ firstWipes.value += 1 }, formId: "shared", owner: first)
-        sdk.updateCardFormData(filledData(), formId: "shared")
+        sdk.updateCardFormData(filledData(), formId: "shared", owner: first)
         sdk.registerCardFormReset(
             { secondWipes.value += 1 }, submitAttempted: { secondAttempts.value += 1 },
             formId: "shared", owner: second
         )
+        sdk.updateCardFormData(filledData(), formId: "shared", owner: second)
 
         sdk.unregisterCardFormReset(formId: "shared", owner: first)
         await drainMainQueue()
@@ -269,6 +291,57 @@ extension SessionNetworkTests {
         #expect(secondAttempts.value == 1)
     }
 
+    /// The other order: the newer form, which took the registration over, leaves first. The older
+    /// one stays on screen without a registration, and whatever it is typed into after that never
+    /// reaches the SDK, so when it leaves too nothing of it is left behind, and a submit without
+    /// an ID finds no card. The Android `CardFormStore` keeps the same rule.
+    @Test func aNewerFormLeavingFirstLeavesNothingOfTheOlderFormInTheSDK() async {
+        let sdk = lifecycleSDK()
+        let older = CardFormOwner()
+        let newer = CardFormOwner()
+        sdk.registerCardFormReset({}, formId: "shared", owner: older)
+        sdk.updateCardFormData(filledData(), formId: "shared", owner: older)
+        sdk.registerCardFormReset({}, formId: "shared", owner: newer)
+        sdk.updateCardFormData(GopayCardFormData(), formId: "shared", owner: newer)
+
+        sdk.unregisterCardFormReset(formId: "shared", owner: newer)
+        sdk.updateCardFormData(filledData(), formId: "shared", owner: older)
+        #expect(sdk.internalCardFormData["shared"] == nil)
+        #expect(sdk.mostRecentFormId == nil)
+
+        sdk.unregisterCardFormReset(formId: "shared", owner: older)
+        await drainMainQueue()
+        #expect(sdk.internalCardFormData.isEmpty)
+        do {
+            _ = try await sdk.submitCardForm()
+            Issue.record("expected noCardFormData")
+        } catch let error as GopaySDKError {
+            #expect(error.message == GopaySDKErrors.noCardFormData)
+        } catch {
+            Issue.record("expected a GopaySDKError, got \(error)")
+        }
+    }
+
+    /// A form another one under the same ID has replaced writes nothing: not over the registered
+    /// form's card, and not as the most recent form a submit without an ID would pick.
+    @Test func anUnregisteredFormsEditsNeverReachTheSDK() async {
+        let sdk = lifecycleSDK()
+        let replaced = CardFormOwner()
+        let registered = CardFormOwner()
+        sdk.registerCardFormReset({}, formId: "shared", owner: replaced)
+        sdk.registerCardFormReset({}, formId: "shared", owner: registered)
+        let typed = GopayCardFormData(cardNumber: "4444")
+        sdk.updateCardFormData(typed, formId: "shared", owner: registered)
+        sdk.updateCardFormData(GopayCardFormData(), formId: "other", owner: CardFormOwner())
+
+        sdk.updateCardFormData(filledData(), formId: "shared", owner: replaced)
+        #expect(sdk.internalCardFormData["shared"]?.cardNumber == typed.cardNumber)
+        #expect(sdk.internalCardFormData["other"] == nil, "a form that never registered writes nothing either")
+        #expect(sdk.mostRecentFormId == "shared")
+        #expect(sdk.owner(of: "shared") === registered)
+        #expect(sdk.owner(of: "shared") !== replaced)
+    }
+
     /// A wipe writes SwiftUI state, so the SDK hops it to the main thread. Tests run off it, so
     /// they have to let that hop land before reading the result.
     private func drainMainQueue() async {
@@ -286,8 +359,10 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(filledData(), formId: "f2")
 
         let wiped = Locked(0)
-        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f1", owner: CardFormOwner())
-        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f2", owner: CardFormOwner())
+        let forms = (CardFormOwner(), CardFormOwner())
+        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f1", owner: forms.0)
+        sdk.registerCardFormReset({ wiped.value += 1 }, formId: "f2", owner: forms.1)
+        defer { withExtendedLifetime(forms) {} }
 
         sdk.clearCardFormData()
         await drainMainQueue()
@@ -311,8 +386,8 @@ extension SessionNetworkTests {
     }
 }
 
-/// A `Sendable` box for a flag a test closure sets and the test body reads.
-private final class Locked<Value>: @unchecked Sendable {
+/// A `Sendable` box for a value a test closure sets and the test body reads, from any thread.
+final class Locked<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: Value
     init(_ value: Value) { stored = value }
@@ -339,8 +414,10 @@ extension SessionNetworkTests {
             networkClient: stubbedClient()
         )
         let events = Locked<[String]>([])
+        let form = CardFormOwner()
+        defer { withExtendedLifetime(form) {} }
         sdk.registerCardFormReset(
-            {}, submitAttempted: { events.value.append("attempted") }, formId: "f1", owner: CardFormOwner()
+            {}, submitAttempted: { events.value.append("attempted") }, formId: "f1", owner: form
         )
 
         for data in [GopayCardFormData(), GopayCardFormData(cardNumber: "4444")] {

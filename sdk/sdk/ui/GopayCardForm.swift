@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Foundation
+import Combine
 
 /// Payment card form data model.
 ///
@@ -118,7 +119,11 @@ public enum GopayCardFormValidationDisplay: Sendable {
     /// Do not render inline errors — display is host-driven (default). Read the localized strings
     /// via `GopaySDK.shared.currentLocaleStrings(...)` to show your own.
     case hidden
-    /// Show a field's error live, as soon as it holds non-empty, invalid content while typing.
+    /// Show a field's error once the user is done with it, not while it is being typed: when it
+    /// holds as many digits as it takes and still fails (a mistyped card number, a past date),
+    /// when the user leaves it with something in it, or once ``GopaySDK/submitCardForm(formId:)``
+    /// has been called for the form. An empty field is never flagged in this mode; the
+    /// "required" message is ``onSubmit(attempted:)``'s. The Android form follows the same rule.
     case live
     /// Show errors only while `attempted` is `true`. The SDK sets it to `true` itself when
     /// ``GopaySDK/submitCardForm(formId:)`` is called for this form, before the card is judged,
@@ -173,8 +178,11 @@ public struct GopayCardForm: View {
     @State private var autoFormId = UUID().uuidString
     /// The token this form registers its handlers under, one object for the form's whole life,
     /// so the SDK can tell two forms under the same ID apart (see
-    /// ``GopaySDK/unregisterCardFormReset(formId:owner:)``).
+    /// ``GopaySDK/unregisterCardFormReset(formId:owner:wipesFields:)``).
     @State private var owner = CardFormOwner()
+    /// The ID the form is registered under while it is on screen, `nil` while it is not. Kept to
+    /// notice the host handing the form another ID, e.g. one per payment.
+    @State private var registeredFormId: String?
 
     /// Whether the card number and the expiration offer the system's saved-card autofill.
     ///
@@ -210,6 +218,16 @@ public struct GopayCardForm: View {
     @State private var cardNumberEdited: Bool = false
     @State private var expirationEdited: Bool = false
     @State private var cvvEdited: Bool = false
+
+    // Tracks whether the user has left a field they typed into, which is when the `.live` mode
+    // starts flagging it; stays until the form is emptied.
+    @State private var cardNumberWasLeft: Bool = false
+    @State private var expirationWasLeft: Bool = false
+    @State private var cvvWasLeft: Bool = false
+
+    /// Whether a submit ran for this form since its fields were last emptied, for the `.live`
+    /// mode, which flags every edited field from then on. The `.onSubmit` mode has its binding.
+    @State private var liveSubmitAttempted: Bool = false
 
     /// Creates a payment card form.
     ///
@@ -270,7 +288,7 @@ public struct GopayCardForm: View {
         let mode: GopayCardFormErrors.Mode
         switch validation {
         case .hidden: mode = .hidden
-        case .live: mode = .live
+        case .live: mode = .live(submitAttempted: liveSubmitAttempted)
         case .onSubmit(let attempted): mode = .onSubmit(attempted: attempted.wrappedValue)
         }
         return GopayCardFormErrors(
@@ -279,7 +297,10 @@ public struct GopayCardForm: View {
             mode: mode,
             cardNumberEdited: cardNumberEdited,
             expirationEdited: expirationEdited,
-            cvvEdited: cvvEdited
+            cvvEdited: cvvEdited,
+            cardNumberWasLeft: cardNumberWasLeft,
+            expirationWasLeft: expirationWasLeft,
+            cvvWasLeft: cvvWasLeft
         )
     }
 
@@ -471,7 +492,7 @@ public struct GopayCardForm: View {
                         set: { newDigits in
                             data.cardNumber = newDigits
                             cardNumberEdited = true
-                            GopaySDK.shared.updateCardFormData(data, formId: formId)
+                            GopaySDK.shared.updateCardFormData(data, formId: formId, owner: owner)
                             updateValidationBinding()
                             reportInput()
                             // Not while a capture keeps the form refusing input: the focus
@@ -489,9 +510,10 @@ public struct GopayCardForm: View {
                     textContentType: cardNumberContentType,
                     refusesInput: refusesInput,
                     isFocused: focusedField == .cardNumber,
-                    handsFocusOn: handsFocusOn(from: .cardNumber),
+                    handsFocusToAnotherField: handsFocusToAnotherField(from: .cardNumber),
                     onFocusChange: { isFocused in
-                        focus(.cardNumber, isFocused)
+                        focus(.cardNumber, isFocused: isFocused)
+                        if !isFocused { markLeft(&cardNumberWasLeft, edited: cardNumberEdited) }
                     },
                     onLeave: { isOnActiveScreen in
                         reportLeft(.pan, edited: cardNumberEdited, isOnActiveScreen: isOnActiveScreen)
@@ -518,7 +540,7 @@ public struct GopayCardForm: View {
                                 data.expirationMonth = String(newDigits.prefix(2))
                                 data.expirationYear = newDigits.count > 2 ? String(newDigits.dropFirst(2)) : ""
                                 expirationEdited = true
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                GopaySDK.shared.updateCardFormData(data, formId: formId, owner: owner)
                                 updateValidationBinding()
                                 reportInput()
                                 if !refusesInput, newDigits.count == 4 {
@@ -534,14 +556,15 @@ public struct GopayCardForm: View {
                         textContentType: expirationContentType,
                         refusesInput: refusesInput,
                         isFocused: focusedField == .expiration,
-                        handsFocusOn: handsFocusOn(from: .expiration),
+                        handsFocusToAnotherField: handsFocusToAnotherField(from: .expiration),
                         onFocusChange: { isFocused in
-                            focus(.expiration, isFocused)
+                            focus(.expiration, isFocused: isFocused)
+                            if !isFocused { markLeft(&expirationWasLeft, edited: expirationEdited) }
                             if !isFocused, data.expirationMonth.count == 1,
                                let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
                                 // Pad a single-digit month with a leading zero once the field loses focus.
                                 data.expirationMonth = String(format: "%02d", month)
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                GopaySDK.shared.updateCardFormData(data, formId: formId, owner: owner)
                                 updateValidationBinding()
                             }
                         },
@@ -565,7 +588,7 @@ public struct GopayCardForm: View {
                             set: { newDigits in
                                 data.cvv = newDigits
                                 cvvEdited = true
-                                GopaySDK.shared.updateCardFormData(data, formId: formId)
+                                GopaySDK.shared.updateCardFormData(data, formId: formId, owner: owner)
                                 updateValidationBinding()
                                 reportInput()
                             }
@@ -578,9 +601,10 @@ public struct GopayCardForm: View {
                         isSecure: true,
                         refusesInput: refusesInput,
                         isFocused: focusedField == .cvv,
-                        handsFocusOn: handsFocusOn(from: .cvv),
+                        handsFocusToAnotherField: handsFocusToAnotherField(from: .cvv),
                         onFocusChange: { isFocused in
-                            focus(.cvv, isFocused)
+                            focus(.cvv, isFocused: isFocused)
+                            if !isFocused { markLeft(&cvvWasLeft, edited: cvvEdited) }
                         },
                         onLeave: { isOnActiveScreen in
                             reportLeft(.cvv, edited: cvvEdited, isOnActiveScreen: isOnActiveScreen)
@@ -606,16 +630,16 @@ public struct GopayCardForm: View {
         .onAppear {
             privacyCover.refreshCapture(captureProtection.screenIsCaptured)
             endInputWhileCaptured()
-            // Initial sync when form appears
-            GopaySDK.shared.updateCardFormData(data, formId: formId)
-            // Let the SDK empty these fields once it has turned them into a JWE, and show the
-            // errors once it has been asked to submit them.
-            GopaySDK.shared.registerCardFormReset(
-                resetFields, submitAttempted: markSubmitAttempted, formId: formId, owner: owner
-            )
-            // Update validation binding if provided
-            updateValidationBinding()
+            register(under: formId)
             GopaySDK.shared.telemetry.cardFormReady(owner: owner)
+        }
+        // A host may hand the form a new ID while it stays on screen, one per payment for
+        // instance. `onAppear` does not run again for it, so the form moves its registration and
+        // its card over itself, as the Android form does. `onChange` needs iOS 14.
+        .onReceive(Just(formId)) { newId in
+            guard let oldId = registeredFormId, oldId != newId else { return }
+            GopaySDK.shared.unregisterCardFormReset(formId: oldId, owner: owner, wipesFields: false)
+            register(under: newId)
         }
         .onDisappear {
             // Drop the card when the form leaves the screen, both the SDK's copy and the fields
@@ -627,15 +651,26 @@ public struct GopayCardForm: View {
             // The SDK drops this form's handlers and card, and runs the wipe, only while this form
             // is the one registered under its ID. When another form under the same ID has taken
             // over, as a navigation transition or a `key()` churn produces, that form's card stays
-            // in the SDK and this one empties its own fields itself. `onDisappear` is on the main
+            // in the SDK and this one empties its own fields itself; it wrote nothing to the SDK
+            // since it was replaced, so nothing of it is left there. `onDisappear` is on the main
             // thread, where the wipe runs synchronously, so the second call finds nothing to do
             // in the first case and does the whole job in the second.
             //
             // The telemetry goes first, so its summary describes the form as the customer left
             // it rather than as the wipe leaves it.
             GopaySDK.shared.telemetry.cardFormUnmounted(owner: owner)
-            GopaySDK.shared.unregisterCardFormReset(formId: formId, owner: owner)
+            // The ID the form is registered under, which is `formId` unless a new one arrived and
+            // the form left before it moved over.
+            let leavingId = registeredFormId ?? formId
+            // Read before the unregistration: the form that was registered leaves the binding
+            // invalid behind it; one that was replaced leaves it to the other form.
+            let wasRegistered = GopaySDK.shared.owner(of: leavingId) === owner
+            GopaySDK.shared.unregisterCardFormReset(formId: leavingId, owner: owner)
+            registeredFormId = nil
             resetFields()
+            if wasRegistered {
+                isValid = false
+            }
         }
     }
     
@@ -677,6 +712,18 @@ public struct GopayCardForm: View {
         captureProtection.isEnabled && privacyCover.isCaptured
     }
 
+    /// Registers the form under `id` and hands the SDK its card. Registered first: the SDK takes
+    /// a card only from the form registered under its ID. From then on the SDK empties these
+    /// fields once it has turned them into a JWE, and tells the form when a submit is asked for.
+    private func register(under id: String) {
+        GopaySDK.shared.registerCardFormReset(
+            resetFields, submitAttempted: markSubmitAttempted, formId: id, owner: owner
+        )
+        registeredFormId = id
+        GopaySDK.shared.updateCardFormData(data, formId: id, owner: owner)
+        updateValidationBinding()
+    }
+
     /// Drops the form's own focus once a capture starts, so the keyboard does not come straight
     /// back for the field that had it when the capture ends.
     private func endInputWhileCaptured() {
@@ -687,7 +734,7 @@ public struct GopayCardForm: View {
     /// What a field reports about its focus. A field losing it clears the form's focus only while
     /// the form still thinks it is there: when the form has already handed the focus on to another
     /// field, UIKit resigning this one on that field's behalf must not undo the hand-over.
-    private func focus(_ field: FocusedField, _ isFocused: Bool) {
+    private func focus(_ field: FocusedField, isFocused: Bool) {
         if isFocused {
             focusedField = field
         } else if focusedField == field {
@@ -695,8 +742,21 @@ public struct GopayCardForm: View {
         }
     }
 
+    /// Whether this form is the one registered under its ID.
+    private var isRegistered: Bool {
+        GopaySDK.shared.owner(of: formId) === owner
+    }
+
+    /// Notes a field losing the focus as left by the customer, for the `.live` mode: when they had
+    /// typed into it, and not when the cover took the keyboard away during a capture.
+    private func markLeft(_ wasLeft: inout Bool, edited: Bool) {
+        if edited, !refusesInput {
+            wasLeft = true
+        }
+    }
+
     /// Whether `field` is giving the focus up to another field of the form rather than to nobody.
-    private func handsFocusOn(from field: FocusedField) -> Bool {
+    private func handsFocusToAnotherField(from field: FocusedField) -> Bool {
         focusedField != nil && focusedField != field
     }
 
@@ -724,6 +784,10 @@ public struct GopayCardForm: View {
         cardNumberEdited = false
         expirationEdited = false
         cvvEdited = false
+        cardNumberWasLeft = false
+        expirationWasLeft = false
+        cvvWasLeft = false
+        liveSubmitAttempted = false
         focusedField = nil
         if case .onSubmit(let attempted) = validation {
             attempted.wrappedValue = false
@@ -750,22 +814,33 @@ public struct GopayCardForm: View {
         )
     }
 
-    /// What ``GopaySDK/submitCardForm(formId:)`` tells the form: in the `.onSubmit` mode the
-    /// errors of every invalid field show from now on, until the fields are emptied again. The
-    /// other modes have nothing to reveal.
+    /// What ``GopaySDK/submitCardForm(formId:)`` tells the form: in the `.onSubmit` and `.live`
+    /// modes the errors of every invalid field show from now on, until the fields are emptied
+    /// again; `.live` still leaves an empty field alone. `.hidden` has nothing to reveal.
     private func markSubmitAttempted() {
-        if case .onSubmit(let attempted) = validation, !attempted.wrappedValue {
-            attempted.wrappedValue = true
+        switch validation {
+        case .onSubmit(let attempted):
+            if !attempted.wrappedValue { attempted.wrappedValue = true }
+        case .live:
+            liveSubmitAttempted = true
+        case .hidden:
+            break
         }
     }
 
-    /// Publishes the current validity to the host's binding.
+    /// Publishes the current validity to the host's binding, while this form is the one
+    /// registered under its ID.
     ///
-    /// The write is unconditional. Guarding it on the binding already holding a value meant a
-    /// host that started from `nil`, which is the documented starting point, never received the
-    /// first one and saw the form as permanently invalid. When no binding was passed, the
-    /// default is `.constant(nil)` and the write is a no-op.
+    /// The write does not depend on what the binding holds. Guarding it on the binding already
+    /// holding a value meant a host that started from `nil`, which is the documented starting
+    /// point, never received the first one and saw the form as permanently invalid. When no
+    /// binding was passed, the default is `.constant(nil)` and the write is a no-op.
+    ///
+    /// A form another one under the same ID has replaced does not write: two forms under one ID
+    /// share the host's binding, and the one leaving would otherwise overwrite the validity of
+    /// the one that stays, as a navigation transition or a `key()` churn produces.
     private func updateValidationBinding() {
+        guard isRegistered else { return }
         isValid = data.isValid
     }
 }

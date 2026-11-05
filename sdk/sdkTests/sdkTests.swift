@@ -189,6 +189,48 @@ final class Counter: @unchecked Sendable {
     }
 }
 
+/// Answers like the gateway, but holds every token renewal after the first until the test calls
+/// ``release()``. It ignores cancellation, so the answer arrives whatever the session does
+/// meanwhile.
+final class HeldTokenClient: AsyncHTTPClient, @unchecked Sendable {
+    let baseURL = stubBaseURL
+    private let lock = NSLock()
+    private let gate = DispatchSemaphore(value: 0)
+    private var tokenCalls = 0
+    private var holding = false
+
+    var isHolding: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return holding
+    }
+
+    func release() { gate.signal() }
+
+    func makeURL(path: String) -> URL? { URL(string: baseURL + path) }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let url = request.url!
+        if url.path.hasSuffix("oauth2/token") {
+            lock.lock()
+            tokenCalls += 1
+            let held = tokenCalls > 1
+            holding = held
+            lock.unlock()
+            if held {
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.global().async {
+                        self.gate.wait()
+                        continuation.resume()
+                    }
+                }
+            }
+            return (tokenResponse().1, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let body = json(["id": "p1", "state": "CREATED", "amount": 1, "currency": "CZK"])
+        return (body, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
 // MARK: - Test encryption key
 
 /// A throwaway RSA-2048 key pair: the public half goes to the stub as the merchant's JWK, the
@@ -648,6 +690,77 @@ struct SessionNetworkTests {
         }
         #expect(StubURLProtocol.requestCount(forPathSuffix: "cards/browser-data") == 0)
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/charge") == 0)
+    }
+
+    /// Every method of a closed session that would send a request fails the same way and sends
+    /// nothing: the payment endpoints, the browser data fetch under the shareable key, the
+    /// charges, the polling and the wallet flow before it shows anything. Only the 3DS screen,
+    /// which sends nothing on the session, still runs; the Android SDK draws the same line.
+    @Test func everyPublicMethodOfAClosedSessionThrowsAuth013() async throws {
+        StubURLProtocol.reset(handler: Self.gatewayHandler())
+        let session = try await makeSession()
+        await session.close()
+        let pathsBefore = StubURLProtocol.paths
+
+        let calls: [(String, () async throws -> Void)] = [
+            ("getStatus", { _ = try await session.getStatus() }),
+            ("charge", { _ = try await session.charge(.cardToken("tok", browserData: Self.deviceBrowserData)) }),
+            ("chargeWithCardToken", { _ = try await session.chargeWithCardToken("tok", browserData: Self.deviceBrowserData) }),
+            ("chargeWithEncryptedCard", { _ = try await session.chargeWithEncryptedCard("jwe", browserData: Self.deviceBrowserData) }),
+            ("completeBrowserData", { _ = try await session.completeBrowserData(Self.deviceBrowserData) }),
+            ("getChargeState", { _ = try await session.getChargeState() }),
+            ("awaitChargeState", { _ = try await session.awaitChargeState() }),
+            ("getQrPaymentInfo", { _ = try await session.getQrPaymentInfo() }),
+            ("getApplePayInfo", { _ = try await session.getApplePayInfo() }),
+            ("getWalletInfo", { _ = try await session.getWalletInfo() }),
+            ("chargeWithApplePay", { _ = try await session.chargeWithApplePay(browserData: Self.deviceBrowserData) }),
+            ("chargeWithWallet", { _ = try await session.chargeWithWallet(browserData: Self.deviceBrowserData) }),
+            ("reauthenticate", { _ = try await session.reauthenticate() }),
+        ]
+        for (name, call) in calls {
+            do {
+                try await call()
+                Issue.record("\(name) should fail on a closed session")
+            } catch let error as GopaySDKError {
+                #expect(error.code == .authPaymentSessionClosed, "\(name)")
+            } catch {
+                Issue.record("\(name) threw \(error) instead of a GopaySDKError")
+            }
+        }
+        #expect(StubURLProtocol.paths == pathsBefore)
+    }
+
+    /// A token that arrives after `close()` is not kept, and the call that waited for it ends
+    /// with AUTH_013. The client holds the renewal's answer until the session is closed and
+    /// ignores the cancellation, so the answer really lands in a closed session.
+    @Test func aTokenThatArrivesAfterCloseIsNotKept() async throws {
+        let client = HeldTokenClient()
+        let session = try await PaymentSession.create(
+            paymentId: "p1", paymentSecret: "secret", scope: "payment:charge",
+            authApi: AuthAPI(client: client),
+            publicApi: PublicAPI(client: client, clientId: "client", shareableKey: "shareable"),
+            client: client, callbacks: SessionCallbacks(onClose: { _ in
+                // Created outside the SDK, so there is no registry entry for the close to drop.
+            })
+        )
+        await session.invalidateToken()
+
+        let call = Task { try await session.getStatus() }
+        for _ in 0..<50 where !client.isHolding { try await Task.sleep(nanoseconds: 20_000_000) }
+        #expect(client.isHolding)
+        await session.close()
+        client.release()
+
+        do {
+            _ = try await call.value
+            Issue.record("expected failure")
+        } catch let error as GopaySDKError {
+            #expect(error.code == .authPaymentSessionClosed)
+        } catch {
+            Issue.record("expected AUTH_013, got \(error)")
+        }
+        let token = await session.currentToken()
+        #expect(token == nil)
     }
 
     @Test func completeBrowserDataReturnsWhatTheChargeWouldSend() async throws {

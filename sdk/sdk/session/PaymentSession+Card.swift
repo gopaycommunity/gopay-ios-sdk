@@ -24,7 +24,9 @@ public extension PaymentSession {
         challengePreference: ChallengePreference? = nil
     ) async throws -> ChargePaymentResponse {
         try await reported {
-            try await sendCharge(.cardToken(
+            // Before the device's browser data is gathered, which a closed session has no use for.
+            try ensureOpen()
+            return try await sendCharge(.cardToken(
                 cardToken,
                 browserData: await resolveBrowserData(browserData),
                 challengePreference: challengePreference
@@ -52,7 +54,9 @@ public extension PaymentSession {
         challengePreference: ChallengePreference? = nil
     ) async throws -> ChargePaymentResponse {
         try await reported {
-            try await sendCharge(.encryptedCard(
+            // Before the device's browser data is gathered, which a closed session has no use for.
+            try ensureOpen()
+            return try await sendCharge(.encryptedCard(
                 payload,
                 browserData: await resolveBrowserData(browserData),
                 challengePreference: challengePreference

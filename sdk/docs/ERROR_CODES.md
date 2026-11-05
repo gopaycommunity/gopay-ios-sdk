@@ -13,6 +13,12 @@ the full catalog, including codes only the Android surface can raise, is in that
 [`ERROR_CODES.md`](https://github.com/gopaycommunity/gopay-android-sdk/blob/master/sdk/docs/ERROR_CODES.md).
 Never add, rename, or repurpose a code on one platform alone.
 
+Every code the SDK throws also says whether **a charge may exist** on the gateway after it, and whether the call is
+**safe to retry**. A charge is created by `charge` and the `chargeWith*` calls; `awaitChargeState`,
+`handle3dsVerification` and the reads come after one. Where the answer is "read the charge state first", ask your
+backend or `getChargeState()` before charging again, because the gateway may have created the charge even though the
+answer never reached the device. Codes the SDK does not throw carry neither line.
+
 ## The `errorCallback` rule
 
 `GopaySDKConfig.errorCallback` is for central logging and monitoring, not a substitute for
@@ -56,6 +62,8 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
 - **Developer Action**:
   - The SDK re-authenticates once automatically on a 401 and retries; this code is thrown when the retry gets a second 401 after that re-authentication succeeded, on both platforms. A re-authentication the gateway refuses is `AUTH_010`
   - Start a new `PaymentSession` for the payment
+- **A charge may exist**: Not from this call: the gateway refused the request with the stale token before handling it. A charge an earlier call made on the payment is unaffected
+- **Safe to retry**: Yes, on a new `PaymentSession` for the payment
 
 ### AUTH_010: Invalid Payment Credentials
 - **Case**: `authPaymentCredentialsInvalid`
@@ -68,6 +76,8 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
 - **Developer Action**:
   - Re-fetch the pair from your merchant backend
   - Confirm the SDK's environment matches the one that created the payment
+- **A charge may exist**: No: the token exchange failed and nothing was sent to the payment
+- **Safe to retry**: Yes, with a pair fetched again from your backend
 - **Note**: any other answer keeps its own code: another 4xx is `NETWORK_002`, a 5xx is `NETWORK_003`, and no response at all is one of the transport codes below. Only this code means the credentials are wrong
 
 ### AUTH_011: Shareable Key Missing
@@ -78,6 +88,8 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
   - A charge, which first fetches `GET /cards/browser-data` with the same credentials; the charge is not sent
 - **Developer Action**:
   - Supply both in `GopaySDKConfig` — they are safe to embed in the app
+- **A charge may exist**: No: the call stops before anything is sent
+- **Safe to retry**: Yes, once `clientId` and `shareableKey` are set
 
 ### AUTH_012: Payment Session Already Exists
 - **Case**: `authPaymentSessionAlreadyExists`
@@ -86,14 +98,19 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
   - `startPaymentSession` called twice for the same payment
 - **Developer Action**:
   - Reuse it via `getPaymentSession(_:)`, or `close()` it before starting another
+- **A charge may exist**: No: the second start sent nothing to the payment
+- **Safe to retry**: Not needed: use the session that exists
 
 ### AUTH_013: Payment Session Closed
 - **Case**: `authPaymentSessionClosed`
 - **Description**: An operation was invoked on a `PaymentSession` that has been closed
 - **Common Causes**:
-  - Session used after `close()` or `closeAllPaymentSessions()`
+  - Session used after `close()` or `closeAllPaymentSessions()`; every method of the session that sends a request throws it before anything goes out, and a token that arrives after the close is not kept
 - **Developer Action**:
   - Start a new session for the payment
+- **A charge may exist**: Not from this call: nothing goes out on a closed session. A charge made before `close()` may exist; read it through your backend or a new session's `getChargeState()`
+- **Safe to retry**: Yes, on a new session, after reading the charge state
+- **Note**: `handle3dsVerification` alone still runs on a closed session, since it sends nothing on the session. The same on Android
 
 ## Network Errors (NETWORK_XXX)
 
@@ -107,6 +124,9 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Slow or congested connection
 - **Developer Action**:
   - Retry with backoff; read `getChargeState()` before charging again, since a charge may have reached the gateway
+  - When it was the browser data fetch a charge runs first, the charge itself was not sent
+- **A charge may exist**: Yes, when the call was a charge: the request may have reached the gateway and only the answer was lost
+- **Safe to retry**: Read the charge state first when the call was a charge; any other call can be retried as it is
 
 ### NETWORK_002: HTTP Client Error (4xx)
 - **Case**: `networkClientError`
@@ -116,6 +136,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Malformed request or a payment in the wrong state
 - **Developer Action**:
   - Read `httpStatus` and `gatewayError`; both come straight from the gateway response, and the gateway's `message` is in the error's `message` too
+- **A charge may exist**: For a charge: no on a 400, 401, 403 or 404, the gateway refused the request; a 409 means a charge already exists for the payment. No other call makes a charge
+- **Safe to retry**: After fixing what `gatewayError` names; on a 409 read the charge instead of charging again
 
 ### NETWORK_003: HTTP Server Error (5xx)
 - **Case**: `networkServerError`
@@ -124,6 +146,9 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Gateway or downstream outage
 - **Developer Action**:
   - Retry with backoff; surface a transient-failure message to the user
+  - When it was the browser data fetch a charge runs first, the charge itself was not sent
+- **A charge may exist**: Yes, when the call was a charge: a 5xx can come after the gateway has created it
+- **Safe to retry**: Read the charge state first when the call was a charge; any other call can be retried with backoff
 
 ### NETWORK_004: No Connection
 - **Case**: `networkNoConnection`
@@ -132,6 +157,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Device offline, in flight mode, or without data allowed for the app
 - **Developer Action**:
   - Tell the user they are offline and let them retry; the request was not delivered
+- **A charge may exist**: No: the gateway was never reached
+- **Safe to retry**: Yes, once the device is online
 
 ### NETWORK_005: TLS Error
 - **Case**: `networkSSLError`
@@ -141,6 +168,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - A wrong device clock, which makes a valid certificate look expired
 - **Developer Action**:
   - Retry on another network; `underlying` carries the `URLError`
+- **A charge may exist**: No: the connection failed before the request was sent
+- **Safe to retry**: Yes, once the certificate problem is gone; behind a captive portal, once the user is through it
 
 ### NETWORK_007: Network I/O Error
 - **Case**: `networkIOError`
@@ -150,6 +179,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Retry; `underlying` carries the `URLError`
   - When it was a charge, read `getChargeState()` first: the charge may have reached the gateway. When it was the browser data fetch a charge runs first, the charge itself was not sent
+- **A charge may exist**: Yes, when the call was a charge: the connection may have dropped after the request left the device
+- **Safe to retry**: Read the charge state first when the call was a charge; any other call can be retried
 
 ## Configuration Errors (CONFIG_XXX)
 
@@ -160,6 +191,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - `startPaymentSession`, `encryptCardData` or `submitCardForm` called on app start before initialization
 - **Developer Action**:
   - Initialize once on app start, before any other SDK call
+- **A charge may exist**: No
+- **Safe to retry**: Yes, after `initialize`
 - **Note**: the one code `errorCallback` cannot carry, since the callback arrives with the config. The Android `getInstance()` throws the same code
 
 ### CONFIG_003: Missing Required Parameter
@@ -177,6 +210,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Pass an absolute `https://` URL ending in `/`; `initialize(with:)` also logs a warning when the selected environment has no base URL
   - `.sandbox` and `.production` carry their own hosts and cannot hit this
+- **A charge may exist**: No: nothing is sent
+- **Safe to retry**: Yes, with a usable URL
 - **Note**: thrown when the request is built, so the first call that needs the gateway fails with it. The Android SDK throws it from `Environment.DEVELOPMENT` and `initialize` instead, before any call
 
 ## Payment Errors (PAYMENT_XXX)
@@ -190,6 +225,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Let the user try again or pick another method
   - Test Apple Pay on a device with an Apple Pay sandbox tester account, not in the Simulator
+- **A charge may exist**: No: the wallet failed before the charge was sent
+- **Safe to retry**: Yes: the user can try the wallet again or pay another way
 - **Note**: a charge that fails after the token was read keeps the code of its own failure. On Android the same code covers a Google Pay error, empty payment data and a Google Pay token the SDK cannot parse, and also a Google Pay set up wrongly for the app, which on iOS is `PAYMENT_004` (see there)
 
 ### PAYMENT_004: Payment Method Unavailable
@@ -201,6 +238,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - The sheet could not be shown: the Apple Pay capability or the merchant ID is missing from the app
 - **Developer Action**:
   - Hide the Apple Pay button and offer another method; check the entitlement when it happens on a device that has Apple Pay
+- **A charge may exist**: No
+- **Safe to retry**: Not on this device: hide the wallet button and offer another method
 - **Note**: a wallet set up wrongly for the app differs between the platforms. On iOS the sheet then cannot be shown, which is this code; on Android Google Pay answers with an error, which is `PAYMENT_003`. The Android SDK uses this code only when Google Pay itself cannot be used
 
 ### PAYMENT_006: Charge Failed
@@ -214,6 +253,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Read the charge on `GopaySDKError.chargeState`; its `failReason`, when the gateway gives one, is also in the message
   - Inform the user and offer another payment method
   - Create a new payment to try again: a payment is charged once, so a retry means a new `payment_id`
+- **A charge may exist**: Yes: the charge exists and is `FAILED`
+- **Safe to retry**: Not on this payment: create a new payment to try again
 - **Note**: thrown by both SDKs since 2.1; `chargeState` is set on `PAYMENT_006` and `PAYMENT_007`, and the Android SDK exposes the same field
 
 ### PAYMENT_007: Charge Timeout
@@ -225,6 +266,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Not a failed payment: the gateway may still decide it. Do not offer a new payment right away
   - Read the charge as last read on `GopaySDKError.chargeState`, then `getChargeState()` again, or call `awaitChargeState()` again, or wait for the notification GoPay sends your backend (`notification_url`), which the GoPay guide treats as the authoritative signal
+- **A charge may exist**: Yes: the charge exists and is still undecided
+- **Safe to retry**: Do not charge again: keep reading the state, or wait for the notification to your backend
 - **Note**: thrown by both SDKs since 2.1 and not reported through `errorCallback` on either platform, see the rule at the top. The read on the deadline decides: a charge still undecided there is this code, one that moved is handled as that state
 
 ### PAYMENT_008: Verification Already In Progress
@@ -234,6 +277,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - `handle3dsVerification` invoked while a verification sheet is open
 - **Developer Action**:
   - Await the in-flight verification before starting another
+- **A charge may exist**: Not from this call, refused before anything was sent; the verification already running belongs to a charge that exists
+- **Safe to retry**: Yes, after the running verification ends
 
 ### PAYMENT_009: Apple Pay Sheet Already In Progress
 - **Case**: `paymentApplePayInProgress`
@@ -242,6 +287,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - `chargeWithApplePay` invoked twice, e.g. from a double tap
 - **Developer Action**:
   - Disable the pay button while a charge is in flight
+- **A charge may exist**: Not from this call, refused before the sheet; the sheet already up may still end in a charge
+- **Safe to retry**: Yes, after the running call ends
 - **Note**: used only for a sheet that is already up, never for a wallet failure (see `PAYMENT_003` and `PAYMENT_004`)
 
 ### PAYMENT_010: Verification Unreachable
@@ -259,6 +306,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Charge again to obtain a fresh redirect URL
   - A presentation that was refused can be retried as soon as the screen is free
   - A hand-off nobody took usually means the banking app is not installed; offer the user another way to authorize
+- **A charge may exist**: Yes: the challenge comes after the charge was sent, so the charge exists, unverified
+- **Safe to retry**: Read the charge state first; charge again for a fresh redirect URL only when it did not go through
 - **Note**: when the page answered with an error status, `httpStatus` carries it. The refused
   presentation is an iOS-only cause: UIKit will not present while the previous screen is still
   animating away, and the Android activity has no such window. The Android SDK reports the same
@@ -274,6 +323,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Developer Action**:
   - Not a failed payment, and not necessarily one that did not happen: read `getChargeState()` before offering the payment again. A 3DS challenge may have been answered
   - When there is no charge (`NETWORK_002`, HTTP 404) or it did not go through, let the user pick a method again
+- **A charge may exist**: From the 3DS screen, yes: the charge exists and may have been authorized. From the wallet sheet, no
+- **Safe to retry**: Read the charge state first; with no charge, let the user pick a method again
 - **Note**: cancelling the task that awaits the call is not this code, see Cancellation below. Not reported through `errorCallback`, see the rule at the top. The Android SDK reports the same code for Google Pay and its 3DS screen
 
 ## Validation Errors (VALIDATION_XXX)
@@ -288,6 +339,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - `awaitChargeState()` called with an `interval` or `initialTimeout` that is not positive; nothing is sent
 - **Developer Action**:
   - Validate before calling, and drive the submit button from `GopayCardForm`'s `isValid` binding
+- **A charge may exist**: No: nothing is sent
+- **Safe to retry**: Yes, with valid input
 - **Note**: the Android SDK adds one cause of its own: a card charge helper called without `browserData` and without an `activity`, since it derives the device's browser data from the latter. On iOS the helpers derive it from the device on their own
 
 ## Internal Errors (INTERNAL_XXX)
@@ -301,6 +354,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - No view controller could be found to present the 3DS screen from
 - **Developer Action**:
   - Enable `enableDebugLogging` and report the message
+- **A charge may exist**: From the encryption or the token request, no: both fail before a charge is sent. From the 3DS screen failing to start, the charge exists already
+- **Safe to retry**: Yes for the encryption and the token request; for the 3DS screen, read the charge state first
 
 ### INTERNAL_003: Decoding
 - **Case**: `decoding`
@@ -309,6 +364,9 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Gateway returned a payload shape the SDK does not expect
 - **Developer Action**:
   - Check that the SDK version matches the gateway's API version
+  - When it was the browser data fetch a charge runs first, the charge itself was not sent
+- **A charge may exist**: Yes, when the call was a charge: the gateway answered and only its answer could not be read
+- **Safe to retry**: Read the charge state first when the call was a charge; any other call can be retried
 - **Note**: a new value in one of the response enums is not a decoding error: it decodes as `unknown` and the original value goes to the debug log
 
 ## Cancellation

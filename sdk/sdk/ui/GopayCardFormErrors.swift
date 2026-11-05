@@ -10,8 +10,11 @@ internal struct GopayCardFormErrors: Equatable {
     enum Mode: Equatable {
         /// Never show inline errors (host-driven display).
         case hidden
-        /// Show a field's error as soon as it has been edited and holds non-empty, invalid content.
-        case live
+        /// Show a field's error once the user is done with it: it holds non-empty, invalid content
+        /// and is typed out (as many digits as it takes), or the user has left it, or a submit ran
+        /// since the form was last emptied. A field still being typed shows nothing, and an empty
+        /// one never does. The Android `CardFormErrors` applies the same rule.
+        case live(submitAttempted: Bool)
         /// Show errors only once `attempted` is `true` (e.g. after a submit tap). Empty required
         /// fields surface the "required" message; non-empty invalid fields surface the pattern one.
         case onSubmit(attempted: Bool)
@@ -30,15 +33,21 @@ internal struct GopayCardFormErrors: Equatable {
         mode: Mode,
         cardNumberEdited: Bool,
         expirationEdited: Bool,
-        cvvEdited: Bool
+        cvvEdited: Bool,
+        cardNumberWasLeft: Bool,
+        expirationWasLeft: Bool,
+        cvvWasLeft: Bool
     ) {
-        func message(edited: Bool, isEmpty: Bool, isValid: Bool, pattern: String) -> String? {
+        func message(
+            edited: Bool, isEmpty: Bool, isValid: Bool, isTypedOut: Bool, left: Bool, pattern: String
+        ) -> String? {
             switch mode {
             case .hidden:
                 return nil
-            case .live:
-                // Live: never nag about an empty field, only about invalid content being typed.
-                guard edited, !isEmpty, !isValid else { return nil }
+            case .live(let submitAttempted):
+                // Live: never nag about an empty field, and not about one still being typed
+                // either; only once it is typed out, left, or submitted.
+                guard edited, !isEmpty, !isValid, isTypedOut || left || submitAttempted else { return nil }
                 return pattern
             case .onSubmit(let attempted):
                 guard attempted, !isValid else { return nil }
@@ -50,6 +59,8 @@ internal struct GopayCardFormErrors: Equatable {
             edited: cardNumberEdited,
             isEmpty: data.cardNumber.isEmpty,
             isValid: data.isCardNumberValid,
+            isTypedOut: data.isCardNumberTypedOut,
+            left: cardNumberWasLeft,
             pattern: strings.panErrorPattern
         )
 
@@ -58,6 +69,8 @@ internal struct GopayCardFormErrors: Equatable {
             edited: expirationEdited,
             isEmpty: expirationIsEmpty,
             isValid: data.isExpirationValid,
+            isTypedOut: data.isExpirationTypedOut,
+            left: expirationWasLeft,
             pattern: strings.expErrorPattern
         )
 
@@ -65,6 +78,8 @@ internal struct GopayCardFormErrors: Equatable {
             edited: cvvEdited,
             isEmpty: data.cvv.isEmpty,
             isValid: data.isCvvValid,
+            isTypedOut: data.isCvvTypedOut,
+            left: cvvWasLeft,
             pattern: strings.cvvErrorPattern
         )
     }

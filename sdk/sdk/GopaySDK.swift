@@ -18,9 +18,11 @@ import PassKit
 /// `GopayCardForm`) returns a JWE that the host app forwards to its backend; the merchant backend
 /// calls `POST /cards/tokens`. The mobile SDK never touches that endpoint.
 ///
-/// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6: the
-/// configuration and the card forms are guarded by locks, the sessions live in an actor, and the
-/// API objects are set once in `initialize` and immutable after it.
+/// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6. Every
+/// mutable property is guarded: the configuration, its telemetry and the gateway objects made from
+/// it by `configLock`, replaced together by each ``initialize(with:)``; the card forms by
+/// `cardFormDataLock`; the sessions live in an actor. The two test hooks, `makeTelemetry` and
+/// `warnSink`, are set by tests before the SDK is used and by nothing else.
 public class GopaySDK: @unchecked Sendable {
 
     /// The current version of the SDK.
@@ -49,17 +51,10 @@ public class GopaySDK: @unchecked Sendable {
     /// Written by ``initialize(with:)`` on whatever thread the host calls it from and read by
     /// ``report(_:paymentId:)`` on whatever executor a failing call ends on, so both go through
     /// ``configLock``.
-    public private(set) var config: GopaySDKConfig? {
-        get {
-            configLock.lock()
-            defer { configLock.unlock() }
-            return storedConfig
-        }
-        set {
-            configLock.lock()
-            defer { configLock.unlock() }
-            storedConfig = newValue
-        }
+    public var config: GopaySDKConfig? {
+        configLock.lock()
+        defer { configLock.unlock() }
+        return storedConfig
     }
     private var storedConfig: GopaySDKConfig?
     private let configLock = NSLock()
@@ -75,15 +70,32 @@ public class GopaySDK: @unchecked Sendable {
     private var storedTelemetry = Telemetry.disabled
 
     /// How ``initialize(with:)`` makes the telemetry for a configuration. Replaced in tests, which
-    /// catch the uploads instead of sending them, like ``warnSink``.
+    /// catch the uploads instead of sending them, like ``warnSink``; set before the SDK is used.
     var makeTelemetry: (GopaySDKConfig) -> Telemetry = { Telemetry(config: $0) }
 
-    /// Async HTTP client used by the per-payment session API layer.
-    private var asyncClient: AsyncHTTPClient?
-    /// Unauthenticated token endpoint used to acquire payment-scoped JWTs.
-    private var authAPI: AuthAPI?
-    /// Shareable-key endpoints: the public key, and the browser data every charge completes itself with.
-    private var publicAPI: PublicAPI?
+    /// What the SDK talks to the gateway through, made from one configuration.
+    private struct Gateway {
+        /// Async HTTP client used by the per-payment session API layer.
+        let client: AsyncHTTPClient
+        /// Unauthenticated token endpoint used to acquire payment-scoped JWTs.
+        let authAPI: AuthAPI
+        /// Shareable-key endpoints: the public key, and the browser data every charge completes
+        /// itself with.
+        let publicAPI: PublicAPI
+    }
+
+    /// Guarded by ``configLock`` and replaced together with the config it was made from, so a call
+    /// that reads both while another thread initializes again gets the old pair or the new one.
+    private var storedGateway: Gateway?
+
+    /// The configuration and the gateway made from it, read together under ``configLock``; `nil`
+    /// before ``initialize(with:)``.
+    private var configured: (config: GopaySDKConfig, gateway: Gateway)? {
+        configLock.lock()
+        defer { configLock.unlock() }
+        guard let config = storedConfig, let gateway = storedGateway else { return nil }
+        return (config, gateway)
+    }
     /// Registry of live payment sessions keyed by `payment_id`. Supports concurrent payments.
     private let sessionRegistry = SessionRegistry()
 
@@ -91,11 +103,24 @@ public class GopaySDK: @unchecked Sendable {
     /// Entries are removed after a successful ``submitCardForm(formId:)``, when the form
     /// disappears, or via ``clearCardFormData(formId:)`` — SAD must not outlive its use
     /// (PCI DSS 4.0.1, req. 3.3.1). `private(set)` so tests can verify the cleanup.
+    ///
+    /// The card under a form ID is always the one of the form registered under it: a form that
+    /// another one under the same ID has replaced writes nothing here (see
+    /// ``updateCardFormData(_:formId:owner:)``), so it leaves nothing behind when it goes. The
+    /// Android `CardFormStore` keeps the same rule.
     internal private(set) var internalCardFormData: [String: GopayCardFormData] = [:]
-    /// Tracks the most recently active form ID.
-    internal private(set) var mostRecentFormId: String?
-    /// Guards the two properties above: keystrokes write from the main thread while
-    /// ``submitCardForm(formId:)`` reads and clears from whatever executor resumes it.
+    /// The form IDs holding a card, in order of their last sync: the last one is the form a submit
+    /// without an ID reads. The Android `CardFormStore` keeps the same order.
+    private var syncOrder: [String] = []
+    /// The form a submit without an ID reads: the most recently synced form that is on screen.
+    /// For the tests; the SDK reads ``latestFormId()`` under the lock.
+    internal var mostRecentFormId: String? {
+        cardFormDataLock.lock()
+        defer { cardFormDataLock.unlock() }
+        return latestFormId()
+    }
+    /// Guards the card data, its order and the handlers below: keystrokes write from the main
+    /// thread while ``submitCardForm(formId:)`` reads and clears from whatever executor resumes it.
     private let cardFormDataLock = NSLock()
 
     /// What the SDK can tell a live ``GopayCardForm``, and which form it is.
@@ -127,9 +152,12 @@ public class GopaySDK: @unchecked Sendable {
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopaySDKConfig) {
         let telemetry = makeTelemetry(config)
+        let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
+        let gateway = Self.gateway(client: client, config: config, telemetry: telemetry)
         configLock.lock()
         storedConfig = config
         storedTelemetry = telemetry
+        storedGateway = gateway
         configLock.unlock()
         GopayLocales.registerAll(config.customLocales)
         GopayLocales.setDefaultLocale(config.locale)
@@ -139,13 +167,6 @@ public class GopaySDK: @unchecked Sendable {
         if config.environment.baseURL.isEmpty {
             print("[GopaySDK] The selected environment has no base URL, so every request will fail with CONFIG_006. Pass an absolute https:// URL to .development(baseURL:).")
         }
-        let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
-        self.asyncClient = client
-        self.authAPI = AuthAPI(client: client, telemetry: telemetry)
-        let publicAPI = PublicAPI(
-            client: client, clientId: config.clientId, shareableKey: config.shareableKey, telemetry: telemetry
-        )
-        self.publicAPI = publicAPI
         telemetry.initialized()
         // Resolve the real WebView User-Agent now, off the critical path, so the first charge's
         // browser_data doesn't pay the WKWebView construction + JS round-trip latency.
@@ -168,16 +189,23 @@ public class GopaySDK: @unchecked Sendable {
         networkClient: AsyncHTTPClient? = nil,
         telemetry: Telemetry = .disabled
     ) {
-        self.config = config
+        self.storedConfig = config
         self.storedTelemetry = telemetry
-        let environment = config?.environment ?? GopayEnvironment.sandbox
-        let client = networkClient ?? DefaultNetworkClient(baseURL: environment.baseURL)
-        self.asyncClient = client
-        self.authAPI = AuthAPI(client: client, telemetry: telemetry)
-        let publicAPI = PublicAPI(
-            client: client, clientId: config?.clientId, shareableKey: config?.shareableKey, telemetry: telemetry
+        if let config = config {
+            let client = networkClient ?? DefaultNetworkClient(baseURL: config.environment.baseURL)
+            self.storedGateway = Self.gateway(client: client, config: config, telemetry: telemetry)
+        }
+    }
+
+    /// The gateway objects for `config`, over `client`.
+    private static func gateway(client: AsyncHTTPClient, config: GopaySDKConfig, telemetry: Telemetry) -> Gateway {
+        Gateway(
+            client: client,
+            authAPI: AuthAPI(client: client, telemetry: telemetry),
+            publicAPI: PublicAPI(
+                client: client, clientId: config.clientId, shareableKey: config.shareableKey, telemetry: telemetry
+            )
         )
-        self.publicAPI = publicAPI
     }
 
     // MARK: - Payment sessions
@@ -225,7 +253,7 @@ public class GopaySDK: @unchecked Sendable {
     ) async throws -> PaymentSession {
         // Checked first, as the Android `getInstance()` is: without a config there is no gateway
         // to talk to, whatever the credentials look like.
-        guard config != nil, let authAPI = authAPI, let publicAPI = publicAPI, let client = asyncClient else {
+        guard let gateway = configured?.gateway else {
             throw notInitializedError()
         }
         // Blank, not only empty, as the Android `isBlank` check: a value of white space would
@@ -247,9 +275,9 @@ public class GopaySDK: @unchecked Sendable {
                 paymentId: paymentId,
                 paymentSecret: paymentSecret,
                 scope: scope,
-                authApi: authAPI,
-                publicApi: publicAPI,
-                client: client,
+                authApi: gateway.authAPI,
+                publicApi: gateway.publicAPI,
+                client: gateway.client,
                 callbacks: SessionCallbacks(
                     onClose: { session in await registry.remove(session) },
                     // The session outlives nothing of the SDK that made it: `shared` lives for the
@@ -294,14 +322,6 @@ public class GopaySDK: @unchecked Sendable {
     static let missingDateWarning =
         "GET /cards/public-key came back without a usable Date header, using the device clock for the JWE iat"
 
-    /// One `GET /cards/public-key`, using the `shareable_key` basic-auth scheme: the merchant's
-    /// encryption key and the gateway's clock from the same response. Never cached; the key is
-    /// fetched only when a card is being encrypted.
-    private func fetchPublicKey() async throws -> ServedPublicKey {
-        guard let publicAPI = publicAPI else { throw notInitializedError() }
-        return try await publicAPI.getPublicKey()
-    }
-
     /// Encrypts card data into a JWE for server-side tokenization.
     ///
     /// The mobile SDK never calls `POST /cards/tokens` itself (that endpoint requires merchant
@@ -330,13 +350,16 @@ public class GopaySDK: @unchecked Sendable {
     /// ``encryptCardData(_:)`` without the reporting, the step ``submitCardForm(formId:)`` ends
     /// with.
     private func encrypt(_ cardData: GopayCardData) async throws -> String {
-        guard config != nil else { throw notInitializedError() }
+        // One read: the key and the client ID must come from the same configuration.
+        guard let (config, gateway) = configured else { throw notInitializedError() }
         try validateCardData(cardData)
-        let served = try await fetchPublicKey()
+        // One `GET /cards/public-key` with the shareable key: the merchant's encryption key and
+        // the gateway's clock from the same response. Never cached; fetched only to encrypt.
+        let served = try await gateway.publicAPI.getPublicKey()
         // URLSession's completion API does not notice the task being cancelled, so the fetch
         // finishes anyway. Stopping here keeps a cancelled submitCardForm from wiping the form.
         try Task.checkCancellation()
-        guard let clientId = config?.clientId, !clientId.isEmpty else {
+        guard let clientId = config.clientId, !clientId.isEmpty else {
             throw GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopaySDKConfig to encrypt card data")
         }
         let issuedAt: Date
@@ -370,7 +393,8 @@ public class GopaySDK: @unchecked Sendable {
     /// JWE only once and its payload expires 10 minutes after creation, so a retry needs the user
     /// to confirm the card again.
     ///
-    /// - Parameter formId: The form to read. When `nil`, uses the most recently active form.
+    /// - Parameter formId: The form to read. When `nil`, uses the form on screen that synced last,
+    ///   as the Android SDK does.
     /// - Throws: ``GopaySDKError`` with ``GopaySDKError/Code/sdkNotInitialized`` before
     ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` when no card is
     ///   held or the held one is invalid, and otherwise what ``encryptCardData(_:)`` throws.
@@ -383,7 +407,7 @@ public class GopaySDK: @unchecked Sendable {
         let (resolvedId, stored) = storedCardForm(formId: formId)
         // The form on screen under that ID now, looked up once: a second form registering under
         // the same ID while the key is on its way must not get this submit's telemetry.
-        let owner = resolvedId.flatMap { cardFormOwner(formId: $0) }
+        let owner = resolvedId.flatMap { self.owner(of: $0) }
         // The submit is what the `.onSubmit` validation mode waits for, so the form is told
         // first, before the card is judged: an empty or invalid card then shows its errors, as
         // the Android form shows them on `submitCardForm`.
@@ -434,15 +458,30 @@ public class GopaySDK: @unchecked Sendable {
     private func storedCardForm(formId: String?) -> (String?, GopayCardFormData?) {
         cardFormDataLock.lock()
         defer { cardFormDataLock.unlock() }
-        let resolvedId = formId ?? mostRecentFormId ?? internalCardFormData.keys.first
+        let resolvedId = formId ?? latestFormId()
         return (resolvedId, resolvedId.flatMap { internalCardFormData[$0] })
     }
 
-    /// The owner token of the form registered under `formId`, while that form is on screen.
-    private func cardFormOwner(formId: String) -> AnyObject? {
+    /// The most recently synced form that is still on screen, under ``cardFormDataLock``. A card
+    /// held under an ID nothing is registered under any more is never picked by a submit without
+    /// an ID.
+    private func latestFormId() -> String? {
+        syncOrder.last { registeredOwner($0) != nil }
+    }
+
+    /// The owner token of the form registered under `formId` while that form is on screen: the
+    /// one whose card the SDK holds and whose validity the host's binding shows. A form another
+    /// one under the same ID has replaced is not it. Also what the tests read to sync a card as
+    /// the registered form does.
+    internal func owner(of formId: String) -> AnyObject? {
         cardFormDataLock.lock()
         defer { cardFormDataLock.unlock() }
-        return cardFormHandlers[formId]?.owner
+        return registeredOwner(formId)
+    }
+
+    /// ``owner(of:)`` for the code that already holds ``cardFormDataLock``.
+    private func registeredOwner(_ formId: String) -> AnyObject? {
+        cardFormHandlers[formId]?.owner
     }
 
     /// Registers the wipe a live ``GopayCardForm`` performs on its own fields, and what it does
@@ -484,7 +523,10 @@ public class GopaySDK: @unchecked Sendable {
     /// handler without firing it would leave the PAN and the CVV sitting in that state with
     /// nothing left able to reach them, ready for the next `onAppear` to sync them straight back
     /// into the SDK.
-    internal func unregisterCardFormReset(formId: String, owner: AnyObject) {
+    ///
+    /// - Parameter wipesFields: `false` for a form that stays on screen under another ID: it
+    ///   registers again at once and syncs its card there, as the Android form does.
+    internal func unregisterCardFormReset(formId: String, owner: AnyObject, wipesFields: Bool = true) {
         cardFormDataLock.lock()
         guard let handlers = cardFormHandlers[formId], handlers.owner === owner else {
             cardFormDataLock.unlock()
@@ -492,11 +534,11 @@ public class GopaySDK: @unchecked Sendable {
         }
         cardFormHandlers.removeValue(forKey: formId)
         internalCardFormData.removeValue(forKey: formId)
-        if mostRecentFormId == formId {
-            mostRecentFormId = nil
-        }
+        syncOrder.removeAll { $0 == formId }
         cardFormDataLock.unlock()
-        runOnMain { handlers.reset() }
+        if wipesFields {
+            runOnMain { handlers.reset() }
+        }
     }
 
     /// Runs `work` on the main thread, synchronously when already there.
@@ -530,13 +572,11 @@ public class GopaySDK: @unchecked Sendable {
         let resets: [() -> Void]
         if let id = formId {
             internalCardFormData.removeValue(forKey: id)
-            if mostRecentFormId == id {
-                mostRecentFormId = nil
-            }
+            syncOrder.removeAll { $0 == id }
             resets = cardFormHandlers[id].map { [$0.reset] } ?? []
         } else {
             internalCardFormData.removeAll()
-            mostRecentFormId = nil
+            syncOrder.removeAll()
             resets = cardFormHandlers.values.map(\.reset)
         }
         cardFormDataLock.unlock()
@@ -618,12 +658,17 @@ public class GopaySDK: @unchecked Sendable {
 
     // MARK: - Internals
 
-    /// Internal method to update card form data (called automatically by ``GopayCardForm``).
-    internal func updateCardFormData(_ data: GopayCardFormData, formId: String) {
+    /// Takes the card a ``GopayCardForm`` holds now (called automatically by the form), when
+    /// `owner` is the form registered under `formId`. A form that another one under the same ID
+    /// has replaced is dropped: its card would otherwise overwrite the registered form's, and stay
+    /// in the SDK after it leaves, where the registered form's unregistration could not reach it.
+    internal func updateCardFormData(_ data: GopayCardFormData, formId: String, owner: AnyObject) {
         cardFormDataLock.lock()
         defer { cardFormDataLock.unlock() }
-        self.internalCardFormData[formId] = data
-        self.mostRecentFormId = formId
+        guard registeredOwner(formId) === owner else { return }
+        internalCardFormData[formId] = data
+        syncOrder.removeAll { $0 == formId }
+        syncOrder.append(formId)
     }
 
     /// Runs one public call and reports what it throws, once, before rethrowing it. The public

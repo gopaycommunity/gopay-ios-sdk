@@ -129,7 +129,10 @@ public actor PaymentSession {
 
     /// `GET /payments/{payment_id}`
     public func getStatus() async throws -> PaymentDetails {
-        try await reported { try await api.getPaymentStatus(paymentId: paymentId) }
+        try await reported {
+            try ensureOpen()
+            return try await api.getPaymentStatus(paymentId: paymentId)
+        }
     }
 
     /// `POST /payments/{payment_id}/charge`.
@@ -150,7 +153,7 @@ public actor PaymentSession {
         // Checked before the browser data step, which runs under the shareable key rather than
         // the session's token: a closed session would otherwise still ask the gateway once, and
         // without a shareable key report that key as missing instead of the closure.
-        guard paymentSecret != nil else { throw closedError() }
+        try ensureOpen()
         // A task cancelled before the charge even started fetches nothing and sends nothing.
         try Task.checkCancellation()
         let instrument = request.paymentInstrument
@@ -195,9 +198,15 @@ public actor PaymentSession {
     ///   the transport codes `NETWORK_001`, `NETWORK_004`, `NETWORK_005` or `NETWORK_007` when no
     ///   response came, ``GopaySDKError/Code/authShareableKeyMissing`` when the config has no
     ///   shareable key, or any other code the fetch produced) and the original error as
-    ///   `underlying`.
+    ///   `underlying`; ``GopaySDKError/Code/authPaymentSessionClosed`` on a closed session, before
+    ///   any fetch.
     public func completeBrowserData(_ browserData: BrowserData) async throws -> BrowserData {
-        try await reported { try await fillBrowserData(browserData) }
+        try await reported {
+            // The fetch runs under the shareable key, not the session's token, so without this a
+            // closed session would still send it.
+            try ensureOpen()
+            return try await fillBrowserData(browserData)
+        }
     }
 
     /// ``completeBrowserData(_:)`` without the reporting, the step every charge runs first.
@@ -242,12 +251,16 @@ public actor PaymentSession {
 
     /// ``getChargeState()`` without the reporting, the read ``awaitChargeState(_:)`` repeats.
     func readChargeState() async throws -> ChargePaymentResponse {
-        try await api.getChargeState(paymentId: paymentId)
+        try ensureOpen()
+        return try await api.getChargeState(paymentId: paymentId)
     }
 
     /// `GET /payments/{payment_id}/qr-payment/info`
     public func getQrPaymentInfo(format: QrCodeFormat? = nil) async throws -> QrPaymentDetails {
-        try await reported { try await api.getQrPaymentInfo(paymentId: paymentId, format: format) }
+        try await reported {
+            try ensureOpen()
+            return try await api.getQrPaymentInfo(paymentId: paymentId, format: format)
+        }
     }
 
     /// `GET /payments/{payment_id}/apple-pay/app-info` — the BE-configured Apple Pay request for
@@ -258,14 +271,18 @@ public actor PaymentSession {
 
     /// ``getApplePayInfo()`` without the reporting, the first step of the Apple Pay charge.
     func fetchApplePayInfo() async throws -> GopayApplePayAppInfoResponse {
-        try await api.getApplePayAppInfo(paymentId: paymentId)
+        try ensureOpen()
+        return try await api.getApplePayAppInfo(paymentId: paymentId)
     }
 
     // MARK: - Lifecycle
 
     /// Wipes the in-memory `payment_secret` and JWT and unregisters this session from the SDK
-    /// registry. Idempotent — once the secret is nil, ``reauthenticate()`` throws
-    /// ``GopaySDKError/Code/authPaymentSessionClosed``.
+    /// registry. Idempotent. Every method of a closed session that would send a request throws
+    /// ``GopaySDKError/Code/authPaymentSessionClosed`` before it sends anything, and a token that
+    /// arrives after the close is not kept; the Android SDK does the same.
+    /// ``handle3dsVerification(redirectURL:returnURL:presenting:)`` alone still runs, since it
+    /// sends nothing on the session.
     public func close() async {
         await close(reportsLeave: true)
     }
@@ -306,6 +323,13 @@ public actor PaymentSession {
         GopaySDKError(.authPaymentSessionClosed, message: "PaymentSession for \(paymentId) is closed")
     }
 
+    /// Throws ``GopaySDKError/Code/authPaymentSessionClosed`` once ``close()`` has run. Every
+    /// method that sends a request starts with it, so none of them reaches the gateway on a
+    /// closed session, whichever credentials its request would run under.
+    func ensureOpen() throws {
+        guard paymentSecret != nil else { throw closedError() }
+    }
+
     private func performAuth() async throws -> String {
         guard let secret = paymentSecret else { throw closedError() }
         let response: AccessTokenResponse
@@ -331,6 +355,9 @@ public actor PaymentSession {
                 gatewayError: error.gatewayError
             )
         }
+        // close() may have run while the request was out. The token must not land in a closed
+        // session, which promises to hold nothing.
+        try ensureOpen()
         token = response.accessToken
         tokenExpiresAt = JwtUtils.expirationSeconds(jwt: response.accessToken)
         return response.accessToken

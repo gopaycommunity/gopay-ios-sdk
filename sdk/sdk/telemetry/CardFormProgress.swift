@@ -320,7 +320,7 @@ final class CardFormProgress {
                     Field(rawValue: pair.0) != nil && ErrorCode(rawValue: pair.1) != nil
                 }
             case (.progressList, .string(let text)):
-                // Always all three fields; an empty one is not a state of the form.
+                // Never empty: a summary always names the state of all three fields.
                 return !text.isEmpty && ParamKind.isList(text) { pair in
                     Field(rawValue: pair.0) != nil && FieldState(rawValue: pair.1) != nil
                 }

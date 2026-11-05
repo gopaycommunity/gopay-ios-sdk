@@ -356,6 +356,48 @@ struct CardFormStepTelemetryTests {
         #expect(last.contains(#""submit_requests":0"#), "the second visit counts only itself")
     }
 
+    /// The host's pay button pressed again on the form the SDK emptied after the JWE, with nothing
+    /// typed: the submit wakes a new visit, which ends as never started with every field empty.
+    @Test func aSubmitOnTheFormTheSdkEmptiedAfterTheJweWakesANewVisit() async throws {
+        let probe = TelemetryProbe()
+        let owner = NSObject()
+        let telemetry = probe.telemetry
+        telemetry.cardFormReady(owner: owner)
+        telemetry.cardFormInput(owner: owner, states: card.progressStates)
+        telemetry.cardFormSubmitRequested(owner: owner)
+        telemetry.cardFormSubmitted(owner: owner)
+        telemetry.cardFormCleared(owner: owner)
+        telemetry.cardFormSubmitRequested(owner: owner)
+        telemetry.cardFormUnmounted(owner: owner)
+
+        let ends = summaries(await probe.settledEvents(11))
+        #expect(ends.compactMap { $0["return_value"] as? String } == ["submit: completed", "unmount: never started"])
+        let second = try #require(ends.last?["params"] as? String)
+        #expect(second.contains(#""progress_at_end":"pan:empty,expiry:empty,cvv:empty""#))
+        #expect(second.contains(#""submit_requests":1"#))
+        #expect(second.contains(#""invalid_submit_requests":1"#))
+        #expect(second.contains(#""invalid_submits":1"#))
+    }
+
+    /// `clearCardFormData` after a failed encryption empties the form but does not end the visit
+    /// another way: with nothing typed after it, the visit still ends as `encrypt-error`.
+    @Test func aFailedEncryptionStillEndsTheVisitWhenTheIntegratorEmptiesTheFormAfterIt() async throws {
+        let probe = TelemetryProbe()
+        let owner = NSObject()
+        let telemetry = probe.telemetry
+        telemetry.cardFormReady(owner: owner)
+        telemetry.cardFormInput(owner: owner, states: card.progressStates)
+        telemetry.cardFormSubmitRequested(owner: owner)
+        telemetry.cardFormEncryptFailed(owner: owner)
+        telemetry.cardFormCleared(owner: owner)
+        telemetry.cardFormUnmounted(owner: owner)
+
+        let ends = summaries(await probe.settledEvents(7))
+        #expect(ends.compactMap { $0["return_value"] as? String } == ["encrypt-error: completed"])
+        let summary = try #require(ends.first?["params"] as? String)
+        #expect(summary.contains(#""progress_at_end":"pan:empty,expiry:empty,cvv:empty""#))
+    }
+
     /// A form nobody touched, or one only submitted empty, never started; its summary still
     /// carries the states it ended with.
     @Test func callsAnUntouchedFormNeverStartedWithItsStates() async throws {

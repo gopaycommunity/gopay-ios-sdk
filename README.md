@@ -218,7 +218,7 @@ struct CheckoutView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // .live shows localized errors as the user types.
+            // .live shows a field's localized error once the user is done with it.
             GopayCardForm(validation: .live, isValid: $isCardValid)
             Button("Pay") { Task { status = await pay() } }
                 .disabled(!(isCardValid ?? false))
@@ -669,7 +669,8 @@ let jwe = try await GopaySDK.shared.encryptCardData(
 pass the same `formId` to `submitCardForm(formId:)`). This is the card form model both SDKs share
 since 2.2: the form holds the card under its `formId`, `GopaySDK.shared.submitCardForm(formId:)`
 turns it into a JWE and `clearCardFormData(formId:)` drops it, with the same three `validation`
-modes on both platforms.
+modes on both platforms. Keep one live form per `formId`: of two on screen under the same ID, only
+the one that appeared last is read, so a sheet over a screen with a form needs its own ID.
 
 **Autofill is off unless you turn it on.** The card number and the expiration declare no content
 type, so iOS does not offer a saved card for them, and no field is autocorrected or spell-checked.
@@ -684,8 +685,12 @@ The SDK clears the form's card data from memory after a successful `submitCardFo
 the form disappears — so call `submitCardForm()` while the form is on screen and forward the
 JWE promptly. **The visible fields are emptied too**: after a successful `submitCardForm()` the
 form returns to its pristine state, so the user sees an empty card form and your own UI should
-move on rather than wait for further input. A failed encryption leaves everything as the user
-typed it, since nothing has been authorized yet.
+move on rather than wait for further input. Treat the moment the JWE exists as the start of the
+payment: switch the screen to a "payment in progress" state, with the pay button disabled and the
+form out of reach, and keep it there until the charge is decided. The emptied form is not an
+invitation to type the card again, and the card cannot be shown again: the SDK keeps no copy of
+it. A failed encryption leaves everything as the user typed it, since nothing has been authorized
+yet.
 
 The gateway accepts each JWE **once** and its payload expires 10 minutes after creation; to retry
 a failed charge, have the user confirm the card again. A charge that never reached the gateway did
@@ -908,7 +913,7 @@ with the `validation` parameter:
 GopayCardForm(locale: "cs", validation: .onSubmit(attempted: $attemptedSubmit), isValid: $isCardValid)
 // …then in your submit action: try await GopaySDK.shared.submitCardForm()
 
-// Or validate live as the user types:
+// Or show a field's error as soon as the user is done with it:
 GopayCardForm(locale: "cs", validation: .live, isValid: $isCardValid)
 ```
 
@@ -918,7 +923,11 @@ before it judges the card, so an empty or invalid card shows its errors on the s
 throws `VALIDATION_007`; you can also set it yourself, e.g. when your button is tapped before you
 call the SDK. The form sets `attempted` back to `false` whenever it empties its fields, e.g. after a
 successful `submitCardForm()`, so the emptied fields do not light up as required. `.live` shows a
-field's error once it holds non-empty, invalid content. The default is `.hidden` — the form
+field's error once the user is done with it, not while they are still typing: when the field holds
+as many digits as it takes and still fails (a card number that fails its check digit, a past
+date), when they leave it with something in it, or once `submitCardForm()` has been called for
+the form. An empty field is never flagged in `.live`; the "required" message is `.onSubmit`'s. The
+Android form follows the same rule. The default is `.hidden` — the form
 renders nothing and you display errors yourself from the resolved locale:
 
 ```swift
@@ -980,7 +989,7 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `AUTH_010` | `payment_id` / `payment_secret` rejected by `/oauth2/token` (HTTP 400, 401 or 403 only) |
 | `AUTH_011` | `clientId` / `shareableKey` missing for a public-endpoint call, including the browser data fetch a charge runs first |
 | `AUTH_012` | A session for this `payment_id` already exists |
-| `AUTH_013` | Operation on a closed session |
+| `AUTH_013` | A call on a session after `close()`, refused before anything is sent; `handle3dsVerification` still runs |
 | `PAYMENT_003` | Apple Pay produced no usable payment token (unreadable, or empty as in the iOS Simulator) |
 | `PAYMENT_004` | Apple Pay cannot be used: the device cannot pay with it, no supported card network, or the sheet could not be shown |
 | `PAYMENT_006` | `awaitChargeState` only: the charge ended `failed`; the charge is in `chargeState`; the message is `Charge failed: <fail_reason>` when the gateway sends a `chargeState.failReason`, otherwise only `Charge failed` |
@@ -1100,6 +1109,37 @@ same arguments and the same codes. The response types stay platform-specific
 arguments: Android takes an `activity` where the wallet, the 3DS screen and the automatic
 polling need one, iOS finds the presenting view controller itself. The errors are the shared
 code contract above, with one rule for `errorCallback` on both.
+
+---
+
+## What changed in 2.5
+
+Nothing was removed or renamed, but a few behaviours moved, and an integration written against
+2.4 may notice:
+
+- `.live` validation shows a field's error once the customer is done with it: when it holds as
+  many digits as it takes and still fails, when they leave it, or once `submitCardForm()` was
+  called for the form. A field still being typed shows nothing; until 2.4 the error showed from
+  the first digit. The Android form follows the same rule.
+- The card number must pass the Luhn check, as on Android. 16 digits that fail it, such as
+  `4444 4444 4444 4449`, are invalid: `isValid` stays `false` and the focus stays in the field.
+  The lengths of the fields did not change.
+- A closed `PaymentSession` refuses every call that would send a request with `AUTH_013` before
+  anything goes out, `completeBrowserData`, `getStatus`, `getQrPaymentInfo`, `awaitChargeState`
+  and the wallet calls included, and a token that arrives after `close()` is not kept.
+  `handle3dsVerification` still runs.
+- One live form per `formId`. Of two forms on screen under the same ID, only the one that
+  appeared last syncs its card to the SDK and writes `isValid`; the other one is ignored until it
+  appears again. Sharing one `formId` between a screen and a sheet over it is not supported. A
+  form handed a new `formId` while on screen moves its registration and its card to the new ID.
+- `submitCardForm()` without a `formId` reads the form on screen that synced last, as on Android.
+- The public models, errors and options are `Sendable`, so a Swift 6 app calls the SDK from its
+  own actor. `errorCallback` and the `onStateChange` and `onActionRequired` callbacks of
+  `AwaitChargeOptions` are `@Sendable`: they run on whatever thread the SDK is on, and a closure
+  that changes a captured local `var` no longer compiles. Collect into a lock-protected object or
+  hand the value to an actor instead.
+- `ERROR_CODES.md` says for every code whether a charge may exist after it and whether the call
+  is safe to retry.
 
 ---
 
@@ -1281,12 +1321,14 @@ when the card became complete; which fields were in error, with which code (`req
 field, `pattern` for anything else the form refuses) and what raised it (`submit`, `input` or
 `blur`); when your code asked for the JWE and whether the card was complete then; and, when the
 visit ends, a summary with counts and how it ended. A visit ends with the JWE (`submit`, with the
-card as it was before the SDK empties the form; typing into the form again starts a new visit),
-or with the form leaving the screen (`encrypt-error` when the last submit failed to encrypt and
-nothing was typed after it, `unmount` otherwise). These steps carry only states (`empty`,
-`partial`, `complete`), codes, yes or no, counts, and times counted from the form appearing. That is the whole of it: no field contents, no keystrokes, no lengths or digit
-counts, no timing of individual fields, nothing derived from the card data, not even the length of
-the encrypted payload.
+card as it was before the SDK empties the form; typing into the form again, or submitting it,
+starts a new visit with its own summary), or with the form leaving the screen (`encrypt-error`
+when the last submit failed to encrypt and nothing was typed after it, `unmount` otherwise). The
+times of a second visit, a second card after a declined one, still count from when the form
+appeared, not from the start of that visit. These steps carry only states (`empty`, `partial`,
+`complete`), codes, yes or no, counts, and times counted from the form appearing. That is the
+whole of it: no field contents, no keystrokes, no lengths or digit counts, no timing of individual
+fields, nothing derived from the card data, not even the length of the encrypted payload.
 
 **What it never contains.** Card numbers, CVV, the encrypted card payload, card tokens, wallet
 payment data, `payment_secret`, access tokens, credentials, 3DS or ACS redirect parameters, and

@@ -87,6 +87,94 @@ struct CardFormResetTests {
         #expect(attempted.value == false)
     }
 
+    // MARK: Two forms under one ID
+
+    /// Two forms under the same ID share the host's binding, as a navigation transition or a
+    /// `key()` churn produces. Only the registered one, the newer, writes it: the replaced one
+    /// neither reports what is typed into it nor sets it back to invalid when it leaves.
+    @Test func onlyTheRegisteredFormWritesTheSharedBinding() {
+        GopaySDK.shared.clearCardFormData()
+        let validity = Box<Bool?>(nil)
+        let older = host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
+        let newer = host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
+        defer {
+            older.isHidden = true
+            newer.isHidden = true
+        }
+
+        validity.value = true
+        let olderNumber = textFields(in: older)[0]
+        let end = NSRange(location: 0, length: 0)
+        _ = olderNumber.delegate?.textField?(olderNumber, shouldChangeCharactersIn: end, replacementString: "4444")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(validity.value == true, "the replaced form's edit reached the binding")
+        #expect(GopaySDK.shared.internalCardFormData["reset-shared"]?.cardNumber == "")
+
+        older.rootViewController = nil
+        older.isHidden = true
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(validity.value == true, "the replaced form's departure reached the binding")
+
+        // The registered form leaving does leave the binding invalid.
+        newer.rootViewController = nil
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(validity.value == false)
+    }
+
+    // MARK: A new ID while on screen
+
+    /// A host hands the form another ID while it stays on screen, one per payment for instance.
+    /// The registration and the card move with it: what is typed after the change reaches the SDK
+    /// under the new ID, and nothing stays under the old one. The Android form does the same.
+    @Test func aNewFormIdMovesTheRegistrationAndTheCard() {
+        GopaySDK.shared.clearCardFormData()
+        let host = FormIdHost()
+        host.id = "reset-id-first"
+        let window = self.host(FormIdHostView(host: host))
+        defer { window.isHidden = true }
+        let cardNumber = textFields(in: window)[0]
+        func type(_ text: String) {
+            let end = NSRange(location: (cardNumber.text ?? "").utf16.count, length: 0)
+            _ = cardNumber.delegate?.textField?(cardNumber, shouldChangeCharactersIn: end, replacementString: text)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        type("4444")
+        #expect(GopaySDK.shared.internalCardFormData["reset-id-first"]?.cardNumber == "4444")
+
+        host.id = "reset-id-second"
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(GopaySDK.shared.internalCardFormData["reset-id-first"] == nil)
+        #expect(GopaySDK.shared.internalCardFormData["reset-id-second"]?.cardNumber == "4444", "the card moves along")
+        #expect(cardNumber.text == "4444", "the fields are not emptied")
+
+        type("4")
+        #expect(GopaySDK.shared.internalCardFormData["reset-id-second"]?.cardNumber == "44444")
+        #expect(GopaySDK.shared.mostRecentFormId == "reset-id-second")
+    }
+
+    /// The host hands the form a new ID and takes it off the screen in the same update, so the
+    /// form leaves before it has moved over. It still leaves nothing under the ID it was
+    /// registered under.
+    @Test func aFormLeavingAsItsIdChangesTakesItsCardFromTheOldId() {
+        GopaySDK.shared.clearCardFormData()
+        let host = FormIdHost()
+        host.id = "reset-gone-first"
+        let window = self.host(FormIdHostView(host: host))
+        defer { window.isHidden = true }
+        let cardNumber = textFields(in: window)[0]
+        let end = NSRange(location: 0, length: 0)
+        _ = cardNumber.delegate?.textField?(cardNumber, shouldChangeCharactersIn: end, replacementString: "4444")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(GopaySDK.shared.internalCardFormData["reset-gone-first"]?.cardNumber == "4444")
+
+        host.id = "reset-gone-second"
+        host.isShown = false
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(GopaySDK.shared.internalCardFormData["reset-gone-first"] == nil)
+        #expect(GopaySDK.shared.owner(of: "reset-gone-first") == nil)
+        #expect(GopaySDK.shared.internalCardFormData["reset-gone-second"] == nil)
+    }
+
     // MARK: The submit switches `.onSubmit` on
 
     /// A live `.onSubmit` form registers what a submit does to it: the binding goes to `true`,
@@ -119,6 +207,22 @@ struct CardFormResetTests {
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
 
         #expect(attempted.value == false)
+    }
+}
+
+/// The ID a host hands the form, which the test changes while the form is on screen.
+@MainActor
+private final class FormIdHost: ObservableObject {
+    @Published var id = ""
+    @Published var isShown = true
+}
+
+private struct FormIdHostView: View {
+    @ObservedObject var host: FormIdHost
+    var body: some View {
+        if host.isShown {
+            GopayCardForm(formId: host.id)
+        }
     }
 }
 

@@ -106,10 +106,8 @@ struct FormattedTextField: UIViewRepresentable {
     var isFocused: Bool = false
     /// Whether another field of the form takes the focus this field is giving up. The field then
     /// does not resign on its own: the other field's `becomeFirstResponder()` moves the focus in
-    /// one step, so the keyboard stays up and a `.medium` sheet keeps its height. Resigning
-    /// first, in a turn of its own, took the keyboard down for a moment and let the sheet drop
-    /// before the next field brought it back.
-    var handsFocusOn: Bool = false
+    /// one step, so the keyboard stays up and a `.medium` sheet keeps its height.
+    var handsFocusToAnotherField: Bool = false
     var onFocusChange: (Bool) -> Void = { _ in }
     /// Called right after `onFocusChange(false)` with a check that answers, whenever it is asked,
     /// whether the field is still on a screen the user is looking at: in a window, that window
@@ -182,7 +180,7 @@ struct FormattedTextField: UIViewRepresentable {
         if shouldBeFocused, !textField.isFirstResponder {
             textField.becomeFirstResponder()
         } else if !shouldBeFocused, textField.isFirstResponder {
-            if parent.handsFocusOn, !afterHandover {
+            if parent.handsFocusToAnotherField, !afterHandover {
                 DispatchQueue.main.async { [weak textField, weak coordinator] in
                     guard let textField, let coordinator else { return }
                     settleFocus(of: textField, coordinator: coordinator, afterHandover: true)
