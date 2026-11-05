@@ -1,3 +1,24 @@
+# 2.5.0 (2026-11-05)
+
+
+### Bug Fixes
+
+* point the demo at the merchant ID GoPay registered for Apple Pay GPMOB-188 0972296
+* print GopayCardData masked GPMOB-148 df70281
+* settle the Sonar findings on the card form telemetry GPMOB-191 6f40abb
+* settle the Sonar findings on the privacy cover GPMOB-148 0175808
+
+
+### Features
+
+* add client_time and unsent to every event, number them per process GPMOB-191 727652e
+* cover the card form in the app switcher and during a recording GPMOB-148 faed501
+* flag a field only once the customer is done with it, and refuse every call on a closed session GPMOB-192 ed3c945
+* keep the card form out of autofill by default GPMOB-148 8fccaa2
+* report the card form steps as the browser SDK does GPMOB-191 48906c8
+* Sendable models, one-step focus hand-over and Luhn in the card form GPMOB-192 ba49d58
+* warn once when a replaced card form keeps syncing under its ID GPMOB-192 ec15670, closes #35
+
 # 2.4.0 (2026-10-26)
 
 
