@@ -245,7 +245,7 @@ extension SessionNetworkTests {
 
     @Test func anEncryptionCancelledWhileTheKeyFetchFailsReportsNothing() async throws {
         StubURLProtocol.reset(delay: 0.3, headers: ["Date": Self.serverDateHeader]) { _ in (500, Data()) }
-        var reported: [Error] = []
+        let reported = ReportedErrors()
         let config = GopaySDKConfig(
             environment: .development(baseURL: "https://stub.test/"),
             clientId: "c",
@@ -264,13 +264,13 @@ extension SessionNetworkTests {
         encryption.cancel()
 
         await #expect(throws: CancellationError.self) { try await encryption.value }
-        #expect(reported.isEmpty)
+        #expect(reported.all.isEmpty)
     }
 
     @Test func aSubmitCancelledDuringTheKeyFetchKeepsTheCardAndReportsNothing() async throws {
         let key = try TestEncryptionKey()
         serveKey(key, headers: ["Date": Self.serverDateHeader], delay: 0.3)
-        var reported: [Error] = []
+        let reported = ReportedErrors()
         let config = GopaySDKConfig(
             environment: .development(baseURL: "https://stub.test/"),
             clientId: "c",
@@ -294,6 +294,6 @@ extension SessionNetworkTests {
 
         await #expect(throws: CancellationError.self) { try await submit.value }
         #expect(sdk.internalCardFormData["f1"] != nil)
-        #expect(reported.isEmpty)
+        #expect(reported.all.isEmpty)
     }
 }

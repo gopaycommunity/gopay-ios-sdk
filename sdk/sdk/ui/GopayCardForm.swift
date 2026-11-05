@@ -39,10 +39,39 @@ internal struct GopayCardFormData {
         return isCardNumberValid && isExpirationValid && isCvvValid
     }
     
-    /// Returns true if the card number is valid (16 digits).
+    /// Returns true if the card number has 16 digits and passes the Luhn check, as on Android.
     var isCardNumberValid: Bool {
-        let digits = cardNumber.filter { $0.isNumber }
-        return digits.count == 16
+        Self.completesCardNumber(cardNumber.filter { $0.isNumber })
+    }
+
+    /// Whether the card number holds as many digits as it takes, 16, whatever the check says.
+    var isCardNumberTypedOut: Bool { cardNumber.filter { $0.isNumber }.count == 16 }
+    /// Whether the expiration holds its four digits, whatever the date says.
+    var isExpirationTypedOut: Bool { expirationMonth.count == 2 && expirationYear.count == 2 }
+    /// Whether the CVV holds its three digits.
+    var isCvvTypedOut: Bool { cvv.count == 3 }
+
+    /// Whether typing these digits finishes the card number, so the focus moves on to the
+    /// expiration: 16 digits that pass the Luhn check, as on Android. A mistyped number keeps the
+    /// focus where the user can fix it.
+    static func completesCardNumber(_ digits: String) -> Bool {
+        digits.count == 16 && passesLuhn(digits)
+    }
+
+    /// The Luhn (mod 10) check every payment card number carries in its last digit, so a mistyped
+    /// number is caught in the form rather than by the gateway.
+    static func passesLuhn(_ digits: String) -> Bool {
+        var sum = 0
+        for (index, character) in digits.reversed().enumerated() {
+            guard let digit = character.wholeNumberValue else { return false }
+            if index % 2 == 1 {
+                let doubled = digit * 2
+                sum += doubled > 9 ? doubled - 9 : doubled
+            } else {
+                sum += digit
+            }
+        }
+        return sum % 10 == 0
     }
     
     /// Returns true if the expiration date is valid and in the future.
@@ -85,7 +114,7 @@ internal struct GopayCardFormData {
 }
 
 /// Controls whether and when ``GopayCardForm`` renders localized inline validation errors.
-public enum GopayCardFormValidationDisplay {
+public enum GopayCardFormValidationDisplay: Sendable {
     /// Do not render inline errors — display is host-driven (default). Read the localized strings
     /// via `GopaySDK.shared.currentLocaleStrings(...)` to show your own.
     case hidden
@@ -170,9 +199,12 @@ public struct GopayCardForm: View {
     /// column's input below its neighbour's.
     @State private var rowLabelHeight: CGFloat = 0
 
-    @State private var isCardNumberFocused: Bool = false
-    @State private var isExpirationFocused: Bool = false
-    @State private var isCvvFocused: Bool = false
+    /// The fields, for the one holding the keyboard.
+    private enum FocusedField { case cardNumber, expiration, cvv }
+
+    /// The field holding the keyboard as the form knows it, `nil` for none. One value for the
+    /// three fields, so a field giving the focus up can tell whether another one takes it.
+    @State private var focusedField: FocusedField?
 
     // Tracks whether a field has been edited yet, so errors don't show on a pristine form.
     @State private var cardNumberEdited: Bool = false
@@ -442,9 +474,10 @@ public struct GopayCardForm: View {
                             GopaySDK.shared.updateCardFormData(data, formId: formId)
                             updateValidationBinding()
                             reportInput()
-                            if newDigits.count == 16 {
-                                isCardNumberFocused = false
-                                isExpirationFocused = true
+                            // Not while a capture keeps the form refusing input: the focus
+                            // would come back to a field under the cover.
+                            if !refusesInput, GopayCardFormData.completesCardNumber(newDigits) {
+                                focusedField = .expiration
                             }
                         }
                     ),
@@ -455,13 +488,10 @@ public struct GopayCardForm: View {
                     accessibilityLabel: hiddenLabel(localeStrings.panLabel),
                     textContentType: cardNumberContentType,
                     refusesInput: refusesInput,
-                    isFocused: isCardNumberFocused,
+                    isFocused: focusedField == .cardNumber,
+                    handsFocusOn: handsFocusOn(from: .cardNumber),
                     onFocusChange: { isFocused in
-                        isCardNumberFocused = isFocused
-                        if isFocused {
-                            isExpirationFocused = false
-                            isCvvFocused = false
-                        }
+                        focus(.cardNumber, isFocused)
                     },
                     onLeave: { isOnActiveScreen in
                         reportLeft(.pan, edited: cardNumberEdited, isOnActiveScreen: isOnActiveScreen)
@@ -491,9 +521,8 @@ public struct GopayCardForm: View {
                                 GopaySDK.shared.updateCardFormData(data, formId: formId)
                                 updateValidationBinding()
                                 reportInput()
-                                if newDigits.count == 4 {
-                                    isExpirationFocused = false
-                                    isCvvFocused = true
+                                if !refusesInput, newDigits.count == 4 {
+                                    focusedField = .cvv
                                 }
                             }
                         ),
@@ -504,14 +533,12 @@ public struct GopayCardForm: View {
                         accessibilityLabel: hiddenLabel(localeStrings.expLabel),
                         textContentType: expirationContentType,
                         refusesInput: refusesInput,
-                        isFocused: isExpirationFocused,
+                        isFocused: focusedField == .expiration,
+                        handsFocusOn: handsFocusOn(from: .expiration),
                         onFocusChange: { isFocused in
-                            isExpirationFocused = isFocused
-                            if isFocused {
-                                isCardNumberFocused = false
-                                isCvvFocused = false
-                            } else if data.expirationMonth.count == 1,
-                                      let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
+                            focus(.expiration, isFocused)
+                            if !isFocused, data.expirationMonth.count == 1,
+                               let month = Int(data.expirationMonth), month >= 1 && month <= 12 {
                                 // Pad a single-digit month with a leading zero once the field loses focus.
                                 data.expirationMonth = String(format: "%02d", month)
                                 GopaySDK.shared.updateCardFormData(data, formId: formId)
@@ -550,13 +577,10 @@ public struct GopayCardForm: View {
                         accessibilityLabel: hiddenLabel(localeStrings.cvvLabel),
                         isSecure: true,
                         refusesInput: refusesInput,
-                        isFocused: isCvvFocused,
+                        isFocused: focusedField == .cvv,
+                        handsFocusOn: handsFocusOn(from: .cvv),
                         onFocusChange: { isFocused in
-                            isCvvFocused = isFocused
-                            if isFocused {
-                                isCardNumberFocused = false
-                                isExpirationFocused = false
-                            }
+                            focus(.cvv, isFocused)
                         },
                         onLeave: { isOnActiveScreen in
                             reportLeft(.cvv, edited: cvvEdited, isOnActiveScreen: isOnActiveScreen)
@@ -657,9 +681,23 @@ public struct GopayCardForm: View {
     /// back for the field that had it when the capture ends.
     private func endInputWhileCaptured() {
         guard refusesInput else { return }
-        isCardNumberFocused = false
-        isExpirationFocused = false
-        isCvvFocused = false
+        focusedField = nil
+    }
+
+    /// What a field reports about its focus. A field losing it clears the form's focus only while
+    /// the form still thinks it is there: when the form has already handed the focus on to another
+    /// field, UIKit resigning this one on that field's behalf must not undo the hand-over.
+    private func focus(_ field: FocusedField, _ isFocused: Bool) {
+        if isFocused {
+            focusedField = field
+        } else if focusedField == field {
+            focusedField = nil
+        }
+    }
+
+    /// Whether `field` is giving the focus up to another field of the form rather than to nobody.
+    private func handsFocusOn(from field: FocusedField) -> Bool {
+        focusedField != nil && focusedField != field
     }
 
     /// Returns the form to its pristine state, dropping the card the user typed.
@@ -686,9 +724,7 @@ public struct GopayCardForm: View {
         cardNumberEdited = false
         expirationEdited = false
         cvvEdited = false
-        isCardNumberFocused = false
-        isExpirationFocused = false
-        isCvvFocused = false
+        focusedField = nil
         if case .onSubmit(let attempted) = validation {
             attempted.wrappedValue = false
         }

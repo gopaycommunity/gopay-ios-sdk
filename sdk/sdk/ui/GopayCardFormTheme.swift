@@ -16,7 +16,7 @@ import UIKit
 /// spacing. The web form is a page of its own, while this one sits inside a merchant's screen, so
 /// nobody should have to undo an SDK look to make it fit. Theming is fully available, it is just a
 /// choice rather than the starting point. Passing the web's values reproduces the web appearance.
-public struct GopayCardFormTheme: Equatable {
+public struct GopayCardFormTheme: Equatable, Sendable {
 
     // MARK: - Typography
 

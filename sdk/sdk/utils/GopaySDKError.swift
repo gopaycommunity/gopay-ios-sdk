@@ -8,10 +8,10 @@ import Foundation
 /// that got no HTTP response is one too, with a `NETWORK_*` code and the `URLError` as
 /// ``underlying``. Conforms to `LocalizedError` so `error.localizedDescription` reads
 /// `"[AUTH_010] payment_credentials rejected: HTTP 401: Invalid payment_id or payment_secret"`.
-public struct GopaySDKError: LocalizedError {
+public struct GopaySDKError: LocalizedError, Sendable {
 
     /// Stable error codes, matching the Android SDK's `GopayErrorCodes` so both platforms agree.
-    public enum Code: String {
+    public enum Code: String, Sendable {
         // Authentication (AUTH_XXX)
         /// Payment-scoped JWT expired and could not be re-acquired from the cached payment credentials.
         case authPaymentTokenExpired = "AUTH_009"
@@ -137,7 +137,7 @@ public struct GopaySDKError: LocalizedError {
 /// ``GopaySDKError/httpStatus``), `path` and `timestamp`. Every field is optional: the SDK reads
 /// what is there and does not fail on what is not. The Android SDK carries the same type as
 /// `HttpErrorContext.gatewayError`.
-public struct GopayGatewayError: Decodable, Equatable {
+public struct GopayGatewayError: Decodable, Equatable, Sendable {
     /// The error type, which follows the HTTP status, e.g. `BAD_REQUEST` or `FORBIDDEN`. The
     /// gateway has no finer business codes.
     public let error: String?

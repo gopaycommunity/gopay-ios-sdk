@@ -16,7 +16,7 @@ import Foundation
 /// To supply your own translation, build a `GopayLocaleStrings` with the same structure and
 /// register it via ``GopayLocales/register(_:for:)`` (or `GopaySDKConfig.customLocales`), then
 /// select it by code.
-public struct GopayLocaleStrings: Equatable {
+public struct GopayLocaleStrings: Equatable, Sendable {
     /// Card number field label. Web key `cc.pan.label`.
     public var panLabel: String
     /// Card number field placeholder (not localized in the web SDK).

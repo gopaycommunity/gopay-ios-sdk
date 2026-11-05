@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Sensitive — never persisted. Pass to ``GopaySDK/encryptCardData(_:)`` to obtain a JWE for
 /// server-side tokenization.
-public struct GopayCardData: Encodable {
+public struct GopayCardData: Encodable, Sendable {
     /// Card PAN (Primary Account Number).
     public let cardPan: String
     /// Expiration month (MM format).

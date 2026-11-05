@@ -6,7 +6,7 @@ import Foundation
 /// All fields are BE-driven — the SDK uses them to build the native `PKPaymentRequest` and to
 /// decide which card networks the sheet should accept. No Apple Pay configuration lives on the SDK
 /// side.
-public struct GopayApplePayAppInfoResponse: Codable {
+public struct GopayApplePayAppInfoResponse: Codable, Sendable {
     public let applepayVersion: Int?
     public let merchantIdentifier: String
     public let applePayPaymentRequest: GopayApplePayRequest
@@ -14,7 +14,7 @@ public struct GopayApplePayAppInfoResponse: Codable {
 
 /// The `applePayPaymentRequest` sub-object mirroring the `PKPaymentRequest` shape the BE has
 /// configured for this merchant.
-public struct GopayApplePayRequest: Codable {
+public struct GopayApplePayRequest: Codable, Sendable {
     public let merchantCapabilities: [String]
     public let supportedNetworks: [String]
     public let countryCode: String
@@ -23,7 +23,7 @@ public struct GopayApplePayRequest: Codable {
 }
 
 /// A single line on the Apple Pay sheet. `type` is either `"final"` or `"pending"`.
-public struct GopayApplePayPaymentSummaryItem: Codable {
+public struct GopayApplePayPaymentSummaryItem: Codable, Sendable {
     public let label: String
     public let amount: String
     public let type: String?

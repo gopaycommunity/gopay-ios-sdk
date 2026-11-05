@@ -45,7 +45,7 @@ enum UnknownGatewayValue {
 }
 
 /// Card scheme. Maps to `Card-Scheme` in Payments.yaml.
-public enum CardScheme: String, Codable, GatewayEnum {
+public enum CardScheme: String, Codable, GatewayEnum, Sendable {
     case visa = "VISA"
     case mastercard = "MASTERCARD"
     /// A scheme this SDK does not know yet. The raw value is in the debug log.
@@ -61,7 +61,7 @@ public enum CardScheme: String, Codable, GatewayEnum {
 /// Only ``succeeded`` and ``failed`` are results. Read ``PaymentSession/getChargeState()`` again
 /// while it is ``requested``, ``processing`` or ``unknown``; the GoPay guide recommends once a
 /// second.
-public enum ChargeState: String, Codable, GatewayEnum {
+public enum ChargeState: String, Codable, GatewayEnum, Sendable {
     /// The gateway accepted the charge and has queued it. Not a result yet.
     case requested = "REQUESTED"
     /// The charge is with the payment processor. Not a result yet.
@@ -83,7 +83,7 @@ public enum ChargeState: String, Codable, GatewayEnum {
 }
 
 /// 3DS challenge preference forwarded to the gateway. Maps to `Payment-Card-Challenge-Preference`.
-public enum ChallengePreference: String, Codable {
+public enum ChallengePreference: String, Codable, Sendable {
     case challengePreferred = "CHALLENGE_PREFERRED"
     case noChallengePreferred = "NO_CHALLENGE_PREFERRED"
     case auto = "AUTO"
@@ -91,7 +91,7 @@ public enum ChallengePreference: String, Codable {
 
 /// Follow-up action type required to complete a charge. Maps to the `action_type` of
 /// `Payment-Charge-Action` (currently only `EMV3DS`).
-public enum ChargeActionType: String, Codable, GatewayEnum {
+public enum ChargeActionType: String, Codable, GatewayEnum, Sendable {
     case emv3ds = "EMV3DS"
     /// An action this SDK does not know yet. The raw value is in the debug log.
     case unknown = "UNKNOWN"
@@ -102,7 +102,7 @@ public enum ChargeActionType: String, Codable, GatewayEnum {
 }
 
 /// EMV 3DS sub-state reported on a charge action. Maps to the `state` of `Payment-Charge-Action`.
-public enum Emv3dsState: String, Codable, GatewayEnum {
+public enum Emv3dsState: String, Codable, GatewayEnum, Sendable {
     case created = "CREATED"
     case challengeRequired = "CHALLENGE_REQUIRED"
     case authenticatedChallenge = "AUTHENTICATED_CHALLENGE"
@@ -129,7 +129,7 @@ public enum Emv3dsState: String, Codable, GatewayEnum {
 /// carries. A value you set yourself is kept, so pass ``ip`` only if you collected it in the
 /// customer's own browser. ``javascriptEnabled`` is filled as `true` when `nil`, because the
 /// challenge runs in a WebView with JavaScript on.
-public struct BrowserData: Encodable {
+public struct BrowserData: Encodable, Sendable {
     public let language: String
     public let timezone: Int
     public let screenWidth: Int
@@ -219,7 +219,7 @@ public struct BrowserData: Encodable {
 /// Response of `GET /cards/browser-data`: the ``BrowserData`` fields the device cannot determine on
 /// its own, derived by the gateway from the request that fetched them. Maps to
 /// `Browser-Data-Detected`. The SDK merges it into the charge's ``BrowserData``.
-public struct BrowserDataDetected: Codable {
+public struct BrowserDataDetected: Codable, Sendable {
     public let ip: String
     public let userAgent: String
     public let acceptHeader: String
@@ -233,7 +233,7 @@ public struct BrowserDataDetected: Codable {
 
 /// Header fields embedded in an Apple Pay payment token. Maps to the nested `header` object on
 /// `Apple-Pay-Input` (camelCase keys, as carried in the PassKit token).
-public struct ApplePayHeader: Encodable {
+public struct ApplePayHeader: Encodable, Sendable {
     public let ephemeralPublicKey: String
     public let publicKeyHash: String
     public let transactionId: String
@@ -251,7 +251,7 @@ public struct ApplePayHeader: Encodable {
 /// Android-only). `payload` is the JWE for the `ENCRYPTED_CARD` variant. Optional fields that
 /// don't belong to the active variant are `nil` and omitted from the encoded JSON. Use the
 /// factories rather than the memberwise initializer.
-public struct PaymentCardInput: Encodable {
+public struct PaymentCardInput: Encodable, Sendable {
     public let inputType: String
     // CARD_TOKEN
     public let cardToken: String?
@@ -324,7 +324,7 @@ public struct PaymentCardInput: Encodable {
 /// `Payment-Card-Charge-Data`.
 ///
 /// The current Payments 4.0 schema only defines `PAYMENT_CARD` for `payment_instrument`.
-public struct PaymentChargeInstrument: Encodable {
+public struct PaymentChargeInstrument: Encodable, Sendable {
     public let paymentInstrument: String
     public let input: PaymentCardInput
     public let browserData: BrowserData
@@ -353,7 +353,7 @@ public struct PaymentChargeInstrument: Encodable {
 /// Request body for `POST /payments/{payment_id}/charge`. Maps to `Payment-Charge-Input`.
 ///
 /// Use the factories for the common card-token, encrypted-card, and Apple Pay flows.
-public struct ChargePaymentRequest: Encodable {
+public struct ChargePaymentRequest: Encodable, Sendable {
     public let paymentInstrument: PaymentChargeInstrument
 
     enum CodingKeys: String, CodingKey {
@@ -417,7 +417,7 @@ public struct ChargePaymentRequest: Encodable {
 }
 
 /// Output card details returned in a charge response. Maps to `Payment-Card-Charge-Details`.
-public struct InstrumentDetails: Codable {
+public struct InstrumentDetails: Codable, Sendable {
     public let inputType: String
     public let maskedPan: String?
     public let expirationMonth: String?
@@ -437,7 +437,7 @@ public struct InstrumentDetails: Codable {
 
 /// Payment instrument block in a charge response. `paymentInstrument` is always `PAYMENT_CARD` for
 /// the current Payments 4.0 schema.
-public struct PaymentInstrumentData: Codable {
+public struct PaymentInstrumentData: Codable, Sendable {
     public let paymentInstrument: String
     public let details: InstrumentDetails
 
@@ -449,7 +449,7 @@ public struct PaymentInstrumentData: Codable {
 
 /// Follow-up action required to complete a charge (e.g. a 3DS redirect). Maps to
 /// `Payment-Charge-Action`.
-public struct ChargeAction: Codable {
+public struct ChargeAction: Codable, Sendable {
     public let actionType: ChargeActionType
     public let state: Emv3dsState?
     public let redirectUrl: String?
@@ -468,7 +468,7 @@ public struct ChargeAction: Codable {
 /// action are absent in early states, and `fail_reason` is only present when `state == failed`.
 /// GoPay is removing `return_url` from the charge response, so ``returnUrl`` is optional and
 /// deprecated.
-public struct ChargePaymentResponse: Codable {
+public struct ChargePaymentResponse: Codable, Sendable {
     public let id: String
     public let state: ChargeState
 

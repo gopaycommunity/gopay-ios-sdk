@@ -3,7 +3,7 @@ import Foundation
 /// The environment to use for the SDK.
 ///
 /// - Note: Each case represents a different backend environment.
-public enum GopayEnvironment: Equatable {
+public enum GopayEnvironment: Equatable, Sendable {
     /// The development environment with a custom base URL.
     case development(baseURL: String)
     /// The sandbox environment.
@@ -42,7 +42,7 @@ public enum GopayEnvironment: Equatable {
 /// Configuration for the Gopay SDK.
 ///
 /// Use this struct to configure the SDK before initialization.
-public struct GopaySDKConfig {
+public struct GopaySDKConfig: Sendable {
     /// The environment to use for the SDK.
     public let environment: GopayEnvironment
 
@@ -78,8 +78,9 @@ public struct GopaySDKConfig {
     /// ``GopaySDKError/Code/paymentTimeout`` and ``GopaySDKError/Code/paymentCancelled``. So does a
     /// `CancellationError` from a task the host cancelled, and so does any error that is not a
     /// `GopaySDKError`. The rule is the same on Android. The callback runs on whatever thread the
-    /// failing call ends on, and it is not a substitute for catching the error at the call.
-    public let errorCallback: ((Error) -> Void)?
+    /// failing call ends on, and it is not a substitute for catching the error at the call. It is
+    /// `@Sendable` for that reason, so a Swift 6 host can hand it to the SDK from any isolation.
+    public let errorCallback: (@Sendable (Error) -> Void)?
 
     /// Preferred locale code (ISO 639-1, e.g. `"cs"`, `"de"`) for the payment card form labels.
     /// When `nil` (default) the SDK uses the device language, falling back to Czech. A
@@ -105,7 +106,7 @@ public struct GopaySDKConfig {
         clientId: String? = nil,
         shareableKey: String? = nil,
         enableDebugLogging: Bool = false,
-        errorCallback: ((Error) -> Void)? = nil,
+        errorCallback: (@Sendable (Error) -> Void)? = nil,
         locale: String? = nil,
         customLocales: [String: GopayLocaleStrings] = [:]
     ) {

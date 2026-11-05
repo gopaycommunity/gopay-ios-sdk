@@ -7,7 +7,7 @@ import Foundation
 /// explicitly, or rely on the default resolution: the SDK-wide preferred locale (set from
 /// `GopaySDKConfig.locale`), else the device language, ultimately falling back to Czech
 /// (``defaultLocale``).
-public enum GopayLocales {
+public enum GopayLocales: Sendable {
 
     /// Language code used as the final fallback when nothing else matches.
     public static let defaultLocale = "cs"

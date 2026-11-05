@@ -11,7 +11,8 @@ protocol AsyncHTTPClient {
 }
 
 /// URLSession-backed HTTP client. The single low-level networking primitive for the SDK.
-public class DefaultNetworkClient: NSObject, URLSessionDelegate {
+/// `@unchecked Sendable`: its two properties are set once and `URLSession` is thread-safe.
+public class DefaultNetworkClient: NSObject, URLSessionDelegate, @unchecked Sendable {
     public let baseURL: String
     private let session: URLSession
 

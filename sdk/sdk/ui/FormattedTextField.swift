@@ -104,6 +104,12 @@ struct FormattedTextField: UIViewRepresentable {
     /// host view (e.g. after the previous field fills with a valid value) moves focus here;
     /// `onFocusChange` reports back when focus changes for other reasons (the user tapping in).
     var isFocused: Bool = false
+    /// Whether another field of the form takes the focus this field is giving up. The field then
+    /// does not resign on its own: the other field's `becomeFirstResponder()` moves the focus in
+    /// one step, so the keyboard stays up and a `.medium` sheet keeps its height. Resigning
+    /// first, in a turn of its own, took the keyboard down for a moment and let the sheet drop
+    /// before the next field brought it back.
+    var handsFocusOn: Bool = false
     var onFocusChange: (Bool) -> Void = { _ in }
     /// Called right after `onFocusChange(false)` with a check that answers, whenever it is asked,
     /// whether the field is still on a screen the user is looking at: in a window, that window
@@ -161,12 +167,28 @@ struct FormattedTextField: UIViewRepresentable {
             let coordinator = context.coordinator
             DispatchQueue.main.async { [weak textField, weak coordinator] in
                 guard let textField, let coordinator else { return }
-                let shouldBeFocused = coordinator.parent.isFocused && !coordinator.parent.refusesInput
-                if shouldBeFocused, !textField.isFirstResponder {
-                    textField.becomeFirstResponder()
-                } else if !shouldBeFocused, textField.isFirstResponder {
-                    textField.resignFirstResponder()
+                Self.settleFocus(of: textField, coordinator: coordinator, afterHandover: false)
+            }
+        }
+    }
+
+    /// Brings the field's first responder status in line with what the form says. A field giving
+    /// the focus up to another field of the form waits one more turn before it resigns: the other
+    /// field's own turn, queued in the same view update, has taken the focus by then, and this
+    /// field has nothing left to resign. Only when that did not happen does it resign after all.
+    private static func settleFocus(of textField: UITextField, coordinator: Coordinator, afterHandover: Bool) {
+        let parent = coordinator.parent
+        let shouldBeFocused = parent.isFocused && !parent.refusesInput
+        if shouldBeFocused, !textField.isFirstResponder {
+            textField.becomeFirstResponder()
+        } else if !shouldBeFocused, textField.isFirstResponder {
+            if parent.handsFocusOn, !afterHandover {
+                DispatchQueue.main.async { [weak textField, weak coordinator] in
+                    guard let textField, let coordinator else { return }
+                    settleFocus(of: textField, coordinator: coordinator, afterHandover: true)
                 }
+            } else {
+                textField.resignFirstResponder()
             }
         }
     }

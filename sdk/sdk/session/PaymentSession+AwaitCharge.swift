@@ -3,7 +3,7 @@ import UIKit
 
 /// How ``PaymentSession/awaitChargeState(_:)`` handles a 3DS challenge the gateway asks for.
 /// Mirrors the Android `ThreeDSMode`.
-public enum ThreeDSMode {
+public enum ThreeDSMode: Sendable {
     /// The SDK opens the challenge itself through
     /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)``, with the
     /// `returnURL` and `presenting` from ``AwaitChargeOptions``, and keeps polling once it
@@ -17,7 +17,7 @@ public enum ThreeDSMode {
 /// Options for ``PaymentSession/awaitChargeState(_:)``. The defaults poll once a second, as the
 /// GoPay guide recommends, give the gateway 30 seconds to decide and run a 3DS challenge
 /// automatically. The Android `AwaitChargeOptions` has the matching options, in milliseconds.
-public struct AwaitChargeOptions {
+public struct AwaitChargeOptions: Sendable {
     /// How long after one answer the next `GET /payments/{id}/charge` goes out, in seconds.
     /// Defaults to 1 second, the cadence GoPay recommends.
     public var interval: TimeInterval
@@ -40,10 +40,10 @@ public struct AwaitChargeOptions {
     public var presenting: UIViewController?
     /// Called on the main actor with every charge state the call reads, the last one included,
     /// before the call returns or throws.
-    public var onStateChange: (@MainActor (ChargePaymentResponse) -> Void)?
+    public var onStateChange: (@MainActor @Sendable (ChargePaymentResponse) -> Void)?
     /// Called on the main actor with each new `action.redirect_url` the charge reports, once per
     /// address, before the SDK opens it in ``ThreeDSMode/automatic``.
-    public var onActionRequired: (@MainActor (String) -> Void)?
+    public var onActionRequired: (@MainActor @Sendable (String) -> Void)?
 
     public init(
         interval: TimeInterval = 1,
@@ -51,8 +51,8 @@ public struct AwaitChargeOptions {
         threeDSMode: ThreeDSMode = .automatic,
         returnURL: URL? = nil,
         presenting: UIViewController? = nil,
-        onStateChange: (@MainActor (ChargePaymentResponse) -> Void)? = nil,
-        onActionRequired: (@MainActor (String) -> Void)? = nil
+        onStateChange: (@MainActor @Sendable (ChargePaymentResponse) -> Void)? = nil,
+        onActionRequired: (@MainActor @Sendable (String) -> Void)? = nil
     ) {
         self.interval = interval
         self.initialTimeout = initialTimeout

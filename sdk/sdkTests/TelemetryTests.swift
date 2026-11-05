@@ -195,12 +195,18 @@ struct TelemetryTests {
     /// Nothing in the configuration reaches the telemetry's switch, because there is none.
     @Test(arguments: [false, true])
     func isNotTheIntegratorsToTurnOff(quiet: Bool) {
+        var callback: (@Sendable (Error) -> Void)?
+        if !quiet {
+            callback = { _ in
+                // A callback that listens is as much configuration as one that is absent.
+            }
+        }
         let config = GopaySDKConfig(
             environment: .production,
             clientId: quiet ? nil : "c",
             shareableKey: quiet ? nil : "k",
             enableDebugLogging: !quiet,
-            errorCallback: quiet ? nil : { _ in },
+            errorCallback: callback,
             locale: quiet ? nil : "en"
         )
         #expect(Telemetry(config: config).endpoint == GopayEnvironment.production.telemetryURL)

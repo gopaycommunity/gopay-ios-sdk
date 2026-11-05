@@ -1,7 +1,7 @@
 import Foundation
 
 /// Supported currencies. Maps to `Currency`.
-public enum Currency: String, Codable, GatewayEnum {
+public enum Currency: String, Codable, GatewayEnum, Sendable {
     case czk = "CZK"
     case eur = "EUR"
     case pln = "PLN"
@@ -18,7 +18,7 @@ public enum Currency: String, Codable, GatewayEnum {
 }
 
 /// Payment lifecycle state. Maps to `Payment-State`.
-public enum PaymentState: String, Codable, GatewayEnum {
+public enum PaymentState: String, Codable, GatewayEnum, Sendable {
     case created = "CREATED"
     case paid = "PAID"
     case canceled = "CANCELED"
@@ -41,7 +41,7 @@ public enum PaymentState: String, Codable, GatewayEnum {
 /// Includes the latest `charge` summary when one exists. `payment_secret` is echoed by the API but
 /// the app already holds it from ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` —
 /// never log it or embed it in URLs.
-public struct PaymentDetails: Codable {
+public struct PaymentDetails: Codable, Sendable {
     public let id: String
     public let orderNumber: String?
     public let state: PaymentState
@@ -66,13 +66,13 @@ public struct PaymentDetails: Codable {
 // MARK: - QR payment info
 
 /// Output format for QR payment info payloads.
-public enum QrCodeFormat: String, Codable {
+public enum QrCodeFormat: String, Codable, Sendable {
     case png
     case svg
 }
 
 /// Local bank account details for a QR payment recipient.
-public struct QrLocalBankAccount: Codable {
+public struct QrLocalBankAccount: Codable, Sendable {
     public let prefix: String?
     public let accountNumber: String?
     public let bankCode: String?
@@ -87,20 +87,20 @@ public struct QrLocalBankAccount: Codable {
 }
 
 /// International bank account details for a QR payment recipient.
-public struct QrInternationalBankAccount: Codable {
+public struct QrInternationalBankAccount: Codable, Sendable {
     public let bic: String?
     public let iban: String?
     public let reference: String?
 }
 
 /// Bank account details for a QR payment recipient.
-public struct QrRecipientBankAccount: Codable {
+public struct QrRecipientBankAccount: Codable, Sendable {
     public let local: QrLocalBankAccount?
     public let international: QrInternationalBankAccount?
 }
 
 /// Postal address details for a QR payment recipient.
-public struct QrRecipientAddress: Codable {
+public struct QrRecipientAddress: Codable, Sendable {
     public let street: String?
     public let city: String?
     public let zipCode: String?
@@ -115,7 +115,7 @@ public struct QrRecipientAddress: Codable {
 }
 
 /// Recipient details for a QR payment.
-public struct QrRecipient: Codable {
+public struct QrRecipient: Codable, Sendable {
     public let name: String?
     public let bankAccount: QrRecipientBankAccount?
     public let address: QrRecipientAddress?
@@ -128,7 +128,7 @@ public struct QrRecipient: Codable {
 }
 
 /// Encoded QR payload variants returned by the API.
-public struct QrCodeList: Codable {
+public struct QrCodeList: Codable, Sendable {
     public let spayd: String?
     public let paybysquare: String?
     public let sepa: String?
@@ -143,7 +143,7 @@ public struct QrCodeList: Codable {
 }
 
 /// Response from `GET /payments/{payment_id}/qr-payment/info`. Maps to `QR-Payment-Details`.
-public struct QrPaymentDetails: Codable {
+public struct QrPaymentDetails: Codable, Sendable {
     public let amount: Int
     public let currency: Currency
     public let recipient: QrRecipient?

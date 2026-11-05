@@ -3,7 +3,7 @@ import Foundation
 /// Centralized error definitions for the Gopay SDK.
 ///
 /// Provides consistent error domains, codes, and messages across the SDK.
-public enum GopaySDKErrors {
+public enum GopaySDKErrors: Sendable {
     // MARK: - Error Domains
     
     /// Error domain for SDK-level errors.

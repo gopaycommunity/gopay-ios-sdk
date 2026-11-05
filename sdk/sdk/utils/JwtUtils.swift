@@ -1,7 +1,7 @@
 import Foundation
 
 /// Utility for JWT operations
-public struct JwtUtils {
+public struct JwtUtils: Sendable {
     /// Extracts the `exp` claim (Unix seconds) from a JWT.
     ///
     /// Returns `0` when the claim is absent or the token can't be decoded — callers treat `0` as

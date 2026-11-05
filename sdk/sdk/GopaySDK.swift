@@ -17,7 +17,11 @@ import PassKit
 /// Card collection: ``encryptCardData(_:)`` (or ``submitCardForm(formId:)`` with a
 /// `GopayCardForm`) returns a JWE that the host app forwards to its backend; the merchant backend
 /// calls `POST /cards/tokens`. The mobile SDK never touches that endpoint.
-public class GopaySDK {
+///
+/// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6: the
+/// configuration and the card forms are guarded by locks, the sessions live in an actor, and the
+/// API objects are set once in `initialize` and immutable after it.
+public class GopaySDK: @unchecked Sendable {
 
     /// The current version of the SDK.
     ///
