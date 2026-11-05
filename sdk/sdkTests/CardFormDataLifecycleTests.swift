@@ -342,6 +342,35 @@ extension SessionNetworkTests {
         #expect(sdk.owner(of: "shared") !== replaced)
     }
 
+    /// The replaced form syncs on every keystroke; the integrator is told once per ID that its
+    /// input goes nowhere, and again only after a form registers under the ID anew.
+    @Test func aReplacedFormsSyncWarnsOncePerId() async {
+        // The warning is printed only with debug logging on, like every other one.
+        let config = GopaySDKConfig(
+            environment: .development(baseURL: lifecycleStubBaseURL),
+            clientId: "c",
+            shareableKey: "k",
+            enableDebugLogging: true
+        )
+        let sdk = GopaySDK(config: config, networkClient: lifecycleStubbedClient())
+        let warnings = Locked<[String]>([])
+        sdk.warnSink = { message in warnings.value.append(message) }
+        let replaced = CardFormOwner()
+        let registered = CardFormOwner()
+        sdk.registerCardFormReset({}, formId: "shared", owner: replaced)
+        sdk.registerCardFormReset({}, formId: "shared", owner: registered)
+
+        sdk.updateCardFormData(GopayCardFormData(cardNumber: "4"), formId: "shared", owner: replaced)
+        sdk.updateCardFormData(GopayCardFormData(cardNumber: "44"), formId: "shared", owner: replaced)
+        sdk.updateCardFormData(GopayCardFormData(cardNumber: "4"), formId: "shared", owner: registered)
+        #expect(warnings.value.count == 1)
+        #expect(warnings.value.first?.contains("'shared'") == true)
+
+        sdk.registerCardFormReset({}, formId: "shared", owner: replaced)
+        sdk.updateCardFormData(GopayCardFormData(cardNumber: "4"), formId: "shared", owner: registered)
+        #expect(warnings.value.count == 2, "a new registration opens the warning again")
+    }
+
     /// A wipe writes SwiftUI state, so the SDK hops it to the main thread. Tests run off it, so
     /// they have to let that hop land before reading the result.
     private func drainMainQueue() async {

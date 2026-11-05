@@ -143,6 +143,9 @@ public class GopaySDK: @unchecked Sendable {
     /// The handlers of every form on screen, keyed by form ID. Registered while a form is on
     /// screen and guarded by ``cardFormDataLock`` alongside the data they belong to.
     private var cardFormHandlers: [String: CardFormHandlers] = [:]
+    /// The IDs a replaced form was warned about syncing under, once each, until a form registers
+    /// under the ID again. Under ``cardFormDataLock``.
+    private var warnedUnregisteredSyncs: Set<String> = []
 
     /// Initializes the SDK with the given configuration. Call once before any other operation.
     ///
@@ -498,6 +501,7 @@ public class GopaySDK: @unchecked Sendable {
         cardFormDataLock.lock()
         defer { cardFormDataLock.unlock() }
         cardFormHandlers[formId] = CardFormHandlers(owner: owner, reset: reset, submitAttempted: submitAttempted)
+        warnedUnregisteredSyncs.remove(formId)
     }
 
     /// Runs the submit-attempted handler of a form, on the main thread, where it writes SwiftUI
@@ -665,7 +669,17 @@ public class GopaySDK: @unchecked Sendable {
     internal func updateCardFormData(_ data: GopayCardFormData, formId: String, owner: AnyObject) {
         cardFormDataLock.lock()
         defer { cardFormDataLock.unlock() }
-        guard registeredOwner(formId) === owner else { return }
+        guard registeredOwner(formId) === owner else {
+            // Once per ID: the replaced form syncs on every keystroke, and the integrator needs
+            // to hear it once, because the form otherwise goes quiet without a visible error.
+            if warnedUnregisteredSyncs.insert(formId).inserted {
+                logWarning(
+                    "Card form '\(formId)' is no longer the form registered under this ID, so its"
+                        + " input is dropped: keep one live form per formId (see README, \"What changed in 2.5\")."
+                )
+            }
+            return
+        }
         internalCardFormData[formId] = data
         syncOrder.removeAll { $0 == formId }
         syncOrder.append(formId)
