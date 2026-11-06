@@ -115,9 +115,7 @@ struct TelemetryProbe {
     /// The events sent so far, once at least `count` have arrived, each checked against the
     /// ingest's schema on the way.
     func events(_ count: Int) async -> [[String: Any]] {
-        for _ in 0..<500 where uploads.count < count {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await settle(until: uploads.count >= count)
         let events = uploads.compactMap { upload -> [String: Any]? in
             let body = (try? JSONSerialization.jsonObject(with: upload.body)) as? [String: Any]
             #expect(body.map { Set($0.keys) } == ["event"], "the body is {\"event\": …} and nothing else")
@@ -129,6 +127,10 @@ struct TelemetryProbe {
     }
 
     /// The events once nothing more is arriving, for the tests that count what was not sent.
+    ///
+    /// Kept on purpose, the pause after the expected events: an event that should not have been
+    /// sent has no state to wait for. A slow runner can only let such an event slip past the
+    /// window, never fail a test that is right.
     func settledEvents(_ count: Int) async -> [[String: Any]] {
         _ = await events(count)
         try? await Task.sleep(nanoseconds: 200_000_000)
@@ -288,11 +290,11 @@ struct TelemetryTests {
         #expect(counters.unsent == nil)
         offline.telemetry.initialized()
         _ = await offline.events(1)
-        try await waitFor { counters.unsent == 1 }
+        await expectSettled(counters.unsent == 1)
         healthy.telemetry.sessionStarted(paymentId: "1")
         refused.telemetry.initialized()
         _ = await refused.events(1)
-        try await waitFor { counters.unsent == 2 }
+        await expectSettled(counters.unsent == 2)
         healthy.telemetry.sessionClosed(paymentId: "1")
 
         let events = await healthy.events(3)
@@ -593,9 +595,9 @@ struct TelemetryTests {
         debug.initialized()
         debug.error(GopaySDKError(.validationInvalidInput, message: "card 4111111111111111"), paymentId: nil)
         quiet.initialized()
-        for _ in 0..<300 where TelemetryIngestStub.uploads(to: endpoint).count < 2 {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await settle(until: TelemetryIngestStub.uploads(to: endpoint).count >= 2)
+        // Kept on purpose, as in `TelemetryProbe.settledEvents`: a line the quiet instance should
+        // not log has no state to wait for.
         try? await Task.sleep(nanoseconds: 200_000_000)
 
         #expect(lines.all == [
@@ -767,9 +769,7 @@ struct ApplePayTelemetryTests {
         #expect(event["function_name"] as? String == "APPLE_PAY.begin")
         #expect(event["params"] as? String == #"{"status":"failure"}"#)
         #expect(event["return_value"] as? String == "PAYMENT_004")
-        for _ in 0..<100 where results.isEmpty {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await settle(until: !results.isEmpty)
         guard case .failure(let error as GopaySDKError) = results.first else {
             Issue.record("expected the call to end with PAYMENT_004")
             return
@@ -1103,9 +1103,11 @@ extension SessionNetworkTests {
     /// keeps the card, and its visit ends however it ends next.
     @Test func doesNotCallACancelledSubmitAFailedEncryption() async throws {
         let key = try TestEncryptionKey()
-        StubURLProtocol.reset(delay: 0.3) { req in
+        StubURLProtocol.reset { req in
             (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, key.publicJWKJSON) : (404, Data())
         }
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
         let probe = TelemetryProbe(clientId: "c")
         let sdk = sdk(telemetry: probe.telemetry)
         let owner = CardFormOwner()
@@ -1116,8 +1118,9 @@ extension SessionNetworkTests {
         probe.telemetry.cardFormInput(owner: owner, states: card.progressStates)
 
         let submit = Task { try await sdk.submitCardForm(formId: "f1") }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try #require(await settle(until: StubURLProtocol.requestCount(forPathSuffix: "cards/public-key") == 1))
         submit.cancel()
+        StubURLProtocol.releaseAnswers()
         await #expect(throws: CancellationError.self) { try await submit.value }
         probe.telemetry.cardFormUnmounted(owner: owner)
 
@@ -1126,13 +1129,7 @@ extension SessionNetworkTests {
     }
 }
 
-/// Waits up to two seconds for something another thread does, then fails.
-private func waitFor(_ condition: () -> Bool) async throws {
-    for _ in 0..<200 where !condition() {
-        try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    #expect(condition(), "timed out waiting")
-}
+
 
 /// Lines a test collects from any thread.
 final class Lines: @unchecked Sendable {

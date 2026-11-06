@@ -116,9 +116,8 @@ struct TelemetryIngestValidationTests {
         telemetry.sessionClosed(paymentId: paymentId)
         let expected = 28
 
-        for _ in 0..<300 where answers.all.count < expected {
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
+        // The real ingest over the network, so a longer limit than the stubbed tests.
+        await settle(timeout: 30, until: answers.all.count >= expected)
         let all = answers.all
         #expect(all.count == expected, "the ingest answered \(all.count) of \(expected); without a response check the network")
         for (index, answer) in all.enumerated() {

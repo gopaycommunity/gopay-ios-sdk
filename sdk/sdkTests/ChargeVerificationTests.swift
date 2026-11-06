@@ -307,13 +307,17 @@ struct ChargeVerificationReportingTests {
 
     /// A screen released without an outcome, e.g. dismissed with the whole stack while covered,
     /// still ends the verification as a cancellation.
-    @Test func aScreenReleasedWithoutAnOutcomeEndsAsACancellation() {
+    ///
+    /// Waits for the release: the screen is not always freed the moment the test lets it go, later
+    /// still on a loaded runner, and the cancellation comes only once it is.
+    @Test func aScreenReleasedWithoutAnOutcomeEndsAsACancellation() async {
         var results: [GopayChargeVerificationResult] = []
         do {
             let controller = makeController { results.append($0) }
             controller.viewDidAppear(false)
         }
 
+        await settle(until: !results.isEmpty)
         #expect(results.count == 1)
         guard case .cancelled = results.first else {
             Issue.record("expected a cancellation, got \(results)")

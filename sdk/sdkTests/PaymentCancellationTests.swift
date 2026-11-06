@@ -68,7 +68,13 @@ private final class SilentServer {
         listener = try NWListener(using: parameters)
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { if case .ready = $0 { ready.signal() } }
-        listener.newConnectionHandler = { [unowned self] connection in
+        // Weak: the web view can still connect after the test has stopped the server and let it
+        // go, and an unowned reference to a released server aborts the whole test process.
+        listener.newConnectionHandler = { [weak self] connection in
+            guard let self else {
+                connection.cancel()
+                return
+            }
             connections.append(connection)
             connection.start(queue: queue)
         }
@@ -79,6 +85,7 @@ private final class SilentServer {
     var url: URL { URL(string: "http://127.0.0.1:\(listener.port?.rawValue ?? 0)/challenge")! }
 
     func stop() {
+        listener.newConnectionHandler = nil
         listener.cancel()
         queue.sync { connections.forEach { $0.cancel() } }
     }
@@ -110,12 +117,11 @@ extension SessionNetworkTests {
             return (presenter, window)
         }
         let task = Task { try await session.handle3dsVerification(redirectURL: url, presenting: presenter) }
-        var screen: GopayChargeVerificationViewController?
-        for _ in 0..<50 where screen == nil {
-            screen = await MainActor.run { presenter.presentedViewController as? GopayChargeVerificationViewController }
-            if screen == nil { try await Task.sleep(nanoseconds: 100_000_000) }
+        func screen() async -> GopayChargeVerificationViewController? {
+            await MainActor.run { presenter.presentedViewController as? GopayChargeVerificationViewController }
         }
-        let shown = try #require(screen)
+        await settle(until: await screen() != nil)
+        let shown = try #require(await screen())
         await MainActor.run { shown.viewDidAppear(false) }
         return (task, shown, window)
     }

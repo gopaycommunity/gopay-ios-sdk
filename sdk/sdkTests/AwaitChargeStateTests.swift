@@ -100,13 +100,6 @@ private func serveCharges(_ bodies: [[String: Any]], beforeAnswer: (@Sendable ()
 
 private func chargeReads() -> Int { StubURLProtocol.requestCount(forPathSuffix: chargePath) }
 
-/// Polls `condition` for up to two seconds, for the tests that race a real task.
-private func waitUntil(_ condition: @escaping () -> Bool) async throws {
-    for _ in 0..<100 where !condition() {
-        try await Task.sleep(nanoseconds: 20_000_000)
-    }
-    #expect(condition())
-}
 
 // Extends `SessionNetworkTests` for its `makeSession()` and for the serialized suite: every test
 // here shares the one `StubURLProtocol`, so two cannot run at once.
@@ -566,17 +559,19 @@ extension SessionNetworkTests {
         let session = try await makeSession()
         await session.useAwaitChargeHooks(AwaitChargeHooks(
             now: { 0 },
-            // A wait that only cancellation ends.
+            // A wait that only cancellation ends: the pause is the polling interval under test.
             sleep: { _ in try await Task.sleep(nanoseconds: 60_000_000_000) },
             verify: { _, _, _, _ in }
         ))
 
         let task = Task { try await session.awaitChargeState(options(recorder)) }
         // Past the read and into the wait: the callback has seen the state.
-        try await waitUntil { !recorder.states.isEmpty }
+        await expectSettled(!recorder.states.isEmpty)
         task.cancel()
 
         await #expect(throws: CancellationError.self) { try await task.value }
+        // Kept on purpose: a read going out after the call has ended has no state to wait for. A
+        // slow runner can only shorten the window and let a late read slip by, never fail the test.
         try await Task.sleep(nanoseconds: 100_000_000)
         #expect(chargeReads() == 1)
     }
@@ -587,16 +582,16 @@ extension SessionNetworkTests {
     @Test(.timeLimit(.minutes(1)))
     func cancellationDuringTheReadReportsNothing() async throws {
         serveCharges([charge("SUCCEEDED")])
-        // The stub answers only after a second, so the cancel lands while the read is in flight.
-        StubURLProtocol.reset(delay: 1) { req in
-            (req.url?.path ?? "").hasSuffix("oauth2/token") ? tokenResponse() : (200, json(charge("SUCCEEDED")))
-        }
         let clock = VirtualClock(), recorder = Recorder()
         let session = try await makePollingSession(clock: clock, recorder: recorder)
+        // The read is held unanswered, so the cancel lands while it is in flight.
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
 
         let task = Task { try await session.awaitChargeState(options(recorder)) }
-        try await waitUntil { chargeReads() == 1 }
+        try #require(await settle(until: chargeReads() == 1))
         task.cancel()
+        StubURLProtocol.releaseAnswers()
 
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(recorder.states.isEmpty)
@@ -610,15 +605,17 @@ extension SessionNetworkTests {
         serveCharges([charge("ACTION_REQUIRED", redirect: "https://acs.example/a"), charge("SUCCEEDED")])
         let clock = VirtualClock(), recorder = Recorder()
         let session = try await makePollingSession(clock: clock, recorder: recorder) { _ in
-            // The screen stays up until the awaiting task is cancelled, as the real one does.
+            // The screen stays up until the awaiting task is cancelled, as the real one does: the
+            // pause stands in for the challenge, not for a wait.
             try await Task.sleep(nanoseconds: 60_000_000_000)
         }
 
         let task = Task { try await session.awaitChargeState(options(recorder)) }
-        try await waitUntil { !recorder.verifications.isEmpty }
+        await expectSettled(!recorder.verifications.isEmpty)
         task.cancel()
 
         await #expect(throws: CancellationError.self) { try await task.value }
+        // Kept on purpose, as in `cancellationDuringTheWaitStopsThePolling`.
         try await Task.sleep(nanoseconds: 100_000_000)
         #expect(chargeReads() == 1)
         #expect(recorder.verifications.count == 1)

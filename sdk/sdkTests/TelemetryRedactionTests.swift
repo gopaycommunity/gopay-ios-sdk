@@ -96,7 +96,9 @@ struct TelemetryMessageScrubTests {
     }
 
     /// A message can carry text from outside the SDK, so a pattern that backtracks would turn a long
-    /// string into a stall. Linear is milliseconds here; the bound only catches a quadratic one.
+    /// string into a stall. Linear is milliseconds here, and a loaded CI runner takes many times
+    /// longer than a Mac, so the bound is generous; a quadratic scrub of 40,000 characters still
+    /// goes far past it.
     @Test func scrubsAHostileMessageWithoutStalling() {
         let runs = [
             String(repeating: "a", count: 40_000),
@@ -106,7 +108,7 @@ struct TelemetryMessageScrubTests {
         for run in runs {
             let started = Date()
             _ = TelemetryRedaction.safeErrorMessage(run)
-            #expect(Date().timeIntervalSince(started) < 1)
+            #expect(Date().timeIntervalSince(started) < 10)
         }
     }
 

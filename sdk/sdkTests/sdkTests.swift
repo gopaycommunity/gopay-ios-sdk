@@ -79,6 +79,8 @@ final class StubURLProtocol: URLProtocol {
     private static var storedHeaders: [String: String] = [:]
     /// What a ``transportFailure`` fails with.
     private static var storedTransportError = URLError.Code.networkConnectionLost
+    /// Holds every answer until the test opens it, see ``holdAnswers()``.
+    private static var storedGate: StubGate?
 
     static func reset(
         delay: TimeInterval = 0,
@@ -92,6 +94,26 @@ final class StubURLProtocol: URLProtocol {
         storedDelay = delay
         storedHeaders = headers
         storedTransportError = transportError
+        storedGate?.open()
+        storedGate = nil
+    }
+
+    /// Holds every request that arrives from now on, recorded but unanswered, until
+    /// ``releaseAnswers()``. For the tests that cancel a call while its request is in flight: they
+    /// wait for the request to be recorded, cancel, and release, so the cancellation lands in
+    /// flight however slow the machine is. A fixed delay only does that while the test's own
+    /// steps take less time than the delay.
+    static func holdAnswers() {
+        lock.lock(); defer { lock.unlock() }
+        storedGate?.open()
+        storedGate = StubGate()
+    }
+
+    /// Answers the held requests and every one after them.
+    static func releaseAnswers() {
+        lock.lock(); defer { lock.unlock() }
+        storedGate?.open()
+        storedGate = nil
     }
 
     static func requestCount(forPathSuffix suffix: String) -> Int {
@@ -123,8 +145,12 @@ final class StubURLProtocol: URLProtocol {
         let delay = StubURLProtocol.storedDelay
         let headers = StubURLProtocol.storedHeaders
         let transportError = StubURLProtocol.storedTransportError
+        let gate = StubURLProtocol.storedGate
         StubURLProtocol.lock.unlock()
 
+        gate?.wait()
+        // Kept on purpose: it widens the single-flight windows of the tests that ask for it, and a
+        // slow runner only widens them further.
         if delay > 0 { Thread.sleep(forTimeInterval: delay) }
 
         guard let handler = handler, let url = request.url else {
@@ -162,6 +188,25 @@ final class StubURLProtocol: URLProtocol {
             data.append(buffer, count: read)
         }
         return data
+    }
+}
+
+/// Holds the stub's answers on the URL loading thread until it is opened. Opens by itself after
+/// half a minute, so a test that never releases it does not hang the run.
+final class StubGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var isOpen = false
+
+    func wait() {
+        condition.lock(); defer { condition.unlock() }
+        let deadline = Date().addingTimeInterval(30)
+        while !isOpen, condition.wait(until: deadline) {}
+    }
+
+    func open() {
+        condition.lock(); defer { condition.unlock() }
+        isOpen = true
+        condition.broadcast()
     }
 }
 
@@ -746,7 +791,7 @@ struct SessionNetworkTests {
         await session.invalidateToken()
 
         let call = Task { try await session.getStatus() }
-        for _ in 0..<50 where !client.isHolding { try await Task.sleep(nanoseconds: 20_000_000) }
+        await settle(until: client.isHolding)
         #expect(client.isHolding)
         await session.close()
         client.release()

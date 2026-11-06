@@ -75,10 +75,9 @@ extension SessionNetworkTests {
         tokenStatus: Int = 200,
         statusStatus: Int = 200,
         qrStatus: Int = 200,
-        redirectUrl: String? = nil,
-        delay: TimeInterval = 0
+        redirectUrl: String? = nil
     ) {
-        StubURLProtocol.reset(delay: delay) { req in
+        StubURLProtocol.reset { req in
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") {
                 return tokenStatus == 200 ? tokenResponse() : (tokenStatus, json(["error": "unauthorized"]))
@@ -254,12 +253,15 @@ extension SessionNetworkTests {
         let sdk = reportingSDK(reported)
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         defer { Task { await session.close() } }
-        gateway(delay: 0.3)
+        gateway()
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
         let incomplete = BrowserData(language: "cs", timezone: -60, screenWidth: 1, screenHeight: 1, colorDepth: 24, userAgent: "ua")
 
         let charge = Task { try await session.charge(.cardToken("t", browserData: incomplete)) }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try #require(await settle(until: StubURLProtocol.requestCount(forPathSuffix: "cards/browser-data") == 1))
         charge.cancel()
+        StubURLProtocol.releaseAnswers()
 
         await #expect(throws: CancellationError.self) { try await charge.value }
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/charge") == 0)
@@ -274,11 +276,14 @@ extension SessionNetworkTests {
         let sdk = reportingSDK(reported)
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         defer { Task { await session.close() } }
-        gateway(statusStatus: 500, delay: 0.3)
+        gateway(statusStatus: 500)
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
 
         let read = Task { try await session.getStatus() }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try #require(await settle(until: StubURLProtocol.requestCount(forPathSuffix: "payments/p1") == 1))
         read.cancel()
+        StubURLProtocol.releaseAnswers()
 
         await #expect(throws: CancellationError.self) { try await read.value }
         #expect(reported.all.isEmpty)
@@ -386,8 +391,14 @@ extension SessionNetworkTests {
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         defer { Task { await session.close() } }
 
-        let poll = Task { try await session.awaitChargeState(AwaitChargeOptions(interval: 0.05, initialTimeout: 10)) }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // A long interval, so the call sits in the wait once it has seen the first state.
+        let seen = Locked(false)
+        let poll = Task {
+            try await session.awaitChargeState(AwaitChargeOptions(
+                interval: 5, initialTimeout: 10, onStateChange: { _ in seen.value = true }
+            ))
+        }
+        try #require(await settle(until: seen.value))
         poll.cancel()
 
         await #expect(throws: CancellationError.self) { try await poll.value }
@@ -402,11 +413,14 @@ extension SessionNetworkTests {
         let sdk = reportingSDK(reported)
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         defer { Task { await session.close() } }
-        gateway(chargeStatus: 500, delay: 0.3)
+        gateway(chargeStatus: 500)
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
 
         let poll = Task { try await session.awaitChargeState(AwaitChargeOptions(interval: 0.05, initialTimeout: 10)) }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try #require(await settle(until: StubURLProtocol.requestCount(forPathSuffix: "/charge") == 1))
         poll.cancel()
+        StubURLProtocol.releaseAnswers()
 
         await #expect(throws: CancellationError.self) { try await poll.value }
         #expect(reported.all.isEmpty)

@@ -244,7 +244,9 @@ extension SessionNetworkTests {
     }
 
     @Test func anEncryptionCancelledWhileTheKeyFetchFailsReportsNothing() async throws {
-        StubURLProtocol.reset(delay: 0.3, headers: ["Date": Self.serverDateHeader]) { _ in (500, Data()) }
+        StubURLProtocol.reset(headers: ["Date": Self.serverDateHeader]) { _ in (500, Data()) }
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
         let reported = ReportedErrors()
         let config = GopaySDKConfig(
             environment: .development(baseURL: "https://stub.test/"),
@@ -260,8 +262,9 @@ extension SessionNetworkTests {
         let sdk = GopaySDK(config: config, networkClient: client)
 
         let encryption = Task { [card] in try await sdk.encryptCardData(card) }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try #require(await settle(until: StubURLProtocol.requestCount(forPathSuffix: "cards/public-key") == 1))
         encryption.cancel()
+        StubURLProtocol.releaseAnswers()
 
         await #expect(throws: CancellationError.self) { try await encryption.value }
         #expect(reported.all.isEmpty)
@@ -269,7 +272,9 @@ extension SessionNetworkTests {
 
     @Test func aSubmitCancelledDuringTheKeyFetchKeepsTheCardAndReportsNothing() async throws {
         let key = try TestEncryptionKey()
-        serveKey(key, headers: ["Date": Self.serverDateHeader], delay: 0.3)
+        serveKey(key, headers: ["Date": Self.serverDateHeader])
+        StubURLProtocol.holdAnswers()
+        defer { StubURLProtocol.releaseAnswers() }
         let reported = ReportedErrors()
         let config = GopaySDKConfig(
             environment: .development(baseURL: "https://stub.test/"),
@@ -289,8 +294,9 @@ extension SessionNetworkTests {
         sdk.updateCardFormData(formData, formId: "f1")
 
         let submit = Task { try await sdk.submitCardForm(formId: "f1") }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try #require(await settle(until: StubURLProtocol.requestCount(forPathSuffix: "cards/public-key") == 1))
         submit.cancel()
+        StubURLProtocol.releaseAnswers()
 
         await #expect(throws: CancellationError.self) { try await submit.value }
         #expect(sdk.internalCardFormData["f1"] != nil)
