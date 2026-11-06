@@ -93,115 +93,94 @@ struct CardFormPrivacyCoverHostedTests {
 
     /// Hosts a form with the cover switched on and a fake capture state, and returns the window and
     /// the card number field.
-    private func host(isEnabled: Bool, screen: FakeScreen) -> (UIWindow, UITextField) {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 400))
-        window.rootViewController = UIHostingController(
-            rootView: GopayCardForm(locale: "en")
+    /// The window is hidden again at the end of the test: the suites run side by side in one
+    /// process, and a form left on screen keeps hearing the notifications the next tests post.
+    private func host(isEnabled: Bool, screen: FakeScreen) async throws -> (UIWindow, UITextField) {
+        let window = try await hostedWindow(
+            GopayCardForm(locale: "en")
                 .environment(
                     \.gopayCardFormCaptureProtection,
                     CardFormCaptureProtection(isEnabled: isEnabled, screenIsCaptured: { screen.isCaptured })
-                )
+                ),
+            size: CGSize(width: 380, height: 400)
         )
-        window.isHidden = false
-        window.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-
         return (window, textFields(in: window)[0])
     }
 
     private func post(_ name: Notification.Name) {
         NotificationCenter.default.post(name: name, object: nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
     }
 
-    /// Whether `field` is visible on screen: its area as drawn holds more than one color, the
-    /// placeholder's glyphs over the background. Under the cover the area is a single flat color.
-    /// Measured on what is drawn, since what a cover is for is what a snapshot or a recording sees.
-    private func isVisible(_ field: UITextField, in window: UIWindow) -> Bool {
-        let area = field.convert(field.bounds, to: window)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        // `layer.render` rather than `drawHierarchy`, which draws nothing in a test process.
-        let image = UIGraphicsImageRenderer(bounds: area, format: format).image { context in
-            window.layer.render(in: context.cgContext)
-        }
-        guard let cgImage = image.cgImage,
-              let data = cgImage.dataProvider?.data,
-              let bytes = CFDataGetBytePtr(data) else { return false }
-        let bytesPerPixel = cgImage.bitsPerPixel / 8
-        var colors = Set<UInt32>()
-        for y in 0..<cgImage.height {
-            for x in 0..<cgImage.width {
-                let offset = y * cgImage.bytesPerRow + x * bytesPerPixel
-                colors.insert(UInt32(bytes[offset]) << 16 | UInt32(bytes[offset + 1]) << 8 | UInt32(bytes[offset + 2]))
-                if colors.count > 1 { return true }
-            }
-        }
-        return false
+    /// Whether `field` ends up `visible` or covered within the limit; the caller expects it.
+    private func fieldSettles(_ field: UITextField, in window: UIWindow, visible: Bool) async -> Bool {
+        await settle(until: isVisible(field, in: window) == visible)
     }
 
-    @Test func theFieldsAreVisibleWhileNothingCoversThem() {
-        let (window, field) = host(isEnabled: true, screen: FakeScreen())
+    @Test func theFieldsAreVisibleWhileNothingCoversThem() async throws {
+        let (window, field) = try await host(isEnabled: true, screen: FakeScreen())
+        defer { window.isHidden = true }
         #expect(isVisible(field, in: window))
     }
 
-    @Test func resigningActiveCoversTheFieldsAndBecomingActiveUncoversThem() {
-        let (window, field) = host(isEnabled: true, screen: FakeScreen())
+    @Test func resigningActiveCoversTheFieldsAndBecomingActiveUncoversThem() async throws {
+        let (window, field) = try await host(isEnabled: true, screen: FakeScreen())
+        defer { window.isHidden = true }
         post(UIApplication.willResignActiveNotification)
-        #expect(!isVisible(field, in: window))
+        #expect(await fieldSettles(field, in: window, visible: false), "resigning active did not cover the fields")
         post(UIApplication.didBecomeActiveNotification)
-        #expect(isVisible(field, in: window))
+        #expect(await fieldSettles(field, in: window, visible: true), "becoming active did not uncover the fields")
     }
 
-    @Test func aRecordingCoversTheFieldsUntilItStops() {
+    @Test func aRecordingCoversTheFieldsUntilItStops() async throws {
         let screen = FakeScreen()
-        let (window, field) = host(isEnabled: true, screen: screen)
+        let (window, field) = try await host(isEnabled: true, screen: screen)
+        defer { window.isHidden = true }
         screen.isCaptured = true
         post(UIScreen.capturedDidChangeNotification)
-        #expect(!isVisible(field, in: window))
+        #expect(await fieldSettles(field, in: window, visible: false), "the recording did not cover the fields")
         screen.isCaptured = false
         post(UIScreen.capturedDidChangeNotification)
-        #expect(isVisible(field, in: window))
+        #expect(await fieldSettles(field, in: window, visible: true), "the end of the recording did not uncover them")
     }
 
-    @Test func switchedOffTheFormNeverCoversItself() {
+    /// Checked after every notification: a cover that never goes up has no state to wait for, so
+    /// each check waits until the form has laid out what the notification changed instead.
+    @Test func switchedOffTheFormNeverCoversItself() async throws {
         let screen = FakeScreen()
         screen.isCaptured = true
-        let (window, field) = host(isEnabled: false, screen: screen)
-        post(UIApplication.willResignActiveNotification)
-        post(UIScreen.capturedDidChangeNotification)
-        post(UIApplication.didBecomeActiveNotification)
-        #expect(isVisible(field, in: window))
-    }
-
-    /// Async, unlike the rest of the suite: the field moves the focus in a block it queues on the
-    /// main queue, and a test running on that queue only lets it run while it is suspended. Polls
-    /// instead of pausing once: a loaded CI runner takes many times longer than a quiet Mac.
-    private func settle(until condition: @autoclosure () -> Bool) async throws {
-        var attempts = 100
-        while attempts > 0, !condition() {
-            attempts -= 1
-            try await Task.sleep(nanoseconds: 50_000_000)
+        let (window, field) = try await host(isEnabled: false, screen: screen)
+        defer { window.isHidden = true }
+        for name in [
+            UIApplication.willResignActiveNotification,
+            UIScreen.capturedDidChangeNotification,
+            UIApplication.didBecomeActiveNotification,
+        ] {
+            post(name)
+            await drainMainQueue(laidOut: window)
+            #expect(isVisible(field, in: window), "covered after \(name.rawValue)")
         }
     }
 
+    /// Async like the rest of the hosted suite: the field moves the focus in a block it queues on
+    /// the main queue, and a test running on that queue only lets it run while it is suspended.
     @Test func aRecordingEndsTheInput() async throws {
         let screen = FakeScreen()
-        let (window, field) = host(isEnabled: true, screen: screen)
+        let (window, field) = try await host(isEnabled: true, screen: screen)
+        defer { window.isHidden = true }
         window.makeKeyAndVisible()
         field.becomeFirstResponder()
-        try await settle(until: field.isFirstResponder)
+        await settle(until: field.isFirstResponder)
         try #require(field.isFirstResponder)
         screen.isCaptured = true
         NotificationCenter.default.post(name: UIScreen.capturedDidChangeNotification, object: nil)
-        try await settle(until: !field.isFirstResponder)
+        await settle(until: !field.isFirstResponder)
         #expect(!field.isFirstResponder)
         // A tap through the cover does not bring the keyboard back.
         #expect(!field.becomeFirstResponder())
         screen.isCaptured = false
         NotificationCenter.default.post(name: UIScreen.capturedDidChangeNotification, object: nil)
         // The field accepts the focus again only once the form has read the capture's end.
-        try await settle(until: field.becomeFirstResponder())
+        await settle(until: field.becomeFirstResponder())
         #expect(field.isFirstResponder)
         field.resignFirstResponder()
     }

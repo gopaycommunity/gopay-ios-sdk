@@ -18,52 +18,58 @@ import UIKit
 @MainActor
 struct CardFormResetTests {
 
-    /// Hosts `form` in a real window and spins the runloop until SwiftUI has run `onAppear`.
-    private func host<V: View>(_ form: V) -> UIWindow {
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
-        window.rootViewController = UIHostingController(rootView: form)
-        window.isHidden = false
-        window.layoutIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        return window
+    /// Hosts `form` in a real window and waits until it is on screen.
+    private func host<V: View>(_ form: V) async throws -> UIWindow {
+        try await hostedWindow(form)
     }
 
-    @Test func aLiveFormRegistersItsWipeAndSyncsOnAppear() {
+
+    @Test func aLiveFormRegistersItsWipeAndSyncsOnAppear() async throws {
         GopaySDK.shared.clearCardFormData()
-        let window = host(GopayCardForm(formId: "reset-register"))
+        let window = try await host(GopayCardForm(formId: "reset-register"))
         defer { window.isHidden = true }
 
         // onAppear syncs the (empty) form, which is how the SDK learns the form exists.
+        await settle(until: GopaySDK.shared.internalCardFormData["reset-register"] != nil)
         #expect(GopaySDK.shared.internalCardFormData["reset-register"] != nil)
         #expect(GopaySDK.shared.mostRecentFormId == "reset-register")
     }
 
     /// The whole chain: the SDK asks the form to wipe, the form empties itself and republishes
     /// its validity. Without `resetFields` writing the binding this stays `nil`.
-    @Test func runningTheWipeReportsTheFormAsInvalid() {
+    @Test func runningTheWipeReportsTheFormAsInvalid() async throws {
         GopaySDK.shared.clearCardFormData()
         let validity = Box<Bool?>(nil)
-        let window = host(
+        let window = try await host(
             GopayCardForm(isValid: validity.binding, formId: "reset-binding")
         )
         defer { window.isHidden = true }
 
         validity.value = nil
         GopaySDK.shared.clearCardFormData(formId: "reset-binding")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await settle(until: validity.value != nil)
 
         #expect(validity.value == false)
     }
 
     /// A wiped form has nothing left to hand back, so the re-sync that follows carries an empty
     /// card rather than the one the user typed.
-    @Test func aWipedFormSyncsBackAnInvalidCard() {
+    @Test func aWipedFormSyncsBackAnInvalidCard() async throws {
         GopaySDK.shared.clearCardFormData()
-        let window = host(GopayCardForm(formId: "reset-resync"))
+        let window = try await host(GopayCardForm(formId: "reset-resync"))
         defer { window.isHidden = true }
+        // A card the SDK would take, so the check below is about what the wipe left.
+        let fields = textFields(in: window)
+        for (field, text) in zip(fields, ["4444444444444448", "1230", "123"]) {
+            type(text, into: field)
+        }
+        await settle(until: GopaySDK.shared.internalCardFormData["reset-resync"]?.isValid == true)
+        #expect(GopaySDK.shared.internalCardFormData["reset-resync"]?.isValid == true)
 
         GopaySDK.shared.clearCardFormData(formId: "reset-resync")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        // Nothing to wait for when the card stays gone: let the form lay out the wipe and run
+        // what it queued, so a re-sync of the old card would have landed by now.
+        await drainMainQueue(laidOut: window)
 
         // Whatever the form republishes after a wipe must not be submittable.
         let stored = GopaySDK.shared.internalCardFormData["reset-resync"]
@@ -72,17 +78,17 @@ struct CardFormResetTests {
 
     /// An `.onSubmit` form left at `attempted == true` would show "required" under every emptied
     /// field, also during the 3DS challenge that follows a submit, so the wipe resets it.
-    @Test func runningTheWipeSetsAttemptedBackToFalse() {
+    @Test func runningTheWipeSetsAttemptedBackToFalse() async throws {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
-        let window = host(
+        let window = try await host(
             GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "reset-attempted")
         )
         defer { window.isHidden = true }
 
         attempted.value = true
         GopaySDK.shared.clearCardFormData(formId: "reset-attempted")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await settle(until: attempted.value == false)
 
         #expect(attempted.value == false)
     }
@@ -92,32 +98,35 @@ struct CardFormResetTests {
     /// Two forms under the same ID share the host's binding, as a navigation transition or a
     /// `key()` churn produces. Only the registered one, the newer, writes it: the replaced one
     /// neither reports what is typed into it nor sets it back to invalid when it leaves.
-    @Test func onlyTheRegisteredFormWritesTheSharedBinding() {
+    ///
+    /// The checks that the replaced form wrote nothing have no state to wait for. Each waits until
+    /// the form has laid out the change and run what it queued, and the registered form leaving,
+    /// which does write the binding, shows the same steps are enough to see a write.
+    @Test func onlyTheRegisteredFormWritesTheSharedBinding() async throws {
         GopaySDK.shared.clearCardFormData()
         let validity = Box<Bool?>(nil)
-        let older = host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
-        let newer = host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
+        let older = try await host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
+        let newer = try await host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
         defer {
             older.isHidden = true
             newer.isHidden = true
         }
 
         validity.value = true
-        let olderNumber = textFields(in: older)[0]
-        let end = NSRange(location: 0, length: 0)
-        _ = olderNumber.delegate?.textField?(olderNumber, shouldChangeCharactersIn: end, replacementString: "4444")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        type("4444", into: textFields(in: older)[0])
+        #expect(textFields(in: older)[0].text == "4444", "the edit did not reach the replaced form")
+        await drainMainQueue(laidOut: older)
         #expect(validity.value == true, "the replaced form's edit reached the binding")
         #expect(GopaySDK.shared.internalCardFormData["reset-shared"]?.cardNumber == "")
 
         older.rootViewController = nil
         older.isHidden = true
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await drainMainQueue(laidOut: older)
         #expect(validity.value == true, "the replaced form's departure reached the binding")
 
         // The registered form leaving does leave the binding invalid.
         newer.rootViewController = nil
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await drainMainQueue(laidOut: newer)
         #expect(validity.value == false)
     }
 
@@ -126,28 +135,26 @@ struct CardFormResetTests {
     /// A host hands the form another ID while it stays on screen, one per payment for instance.
     /// The registration and the card move with it: what is typed after the change reaches the SDK
     /// under the new ID, and nothing stays under the old one. The Android form does the same.
-    @Test func aNewFormIdMovesTheRegistrationAndTheCard() {
+    @Test func aNewFormIdMovesTheRegistrationAndTheCard() async throws {
         GopaySDK.shared.clearCardFormData()
         let host = FormIdHost()
         host.id = "reset-id-first"
-        let window = self.host(FormIdHostView(host: host))
+        let window = try await self.host(FormIdHostView(host: host))
         defer { window.isHidden = true }
         let cardNumber = textFields(in: window)[0]
-        func type(_ text: String) {
-            let end = NSRange(location: (cardNumber.text ?? "").utf16.count, length: 0)
-            _ = cardNumber.delegate?.textField?(cardNumber, shouldChangeCharactersIn: end, replacementString: text)
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-        type("4444")
-        #expect(GopaySDK.shared.internalCardFormData["reset-id-first"]?.cardNumber == "4444")
+        func stored(_ id: String) -> GopayCardFormData? { GopaySDK.shared.internalCardFormData[id] }
+        type("4444", into: textFields(in: window)[0])
+        await settle(until: stored("reset-id-first")?.cardNumber == "4444")
+        #expect(stored("reset-id-first")?.cardNumber == "4444")
 
         host.id = "reset-id-second"
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await settle(until: stored("reset-id-first") == nil && stored("reset-id-second") != nil)
         #expect(GopaySDK.shared.internalCardFormData["reset-id-first"] == nil)
         #expect(GopaySDK.shared.internalCardFormData["reset-id-second"]?.cardNumber == "4444", "the card moves along")
         #expect(cardNumber.text == "4444", "the fields are not emptied")
 
-        type("4")
+        type("4", into: textFields(in: window)[0])
+        await settle(until: stored("reset-id-second")?.cardNumber == "44444")
         #expect(GopaySDK.shared.internalCardFormData["reset-id-second"]?.cardNumber == "44444")
         #expect(GopaySDK.shared.mostRecentFormId == "reset-id-second")
     }
@@ -155,21 +162,21 @@ struct CardFormResetTests {
     /// The host hands the form a new ID and takes it off the screen in the same update, so the
     /// form leaves before it has moved over. It still leaves nothing under the ID it was
     /// registered under.
-    @Test func aFormLeavingAsItsIdChangesTakesItsCardFromTheOldId() {
+    @Test func aFormLeavingAsItsIdChangesTakesItsCardFromTheOldId() async throws {
         GopaySDK.shared.clearCardFormData()
         let host = FormIdHost()
         host.id = "reset-gone-first"
-        let window = self.host(FormIdHostView(host: host))
+        let window = try await self.host(FormIdHostView(host: host))
         defer { window.isHidden = true }
-        let cardNumber = textFields(in: window)[0]
-        let end = NSRange(location: 0, length: 0)
-        _ = cardNumber.delegate?.textField?(cardNumber, shouldChangeCharactersIn: end, replacementString: "4444")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        type("4444", into: textFields(in: window)[0])
+        await settle(until: GopaySDK.shared.internalCardFormData["reset-gone-first"]?.cardNumber == "4444")
         #expect(GopaySDK.shared.internalCardFormData["reset-gone-first"]?.cardNumber == "4444")
 
         host.id = "reset-gone-second"
         host.isShown = false
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await settle(until: GopaySDK.shared.owner(of: "reset-gone-first") == nil)
+        // Nor anything under the new ID, which has no state to wait for once the form is gone.
+        await drainMainQueue(laidOut: window)
         #expect(GopaySDK.shared.internalCardFormData["reset-gone-first"] == nil)
         #expect(GopaySDK.shared.owner(of: "reset-gone-first") == nil)
         #expect(GopaySDK.shared.internalCardFormData["reset-gone-second"] == nil)
@@ -179,32 +186,36 @@ struct CardFormResetTests {
 
     /// A live `.onSubmit` form registers what a submit does to it: the binding goes to `true`,
     /// so the host does not have to flip it before calling `submitCardForm`.
-    @Test func theSubmitTurnsAttemptedOn() {
+    @Test func theSubmitTurnsAttemptedOn() async throws {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
-        let window = host(
+        let window = try await host(
             GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-attempted")
         )
         defer { window.isHidden = true }
 
         GopaySDK.shared.notifyCardFormSubmitAttempted(formId: "submit-attempted")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await settle(until: attempted.value == true)
 
         #expect(attempted.value == true)
     }
 
     /// Only the form the submit was for is told: a submit for another ID, or for one no form is
     /// on screen under, leaves an `.onSubmit` form's binding alone.
-    @Test func aSubmitForAnotherFormLeavesTheBindingAlone() {
+    ///
+    /// The binding staying alone has no state to wait for, so the check waits until the form has
+    /// laid out and run what the submit queued; ``theSubmitTurnsAttemptedOn`` shows a submit for
+    /// this form does get through.
+    @Test func aSubmitForAnotherFormLeavesTheBindingAlone() async throws {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
-        let window = host(
+        let window = try await host(
             GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-bystander")
         )
         defer { window.isHidden = true }
 
         GopaySDK.shared.notifyCardFormSubmitAttempted(formId: "submit-gone")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        await drainMainQueue(laidOut: window)
 
         #expect(attempted.value == false)
     }
