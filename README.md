@@ -72,6 +72,9 @@ targets: [
 
 ### CocoaPods
 
+CocoaPods Trunk is read-only from December 2, 2026. The last version on CocoaPods is 2.5.0;
+later versions are released through Swift Package Manager only.
+
 ```ruby
 target 'YourApp' do
   use_frameworks!
