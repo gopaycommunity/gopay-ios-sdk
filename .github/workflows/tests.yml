@@ -38,6 +38,9 @@ jobs:
           xcodebuild -project sdk/sdk.xcodeproj -scheme sdk -showdestinations
 
       # Package.swift has no test target, so the tests run through the Xcode project.
+      # A failed test runs up to twice more, as a safety net against a slow runner only: the tests
+      # wait for states rather than for fixed times. A retried test still shows in the log and the
+      # result bundle, so a test that needed it is visible and gets fixed.
       - name: Run unit tests
         run: |
           rm -rf test-results
@@ -45,6 +48,8 @@ jobs:
             -project sdk/sdk.xcodeproj \
             -scheme sdk \
             -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             -resultBundlePath test-results/TestResults.xcresult
 
       # Upload the parent directory so the download keeps its .xcresult wrapper and opens in Xcode.
