@@ -39,18 +39,31 @@ jobs:
 
       # Package.swift has no test target, so the tests run through the Xcode project.
       # A failed test runs up to twice more, as a safety net against a slow runner only: the tests
-      # wait for states rather than for fixed times. A retried test still shows in the log and the
-      # result bundle, so a test that needed it is visible and gets fixed.
+      # wait for states rather than for fixed times. A run that passes only after a retry is still
+      # green, so the next step flags every test that needed one.
       - name: Run unit tests
         run: |
+          set -o pipefail
           rm -rf test-results
+          mkdir -p test-results
           xcodebuild test \
             -project sdk/sdk.xcodeproj \
             -scheme sdk \
             -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
             -retry-tests-on-failure \
             -test-iterations 3 \
-            -resultBundlePath test-results/TestResults.xcresult
+            -resultBundlePath test-results/TestResults.xcresult \
+            2>&1 | tee test-results/xcodebuild.log
+
+      # A retry can hide a real race in the SDK, such as one in cancelling a request, so a test that
+      # failed before it passed shows as a warning on the run's page instead of passing unnoticed.
+      - name: Flag tests that passed only on a retry
+        if: success()
+        run: |
+          grep "' failed on '" test-results/xcodebuild.log \
+            | sed -E "s/^Test case '([^']+)' failed on .*/\1/" | sort -u \
+            | while read -r test; do echo "::warning title=Test passed only on a retry::$test"; done \
+            || true
 
       # Upload the parent directory so the download keeps its .xcresult wrapper and opens in Xcode.
       - name: Upload test results
