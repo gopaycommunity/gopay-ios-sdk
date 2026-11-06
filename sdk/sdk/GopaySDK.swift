@@ -21,8 +21,9 @@ import PassKit
 /// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6. Every
 /// mutable property is guarded: the configuration, its telemetry and the gateway objects made from
 /// it by `configLock`, replaced together by each ``initialize(with:)``; the card forms by
-/// `cardFormDataLock`; the sessions live in an actor. The two test hooks, `makeTelemetry` and
-/// `warnSink`, are set by tests before the SDK is used and by nothing else.
+/// `cardFormDataLock`; the sessions live in an actor. The four test hooks, `makeTelemetry`,
+/// `warnSink`, `deviceLanguages` and `waitsForInitSession`, are set by tests before the SDK is
+/// used and by nothing else.
 public class GopaySDK: @unchecked Sendable {
 
     /// The current version of the SDK.
@@ -72,6 +73,17 @@ public class GopaySDK: @unchecked Sendable {
     /// How ``initialize(with:)`` makes the telemetry for a configuration. Replaced in tests, which
     /// catch the uploads instead of sending them, like ``warnSink``; set before the SDK is used.
     var makeTelemetry: (GopaySDKConfig) -> Telemetry = { Telemetry(config: $0) }
+
+    /// The device's languages, which the session start sends GoPay to set the payment's language
+    /// from. Replaced in tests, like ``makeTelemetry``, so they need not touch the
+    /// ``GopayLocales/preferredLanguages`` hook other suites pin; set before the SDK is used.
+    var deviceLanguages: () -> [String] = { GopayLocales.preferredLanguages() }
+
+    /// Whether ``startPaymentSession(paymentId:paymentSecret:scope:)`` waits for the session's
+    /// init-session request before it returns. `false` outside tests. The tests' shared SDKs turn
+    /// it on, so a request left in the background never reaches the stub after the next test has
+    /// reset it, or waits behind answers the next test holds; set before the SDK is used.
+    var waitsForInitSession = false
 
     /// What the SDK talks to the gateway through, made from one configuration.
     private struct Gateway {
@@ -224,6 +236,10 @@ public class GopaySDK: @unchecked Sendable {
     /// before starting another for the same payment, or reuse an existing one via
     /// ``getPaymentSession(_:)``.
     ///
+    /// Once started, the session tells GoPay in the background which SDK and version works with
+    /// the payment, and GoPay sets the payment's language from the device's languages; this call
+    /// does not wait for it, and its failure affects nothing.
+    ///
     /// - Parameters:
     ///   - paymentId: The payment identifier issued by the merchant backend.
     ///   - paymentSecret: The matching `payment_secret`.
@@ -301,6 +317,10 @@ public class GopaySDK: @unchecked Sendable {
             throw error
         }
         telemetry.sessionStarted(paymentId: paymentId)
+        await session.startInitSession(languages: deviceLanguages())
+        if waitsForInitSession {
+            await session.initSessionTask?.value
+        }
         return session
     }
 

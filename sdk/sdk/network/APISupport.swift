@@ -121,11 +121,15 @@ extension AsyncHTTPClient {
     ///   - paymentId: The payment the request belongs to, `nil` for the merchant-level ones.
     ///   - reportsResponseBody: `false` for the token exchange, whose answer is a token pair the
     ///     redaction would reduce to nothing anyway, and for the public key.
+    ///   - cancellable: `true` drops the request when the task is cancelled, see
+    ///     ``AsyncHTTPClient/send(_:cancellable:)``. A request dropped that way was given up on,
+    ///     not answered, and is not reported.
     func send(
         _ request: URLRequest,
         telemetry: Telemetry,
         paymentId: String?,
-        reportsResponseBody: Bool = true
+        reportsResponseBody: Bool = true,
+        cancellable: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
         let startedAt = Telemetry.now()
         let path = telemetryPath(of: request)
@@ -151,9 +155,11 @@ extension AsyncHTTPClient {
             )
         }
         do {
-            let result = try await send(request)
+            let result = try await send(request, cancellable: cancellable)
             report(result)
             return result
+        } catch let cancel as CancellationError where cancellable {
+            throw cancel
         } catch {
             report(nil)
             throw error

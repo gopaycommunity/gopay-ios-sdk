@@ -41,6 +41,10 @@ public actor PaymentSession {
     /// Set once by ``attach(client:)`` immediately after construction.
     private var api: PaymentAPI!
 
+    /// `POST /payments/{payment_id}/init-session`, sent once the session has started and not
+    /// waited for; ``close()`` cancels it. Tests that count requests or events await it.
+    private(set) var initSessionTask: Task<Void, Never>?
+
     /// Where a charge without browser data gets the device's. ``BrowserData/deviceDefault()``
     /// unless a test replaces it with ``useDeviceBrowserData(_:)``, so the tests of the charges
     /// do not have to start a WKWebView for the User-Agent.
@@ -297,6 +301,7 @@ public actor PaymentSession {
         tokenExpiresAt = 0
         authTask?.cancel()
         authTask = nil
+        initSessionTask?.cancel()
         if reportsLeave {
             telemetry.sessionClosed(paymentId: paymentId)
         } else {
@@ -304,6 +309,48 @@ public actor PaymentSession {
         }
         await onClose(self)
     }
+
+    // MARK: - Init session
+
+    /// Tells the gateway, once and in the background, that this SDK works with the payment: its
+    /// type and version, and the device's languages, from which the gateway sets the payment's
+    /// language. ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` calls it once
+    /// the session is registered and returns without waiting.
+    ///
+    /// Nothing that happens to the request reaches the integrator: no error is thrown, none goes
+    /// to the `errorCallback`, there is no retry. The telemetry sees the request as one `api_call`
+    /// like any other, and a request that got no answer at all also as an `error` event, sent to
+    /// the telemetry directly (the browser SDK's `emitError(e, notifyIntegrator = false)`); an
+    /// error status is the `api_call`'s alone. A scope without `payment:read`, which the gateway
+    /// would answer with a 403, sends nothing.
+    ///
+    /// - Parameter languages: The device's languages, ``GopaySDK/deviceLanguages``.
+    func startInitSession(languages: [String]) {
+        // A session closed meanwhile has no token left to send it with.
+        guard initSessionTask == nil, paymentSecret != nil,
+              scope.split(whereSeparator: \.isWhitespace).contains(where: { $0 == Self.initSessionScope })
+        else { return }
+        let api = self.api!
+        let paymentId = self.paymentId
+        let telemetry = self.telemetry
+        initSessionTask = Task {
+            do {
+                try await api.initSession(paymentId: paymentId, request: .current, languages: languages)
+            } catch let error as GopaySDKError {
+                // A failure close() overtook is not worth reporting either; Telemetry.error
+                // leaves out the gateway's error statuses itself.
+                guard !Task.isCancelled else { return }
+                telemetry.error(error, paymentId: paymentId)
+            } catch {
+                // Only a CancellationError gets here, from close(): nothing to report.
+                // DefaultNetworkClient wraps every failure of its own in a GopaySDKError, and
+                // the encoder cannot fail on this body.
+            }
+        }
+    }
+
+    /// The scope `POST /payments/{payment_id}/init-session` needs.
+    private static let initSessionScope = "payment:read"
 
     // MARK: - Eager auth
 

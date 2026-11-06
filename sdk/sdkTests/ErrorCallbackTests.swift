@@ -61,7 +61,7 @@ extension SessionNetworkTests {
                 errorCallback: { reported.append($0) }
             ),
             networkClient: stubbedClient()
-        )
+        ).waitingForInitSession()
     }
 
     /// The gateway as these tests need it: a token, browser data, the charge endpoints, the Apple

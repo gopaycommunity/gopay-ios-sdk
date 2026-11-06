@@ -52,6 +52,8 @@ struct RecordedRequest {
     let path: String
     let headers: [String: String]
     let body: Data
+    var method = "GET"
+    var timeoutInterval: TimeInterval = 0
 
     func header(_ name: String) -> String? { headers[name] }
 
@@ -73,6 +75,10 @@ final class StubURLProtocol: URLProtocol {
     private static let lock = NSLock()
     private static var storedHandler: Handler?
     private static var recordedRequests: [RecordedRequest] = []
+    /// Requests to a path with this suffix are never answered, see ``holdAnswers(forPathSuffix:)``.
+    private static var heldPathSuffix: String?
+    /// Paths of the requests the loading system stopped before they were answered, in order.
+    private static var stopped: [String] = []
     /// Artificial per-request delay (seconds), to widen single-flight windows.
     private static var storedDelay: TimeInterval = 0
     /// Extra response headers every answer carries, such as the gateway's `Date`.
@@ -91,6 +97,8 @@ final class StubURLProtocol: URLProtocol {
         lock.lock(); defer { lock.unlock() }
         storedHandler = handler
         recordedRequests = []
+        heldPathSuffix = nil
+        stopped = []
         storedDelay = delay
         storedHeaders = headers
         storedTransportError = transportError
@@ -131,16 +139,37 @@ final class StubURLProtocol: URLProtocol {
         return recordedRequests.map(\.path)
     }
 
+    /// Leaves every request to a path ending in `suffix` unanswered until it times out or is
+    /// cancelled, a gateway that does not answer. Until the next ``reset(delay:headers:transportError:handler:)``.
+    static func holdAnswers(forPathSuffix suffix: String) {
+        lock.lock(); defer { lock.unlock() }
+        heldPathSuffix = suffix
+    }
+
+    /// Paths of the requests stopped before an answer, a cancelled one among them.
+    static var stoppedPaths: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return stopped
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         StubURLProtocol.lock.lock()
+        let path = request.url?.path ?? ""
         StubURLProtocol.recordedRequests.append(RecordedRequest(
-            path: request.url?.path ?? "",
+            path: path,
             headers: request.allHTTPHeaderFields ?? [:],
-            body: StubURLProtocol.readBody(of: request)
+            body: StubURLProtocol.readBody(of: request),
+            method: request.httpMethod ?? "GET",
+            timeoutInterval: request.timeoutInterval
         ))
+        if let held = StubURLProtocol.heldPathSuffix, path.hasSuffix(held) {
+            StubURLProtocol.lock.unlock()
+            return
+        }
+        answered = true
         let handler = StubURLProtocol.storedHandler
         let delay = StubURLProtocol.storedDelay
         let headers = StubURLProtocol.storedHeaders
@@ -171,7 +200,16 @@ final class StubURLProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    /// Called once a request ends, answered or not; only an unanswered one is recorded.
+    override func stopLoading() {
+        StubURLProtocol.lock.lock(); defer { StubURLProtocol.lock.unlock() }
+        guard !answered else { return }
+        StubURLProtocol.stopped.append(request.url?.path ?? "")
+    }
+
+    /// Whether this request is being answered, set in `startLoading` and read in `stopLoading`,
+    /// which may run on different threads; both under ``lock``.
+    private var answered = false
 
     /// `URLSession` hands the protocol a body stream, not `httpBody`, so the bytes are read back
     /// from whichever of the two is set.
@@ -207,6 +245,17 @@ final class StubGate: @unchecked Sendable {
         condition.lock(); defer { condition.unlock() }
         isOpen = true
         condition.broadcast()
+    }
+}
+
+extension GopaySDK {
+    /// This SDK, made to wait for each session's init-session request before the start returns.
+    /// Every SDK the suites build over the shared stub uses it: a request left running in the
+    /// background would otherwise reach the stub after the next test has reset it, and block the
+    /// URL loading thread behind answers that test holds (`holdAnswers()`).
+    func waitingForInitSession() -> GopaySDK {
+        waitsForInitSession = true
+        return self
     }
 }
 
@@ -940,7 +989,7 @@ struct SessionNetworkTests {
             clientId: clientId,
             shareableKey: shareableKey
         )
-        return GopaySDK(config: config, networkClient: stubbedClient())
+        return GopaySDK(config: config, networkClient: stubbedClient()).waitingForInitSession()
     }
 
     @Test func startPaymentSession_duplicate_throwsAlreadyExists() async throws {

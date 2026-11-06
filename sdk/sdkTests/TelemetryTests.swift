@@ -792,7 +792,7 @@ extension SessionNetworkTests {
             config: GopaySDKConfig(environment: .development(baseURL: stubBaseURL), clientId: "client", shareableKey: "shareable"),
             networkClient: stubbedClient(),
             telemetry: telemetry
-        )
+        ).waitingForInitSession()
     }
 
     @Test func reportsEveryGatewayRequestOfAPaymentAndItsLifecycle() async throws {
@@ -801,14 +801,17 @@ extension SessionNetworkTests {
         let sdk = sdk(telemetry: probe.telemetry)
 
         let session = try await sdk.startPaymentSession(paymentId: "3273103424", paymentSecret: "s3cret")
+        // The init-session request runs in the background; waited for so the order is fixed.
+        await session.initSessionTask?.value
         _ = try await session.charge(
             .encryptedCard("JWE-PAYLOAD", browserData: Self.telemetryBrowserData, challengePreference: .auto)
         )
         await session.close()
 
-        let events = await probe.settledEvents(5)
-        #expect(events.count == 5)
-        let token = events[0], navigate = events[1], browserData = events[2], charge = events[3], leave = events[4]
+        let events = await probe.settledEvents(6)
+        #expect(events.count == 6)
+        let token = events[0], navigate = events[1], initSession = events[2], browserData = events[3],
+            charge = events[4], leave = events[5]
 
         #expect(token["target"] as? String == "/oauth2/token")
         #expect(token["http_method"] as? String == "POST")
@@ -820,6 +823,10 @@ extension SessionNetworkTests {
 
         #expect(navigate["navigation_type"] as? String == "navigate")
         #expect(navigate["flow"] as? String == "attach")
+
+        #expect(initSession["target"] as? String == "/payments/{id}/init-session")
+        #expect(initSession["action"] as? String == "init-session")
+        #expect(initSession["status_code"] as? Int == 404, "the stub gateway has no init-session, like the sandbox today")
 
         #expect(browserData["target"] as? String == "/cards/browser-data")
         #expect(browserData["payment_session_id"] as? String == "3273103424")
@@ -844,13 +851,16 @@ extension SessionNetworkTests {
         // Held for the whole test: a session reports through the SDK that made it, while it lives.
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
+        await session.initSessionTask?.value
 
         await #expect(throws: GopaySDKError.self) { _ = try await session.getChargeState() }
 
-        let events = await probe.settledEvents(3)
-        #expect(events.count == 3)
-        #expect(events[2]["target"] as? String == "/payments/{id}/charge")
+        let events = await probe.settledEvents(4)
+        #expect(events.count == 4)
+        #expect(events[2]["target"] as? String == "/payments/{id}/init-session")
         #expect(events[2]["status_code"] as? Int == 503)
+        #expect(events[3]["target"] as? String == "/payments/{id}/charge")
+        #expect(events[3]["status_code"] as? Int == 503)
         #expect(!events.contains { $0["event_type"] as? String == "js_event" })
     }
 
@@ -863,6 +873,8 @@ extension SessionNetworkTests {
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
+        // Answered before the device goes offline, so the one transport error is the read's.
+        await session.initSessionTask?.value
         isOffline.value = true
 
         await #expect(throws: GopaySDKError.self) { _ = try await session.getStatus() }
@@ -950,18 +962,22 @@ extension SessionNetworkTests {
         StubURLProtocol.reset { req in
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") { return tokenResponse() }
+            if path.hasSuffix("init-session") { return (204, Data()) }
             return reads.increment() == 1 ? (401, Data()) : (200, json(["id": 1, "state": "CREATED"]))
         }
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
+        await session.initSessionTask?.value
 
         _ = try? await session.getStatus()
 
-        let events = await probe.settledEvents(5)
+        let events = await probe.settledEvents(6)
         let calls = events.filter { $0["event_type"] as? String == "api_call" }
-        #expect(calls.compactMap { $0["target"] as? String } == ["/oauth2/token", "/payments/{id}", "/oauth2/token", "/payments/{id}"])
-        #expect(calls.compactMap { $0["status_code"] as? Int } == [200, 401, 200, 200])
+        #expect(calls.compactMap { $0["target"] as? String } == [
+            "/oauth2/token", "/payments/{id}/init-session", "/payments/{id}", "/oauth2/token", "/payments/{id}",
+        ])
+        #expect(calls.compactMap { $0["status_code"] as? Int } == [200, 204, 401, 200, 200])
     }
 
     @Test func reportsADuplicateStartAsItsErrorWithoutALeave() async throws {
@@ -969,13 +985,15 @@ extension SessionNetworkTests {
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let first = try await sdk.startPaymentSession(paymentId: "dup", paymentSecret: "s")
+        await first.initSessionTask?.value
 
         await #expect(throws: GopaySDKError.self) { _ = try await sdk.startPaymentSession(paymentId: "dup", paymentSecret: "s") }
         await first.close()
 
-        let events = await probe.settledEvents(5)
+        // The duplicate never registered, so it sends no init-session of its own.
+        let events = await probe.settledEvents(6)
         #expect(events.compactMap { ($0["navigation_type"] ?? $0["function_name"] ?? $0["action"]) as? String } == [
-            "token", "navigate", "token", "AUTH_012", "leave",
+            "token", "navigate", "init-session", "token", "AUTH_012", "leave",
         ])
         #expect(events.allSatisfy { $0["payment_session_id"] as? String == "dup" })
     }

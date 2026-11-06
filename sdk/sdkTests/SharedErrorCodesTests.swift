@@ -106,7 +106,7 @@ extension SessionNetworkTests {
         GopaySDK(
             config: GopaySDKConfig(environment: .development(baseURL: stubBaseURL), clientId: "c", shareableKey: "k"),
             networkClient: stubbedClient()
-        )
+        ).waitingForInitSession()
     }
 
     /// Refused before the key is fetched: the stub answers 500 to anything, so a fetch would fail

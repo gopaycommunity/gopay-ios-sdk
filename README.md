@@ -306,6 +306,12 @@ At most one live session per `payment_id` exists at a time; reuse it via
 `await GopaySDK.shared.getPaymentSession(paymentId)`. `session.close()` wipes the in-memory secret
 and token and unregisters the session.
 
+When a session starts, the SDK also tells GoPay that the iOS SDK, and which version of it,
+works with the payment, and GoPay sets the payment's language from the languages set on the
+device: the one ranked highest among those GoPay supports, or English. Nothing to configure.
+`startPaymentSession` does not wait for this, and if it fails, as it does for a payment that is no
+longer `CREATED`, nothing throws and `errorCallback` is not called.
+
 #### Charging a saved card token instead
 
 When your backend has saved the card as a token (`POST /cards/tokens`, step 6 under
@@ -1350,7 +1356,9 @@ events of one checkout together, and it identifies a payment rather than a perso
 HTTP request does, and GoPay keeps it with the data, together with the SDK's own User-Agent (which
 names the SDK and its version, not the device or the person) and your app's bundle identifier. The
 data is therefore pseudonymised personal data, not anonymous. GoPay processes it under legitimate
-interest to keep the payment integration working and diagnosable.
+interest to keep the payment integration working and diagnosable. When a payment session starts,
+the SDK sends GoPay the languages set on the device, and GoPay records them with the payment
+together with the IP address the request came from.
 
 **What you should do.** Reflect this in your own privacy notice: you are the controller for your
 checkout, and your customers' data is being processed in your app. The reports go to

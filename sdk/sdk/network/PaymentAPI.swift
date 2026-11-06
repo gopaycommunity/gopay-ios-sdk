@@ -73,6 +73,44 @@ final class PaymentAPI {
         }
     }
 
+    /// `POST /payments/{payment_id}/init-session`: tells the gateway which SDK, in which version,
+    /// works with the payment, and in `Accept-Language` the device's languages, from which it sets
+    /// the payment's language. Answered with a `204` and no body; nothing is read from it.
+    ///
+    /// Unlike every other call here it does not go through `run`: a 401 neither drops the
+    /// session's token nor asks for a new one, since a call the payment never needed must not
+    /// touch the session the payment runs on (the browser SDK's `recoverAuth = false`). Without a
+    /// valid token in hand nothing is sent. The request gives up after
+    /// ``initSessionTimeout``, as the telemetry does, and is dropped, not finished, when the task
+    /// running it is cancelled.
+    ///
+    /// - Parameter languages: The device's languages, in its order, for `Accept-Language`
+    ///   (``acceptLanguageHeader(_:fallback:)``).
+    /// - Throws: The request's own failure: ``GopaySDKError`` for an HTTP error status or a
+    ///   transport failure, `CancellationError` when cancelled. The caller swallows them.
+    func initSession(paymentId: String, request: InitSessionRequest, languages: [String]) async throws {
+        guard let token = await tokenProvider?.currentToken(),
+              let url = client.makeURL(path: "payments/\(paymentId)/init-session")
+        else { return }
+        var r = URLRequest(url: url, timeoutInterval: Self.initSessionTimeout)
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let acceptLanguage = acceptLanguageHeader(languages) {
+            r.setValue(acceptLanguage, forHTTPHeaderField: "Accept-Language")
+        }
+        r.httpBody = try JSONEncoder().encode(request)
+        let (data, http) = try await client.send(
+            authorized(r, token: token), telemetry: telemetry, paymentId: paymentId, cancellable: true
+        )
+        try throwIfNotSuccessful(http, body: data, action: "init session")
+    }
+
+    /// How long ``initSession(paymentId:request:languages:)`` waits: the telemetry's own timeout.
+    /// `URLRequest.timeoutInterval` is an idle timeout, the longest wait for the next data, not
+    /// the Android SDK's call timeout over the whole request; for a request this small the two
+    /// end the same.
+    static let initSessionTimeout = Telemetry.requestTimeout
+
     // MARK: - Internals
 
     private func jsonGET(path: String) -> URLRequest? {

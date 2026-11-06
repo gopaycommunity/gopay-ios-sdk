@@ -8,6 +8,16 @@ protocol AsyncHTTPClient {
     var baseURL: String { get }
     func makeURL(path: String) -> URL?
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+    /// ``send(_:)``, and when `cancellable` is `true`, a cancelled task drops the request in flight
+    /// and throws `CancellationError` instead of waiting for the answer.
+    func send(_ request: URLRequest, cancellable: Bool) async throws -> (Data, HTTPURLResponse)
+}
+
+extension AsyncHTTPClient {
+    /// A client that cannot drop a request in flight sends it as ``send(_:)`` does.
+    func send(_ request: URLRequest, cancellable: Bool) async throws -> (Data, HTTPURLResponse) {
+        try await send(request)
+    }
 }
 
 /// URLSession-backed HTTP client. The single low-level networking primitive for the SDK.
@@ -62,33 +72,86 @@ extension DefaultNetworkClient: AsyncHTTPClient {
     /// ``GopaySDKError/transport(_:)``, never the bare `URLError`; a cancelled one throws
     /// `CancellationError`.
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        try await send(request, cancellable: false)
+    }
+
+    /// ``send(_:)``, which with `cancellable` also drops the data task when the calling task is
+    /// cancelled. Only `POST /payments/{id}/init-session` asks for that: every other request runs
+    /// to its answer, so a charge the caller stops waiting for still ends as the gateway decided.
+    func send(_ request: URLRequest, cancellable: Bool) async throws -> (Data, HTTPURLResponse) {
         var mutableRequest = request
         if mutableRequest.value(forHTTPHeaderField: "User-Agent") == nil {
             mutableRequest.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            let task = session.dataTask(with: mutableRequest) { data, response, error in
-                if let error = error {
-                    // A cancelled request is not a failed transport. Nothing in the SDK cancels
-                    // its data tasks today, but one that is cancelled must not read as NETWORK_007.
-                    if (error as? URLError)?.code == .cancelled {
-                        continuation.resume(throwing: CancellationError())
-                    } else {
-                        continuation.resume(throwing: GopaySDKError.transport(error))
-                    }
-                    return
-                }
-                guard let http = response as? HTTPURLResponse else {
-                    continuation.resume(throwing: GopaySDKError(
-                        .unexpected,
-                        message: "Expected an HTTP response but got none"
-                    ))
-                    return
-                }
-                continuation.resume(returning: (data ?? Data(), http))
+        guard cancellable else {
+            return try await withCheckedThrowingContinuation { continuation in
+                dataTask(mutableRequest, continuation: continuation).resume()
             }
+        }
+        let handle = DataTaskHandle()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                handle.start(dataTask(mutableRequest, continuation: continuation))
+            }
+        } onCancel: {
+            handle.cancel()
+        }
+    }
+
+    private func dataTask(
+        _ request: URLRequest,
+        continuation: CheckedContinuation<(Data, HTTPURLResponse), Error>
+    ) -> URLSessionDataTask {
+        session.dataTask(with: request) { data, response, error in
+            if let error = error {
+                // A cancelled request is not a failed transport and must not read as NETWORK_007.
+                // Only a cancellable request is ever cancelled.
+                if (error as? URLError)?.code == .cancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    continuation.resume(throwing: GopaySDKError.transport(error))
+                }
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                continuation.resume(throwing: GopaySDKError(
+                    .unexpected,
+                    message: "Expected an HTTP response but got none"
+                ))
+                return
+            }
+            continuation.resume(returning: (data ?? Data(), http))
+        }
+    }
+}
+
+/// The data task of one cancellable request, which the cancellation handler may reach before the
+/// task exists: a cancel that comes first keeps the task from being sent at all.
+private final class DataTaskHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionDataTask?
+    private var cancelled = false
+
+    func start(_ task: URLSessionDataTask) {
+        lock.lock()
+        self.task = task
+        let cancelled = self.cancelled
+        lock.unlock()
+        // Cancelled before it started: never sent. Cancelling a task that was never resumed still
+        // completes it, with URLError.cancelled, so the caller's continuation is resumed.
+        if cancelled {
+            task.cancel()
+        } else {
             task.resume()
         }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
     }
 }
