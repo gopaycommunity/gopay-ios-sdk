@@ -70,6 +70,22 @@ extension CardFormResetTests {
         }
     }
 
+    /// The form's height once SwiftUI has stopped changing it: the same value twice in a row,
+    /// a run loop turn apart. A loaded CI runner takes many times longer than a fixed pause to
+    /// get there, and a height read too early is not the form at rest.
+    private func settledHeight(in window: UIWindow) async throws -> CGFloat {
+        var last = formHeight(in: window)
+        var attempts = 100
+        while attempts > 0 {
+            attempts -= 1
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let next = formHeight(in: window)
+            if next == last { return next }
+            last = next
+        }
+        return last
+    }
+
     /// A card number typed out moves the keyboard to the expiration in one step: the card number
     /// lets go of it only inside the expiration's `becomeFirstResponder`, as part of UIKit moving
     /// the focus over. A field resigning on its own first takes the keyboard down for a moment and
@@ -147,14 +163,14 @@ extension CardFormResetTests {
 
         try await tap(cardNumber)
         type("4444", into: cardNumber)
-        try await Task.sleep(nanoseconds: 200_000_000)
-        let quiet = formHeight(in: window)
+        let quiet = try await settledHeight(in: window)
 
         try await capture(true)
         try await settle(until: !cardNumber.isFirstResponder)
         try await deliver(.editingDidEnd, to: cardNumber)
         try await capture(false)
-        #expect(formHeight(in: window) == quiet, "the cover taking the keyboard counted as leaving the field")
+        let afterCapture = try await settledHeight(in: window)
+        #expect(afterCapture == quiet, "the cover taking the keyboard counted as leaving the field")
 
         // Typed out under the cover: the focus goes nowhere, now or once the capture ends.
         try await capture(true)
@@ -170,6 +186,7 @@ extension CardFormResetTests {
         try await tap(cardNumber)
         cardNumber.resignFirstResponder()
         try await deliver(.editingDidEnd, to: cardNumber)
+        try await settle(until: formHeight(in: window) > quiet)
         #expect(formHeight(in: window) > quiet, "an error for a field the customer left")
     }
 
