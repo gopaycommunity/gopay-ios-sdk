@@ -15,7 +15,7 @@ protocol AsyncHTTPClient {
 
 extension AsyncHTTPClient {
     /// A client that cannot drop a request in flight sends it as ``send(_:)`` does.
-    func send(_ request: URLRequest, cancellable: Bool) async throws -> (Data, HTTPURLResponse) {
+    func send(_ request: URLRequest, cancellable _: Bool) async throws -> (Data, HTTPURLResponse) {
         try await send(request)
     }
 }
