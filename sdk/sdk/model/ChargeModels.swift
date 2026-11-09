@@ -502,9 +502,21 @@ public struct ChargePaymentResponse: Codable, Sendable {
     /// removing it from the charge response, and the charge block nested in `GET /payments/{id}`
     /// never carried it. The Android SDK decodes it the same way.
     public init(from decoder: Decoder) throws {
+        try self.init(from: decoder, missingStateIsUnknown: false)
+    }
+
+    /// Decodes the charge; with `missingStateIsUnknown` a `state` that is missing or `null` is
+    /// ``ChargeState/unknown`` instead of a decoding error. Only for the charge nested in
+    /// `GET /payments/{id}`, whose payment would otherwise fail to decode as a whole; the charge
+    /// read on its own keeps requiring it. The Android SDK decodes the nested charge the same way.
+    init(from decoder: Decoder, missingStateIsUnknown: Bool) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
-        state = try container.decode(ChargeState.self, forKey: .state)
+        if missingStateIsUnknown {
+            state = try container.decodeIfPresent(ChargeState.self, forKey: .state) ?? .unknown
+        } else {
+            state = try container.decode(ChargeState.self, forKey: .state)
+        }
         paymentInstrument = try container.decodeIfPresent(PaymentInstrumentData.self, forKey: .paymentInstrument)
         action = try container.decodeIfPresent(ChargeAction.self, forKey: .action)
         failReason = try container.decodeIfPresent(String.self, forKey: .failReason)

@@ -866,6 +866,31 @@ extension SessionNetworkTests {
         #expect(!events.contains { $0["event_type"] as? String == "js_event" })
     }
 
+    /// The outcome is one read of the payment, reported as its `api_call` and nothing else (GPMOB-198).
+    @Test func reportsThePaymentOutcomeOnlyAsItsApiCall() async throws {
+        StubURLProtocol.reset { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("oauth2/token") { return tokenResponse() }
+            if path.hasSuffix("/payments/1") {
+                return (200, json(["id": "1", "state": "PAID", "amount": 100, "currency": "CZK"]))
+            }
+            return (404, Data())
+        }
+        let probe = TelemetryProbe(clientId: "client")
+        let sdk = sdk(telemetry: probe.telemetry)
+        let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
+        await session.initSessionTask?.value
+
+        #expect(try await session.getPaymentOutcome().outcome == .paid)
+
+        let events = await probe.settledEvents(4)
+        #expect(events.count == 4)
+        #expect(events[3]["target"] as? String == "/payments/{id}")
+        #expect(events[3]["http_method"] as? String == "GET")
+        #expect(events[3]["status_code"] as? Int == 200)
+        #expect(!events.contains { $0["event_type"] as? String == "js_event" })
+    }
+
     @Test func reportsARequestWithoutAResponseAsNullStatusAndItsTransportError() async throws {
         let isOffline = Flag()
         StubURLProtocol.reset(transportError: .notConnectedToInternet) { req in

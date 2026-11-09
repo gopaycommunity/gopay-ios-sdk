@@ -139,6 +139,27 @@ public actor PaymentSession {
         }
     }
 
+    /// Reads the payment once with `GET /payments/{payment_id}` and says how it stands:
+    /// ``PaymentOutcome/Outcome/paid``, ``PaymentOutcome/Outcome/declined``,
+    /// ``PaymentOutcome/Outcome/notCharged`` or ``PaymentOutcome/Outcome/undecided``.
+    ///
+    /// For an answer now rather than a result: when the app comes back to the foreground during a
+    /// payment, or after a charge call ended with a network error. It does not wait and does not
+    /// poll; while the outcome is `undecided` with a charge, ``awaitChargeState(_:)`` waits for
+    /// it; without one, the payment is in a state this SDK does not know, so read it again or ask
+    /// your backend. The Android SDK has the same call.
+    ///
+    /// - Returns: The outcome, with the payment as ``getStatus()`` returns it and its charge.
+    /// - Throws: ``GopaySDKError`` with ``GopaySDKError/Code/paymentNotFound`` for an HTTP 404,
+    ///   ``GopaySDKError/Code/authPaymentSessionClosed`` on a closed session, before anything is
+    ///   sent, and otherwise the codes of ``getStatus()``.
+    public func getPaymentOutcome() async throws -> PaymentOutcome {
+        try await reported {
+            try ensureOpen()
+            return PaymentOutcome(payment: try await api.getPaymentStatus(paymentId: paymentId))
+        }
+    }
+
     /// `POST /payments/{payment_id}/charge`.
     ///
     /// An HTTP 409, a payment that already has a charge, throws

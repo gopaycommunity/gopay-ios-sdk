@@ -105,8 +105,8 @@ The badge at the top of this README shows the latest version on
 ┌──────────────────────────────────────────────────────────────────────┐
 │ PaymentSession  →  chargeWithCardToken / chargeWithEncryptedCard /     │
 │                    chargeWithWallet / awaitChargeState /               │
-│                    getStatus / getChargeState / handle3dsVerification / │
-│                    getQrPaymentInfo                                    │
+│                    getStatus / getPaymentOutcome / getChargeState /    │
+│                    handle3dsVerification / getQrPaymentInfo            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -160,6 +160,11 @@ same gateway the app talks to. A payment exists only on the gateway it was creat
 The example app's [`MerchantBackendSimulator`](example/example/MerchantBackendSimulator.swift)
 makes the token, payment and tokenization calls from the app, so that the demo runs on its own.
 Read it as a sketch of these requests; the merchant secret it needs must never ship in an app.
+
+The app can read the outcome too, with `getPaymentOutcome()` (see
+[Reading the result](#reading-the-result)): after it comes back to the foreground during a
+payment, or after a charge call ended with a network error. That is for the screen the user sees;
+what your server learns from the notification and `GET /payments/{id}` settles the order.
 
 ---
 
@@ -342,6 +347,9 @@ let charge = try await session.getChargeState()             // GET /payments/{id
 
 // Charge state polled to a result, with the 3DS challenge run on the way (see Reading the result)
 let result = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
+
+// The payment's outcome in one read, without waiting (see Reading the result)
+let outcome = try await session.getPaymentOutcome()          // GET /payments/{id}
 
 // Charges, one call each (see below)                       // POST /payments/{id}/charge
 _ = try await session.chargeWithCardToken(token)
@@ -593,9 +601,10 @@ lifted the first time the charge reports `actionRequired` with a redirect URL, b
 challenge takes as long as the user needs; in `.automatic` it starts again once the challenge
 returns, so a gateway that never decides after it still ends in `PAYMENT_007`, while in `.manual`
 it stays lifted. A failed read or a failed challenge ends the call with that error unchanged
-(`NETWORK_*`, `PAYMENT_010`, `PAYMENT_011`, `AUTH_013`); a `NETWORK_*` there does not mean the
-payment failed (see [After a network error](#after-a-network-error)), and
-cancelling the awaiting task stops the polling, closes a challenge that is up and throws
+(`NETWORK_*`, `PAYMENT_012` when the payment has no charge, `PAYMENT_010`, `PAYMENT_011`,
+`AUTH_013`); a `NETWORK_*` there does not mean the payment failed (see
+[After a network error](#after-a-network-error)), and cancelling the awaiting task stops the
+polling, closes a challenge that is up and throws
 `CancellationError`. Two calls on the same session poll independently; only one of them can open
 the challenge, the other ends with `PAYMENT_008`.
 
@@ -624,6 +633,24 @@ A charge that comes back in `actionRequired` with `action?.redirectUrl` needs
 instance after an Apple Pay sheet closed without paying, `getChargeState()` throws `PAYMENT_012`
 (`paymentNotFound`, HTTP 404), on either path. Your backend, not the app, decides whether the
 order is paid (see [Your backend](#your-backend)).
+
+**`getPaymentOutcome`** reads the payment once with `GET /payments/{id}` and says how it stands,
+without waiting. Use it where the app needs an answer now rather than a result: when it comes
+back to the foreground after the user left it during the payment, or after a charge call ended
+with a network error. `outcome` is one of four, decided by the payment's state first and by its
+charge only while the payment is still open:
+
+| `outcome` | When |
+| --- | --- |
+| `paid` | The payment is `paid`, `authorized`, `refunded` or `partiallyRefunded`, or it is still open and its charge `succeeded`. A refunded payment stays `paid` whatever its charge says |
+| `declined` | The charge `failed`; the payment is over, a retry means a new payment |
+| `undecided` | The payment is still open and its charge is `requested`, `processing`, `actionRequired` or in a state this SDK does not know: wait for it with `awaitChargeState`. Without a charge, the payment is in a state this SDK does not know: read it again later, or ask your backend |
+| `notCharged` | Nothing was charged. On a payment that is `created` or `paymentMethodChosen` no charge exists: charge it, after a lost answer with the same JWE while it is valid. On a payment that is `canceled` or `timeouted` the payment is over, with any charge it had released: a retry means a new payment |
+
+`payment` is the whole answer, as `getStatus()` returns it, and `charge` the charge in it, which
+carries only its `id` and `state`; read `getChargeState()` for its `failReason`. A payment that
+does not exist throws `PAYMENT_012`. The notification to your backend stays the authoritative
+signal.
 
 The SDK keeps nothing on disk, and a payment in progress does not survive the app being
 terminated, which happens above all while the user is away in a banking app during 3DS. Keep only
@@ -1008,7 +1035,7 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
 | `PAYMENT_011` | The Apple Pay sheet or the 3DS screen closed before it finished, or the 3DS page failed after it had drawn; read the charge before paying again |
-| `PAYMENT_012` | HTTP 404 from a charge, `getChargeState`, `awaitChargeState` or `getStatus`: the payment or its charge does not exist |
+| `PAYMENT_012` | HTTP 404 from a charge, `getChargeState`, `awaitChargeState`, `getStatus` or `getPaymentOutcome`: the payment or its charge does not exist, or the session's token has no access to the payment |
 | `PAYMENT_013` | HTTP 409 from a charge: the payment already has a charge, e.g. after a double tap; read it instead of charging again |
 | `NETWORK_001` | No HTTP response: the request timed out |
 | `NETWORK_002` | Gateway returned 4xx; a 404 on the payment calls is `PAYMENT_012`, a 409 on a charge `PAYMENT_013` |
@@ -1067,6 +1094,9 @@ failed. What to do depends on the call that threw it.
   - **With an HTTP status** (`NETWORK_002` for a 4xx, `NETWORK_003` for a 5xx), the gateway
     answered, and its message says why. After a 5xx, read `getChargeState()` as well before
     anything else: the charge may exist.
+    `PAYMENT_013` means a charge already exists on the payment: do not charge again, follow that
+    charge with `awaitChargeState` or `getPaymentOutcome()`. `PAYMENT_012` means the payment does
+    not exist for this session.
   - **Without an HTTP status** (`NETWORK_001`, `NETWORK_004`, `NETWORK_005`, `NETWORK_007`), the
     charge may not have gone out, or it reached the gateway and the answer was lost. Read
     `getChargeState()`: a charge state means the charge exists, so follow it as above;
@@ -1086,6 +1116,11 @@ func chargeExists(_ session: PaymentSession) async throws -> Bool {
     }
 }
 ```
+
+`getPaymentOutcome()` answers the same question in one read and says more: `notCharged` on a
+payment that is `created` or `paymentMethodChosen` means no charge exists, `undecided` with a
+`charge` that one exists and is still being decided, so follow it with `awaitChargeState`, and
+`paid`, `declined` or `notCharged` on a `canceled` or `timeouted` payment that the payment is over.
 
 When no charge exists after a code without an HTTP status, charge again with the same JWE while it
 is within its 10 minutes: no charge used it. `submitCardForm` empties the form once it has returned
@@ -1131,8 +1166,10 @@ integration written against an earlier 2.x that matches them may notice:
 - An HTTP 404 from a charge, `getChargeState`, `awaitChargeState` or `getStatus` throws
   `PAYMENT_012` (`paymentNotFound`) instead of `NETWORK_002`. `httpStatus` is still 404, so a
   check on the status alone keeps working; one that also asks for `NETWORK_002` no longer matches.
-- An HTTP 409 from a charge throws `PAYMENT_013` (`chargeAlreadyExists`) instead of `NETWORK_002`,
-  with `httpStatus` 409.
+- An HTTP 409 from a charge throws `PAYMENT_013` (`paymentChargeAlreadyExists`) instead of
+  `NETWORK_002`, with `httpStatus` 409.
+- `getPaymentOutcome()` reads the payment once and says whether it was paid, declined, not charged
+  or is still undecided.
 
 ---
 

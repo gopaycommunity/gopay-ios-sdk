@@ -147,6 +147,13 @@ final class CheckoutViewModel {
             }
         } catch is CancellationError {
             // The checkout's own task going away, not the shopper: nothing left to show it on.
+        } catch let error as GopaySDKError where error.chargeMayExist {
+            // The charge call failed, but a charge may still be on the payment: PAYMENT_013 (the
+            // gateway has one already, e.g. from a double tap), a 5xx, or no answer at all. Not a
+            // failure screen: the payment is read like one whose answer was lost, as the Android
+            // demo does.
+            chargeSent = true
+            await settleAfterInterruption(error)
         } catch let error as GopaySDKError where error.code == .paymentCancelled || chargeSent {
             await settleAfterInterruption(error)
         } catch let error as GopaySDKError {
@@ -157,8 +164,9 @@ final class CheckoutViewModel {
     }
 
     /// The payment was interrupted: PAYMENT_011, the Apple Pay sheet or the 3DS challenge closed
-    /// before it finished, or any other error once the charge had gone out, such as a read that
-    /// failed on the network or a 3DS challenge that could not be presented.
+    /// before it finished, PAYMENT_013, a charge the payment already had, or any other error once
+    /// the charge had gone out, such as a read that failed on the network or a 3DS challenge that
+    /// could not be presented.
     ///
     /// An Apple Pay sheet closed before its charge went out sends nothing, so a soft banner is all
     /// it takes. After the charge went out it is not necessarily a payment that did not happen:
@@ -369,5 +377,20 @@ final class CheckoutViewModel {
 
     private func fail(message: String) {
         outcome = Outcome(state: .failed, response: nil, message: message)
+    }
+}
+
+private extension GopaySDKError {
+    /// Whether a charge call that threw this may still have left a charge on the payment: the
+    /// gateway has one already, it answered with a 5xx, or no answer arrived at all.
+    var chargeMayExist: Bool {
+        switch code {
+        case .paymentChargeAlreadyExists, .networkServerError:
+            return true
+        case .networkTimeout, .networkNoConnection, .networkSSLError, .networkIOError:
+            return httpStatus == nil
+        default:
+            return false
+        }
     }
 }

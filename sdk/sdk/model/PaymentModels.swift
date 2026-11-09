@@ -63,6 +63,32 @@ public struct PaymentDetails: Codable, Sendable {
     }
 }
 
+extension PaymentDetails {
+    /// Decodes the payment as the synthesized decoder would, except for the nested `charge`: one
+    /// without a `state` decodes with ``ChargeState/unknown`` rather than failing the whole
+    /// payment, see ``ChargePaymentResponse/init(from:missingStateIsUnknown:)``.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        orderNumber = try container.decodeIfPresent(String.self, forKey: .orderNumber)
+        state = try container.decode(PaymentState.self, forKey: .state)
+        amount = try container.decode(Int.self, forKey: .amount)
+        currency = try container.decode(Currency.self, forKey: .currency)
+        gatewayUrl = try container.decodeIfPresent(String.self, forKey: .gatewayUrl)
+        paymentSecret = try container.decodeIfPresent(String.self, forKey: .paymentSecret)
+        charge = try container.decodeIfPresent(NestedCharge.self, forKey: .charge)?.charge
+    }
+
+    /// The charge nested in the payment, decoded leniently about its `state`.
+    private struct NestedCharge: Decodable {
+        let charge: ChargePaymentResponse
+
+        init(from decoder: Decoder) throws {
+            charge = try ChargePaymentResponse(from: decoder, missingStateIsUnknown: true)
+        }
+    }
+}
+
 // MARK: - QR payment info
 
 /// Output format for QR payment info payloads.

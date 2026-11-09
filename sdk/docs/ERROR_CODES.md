@@ -329,7 +329,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 
 ### PAYMENT_012: Payment Not Found
 - **Case**: `paymentNotFound`
-- **Description**: The gateway answered HTTP 404 to a call on the payment: a charge (`POST /payments/{id}/charge`), `getChargeState()` or a read of `awaitChargeState()` (`GET /payments/{id}/charge`), `getStatus()` (`GET /payments/{id}`). The payment or its charge does not exist, or the session's token has no access to the payment
+- **Description**: The gateway answered HTTP 404 to a call on the payment: a charge (`POST /payments/{id}/charge`), `getChargeState()` or a read of `awaitChargeState()` (`GET /payments/{id}/charge`), `getStatus()` or `getPaymentOutcome()` (`GET /payments/{id}`). The payment or its charge does not exist, or the session's token has no access to the payment
 - **Common Causes**:
   - No charge has been made on the payment yet, e.g. the Apple Pay sheet closed without paying, or a charge call failed before the charge went out
   - A `payment_id` the session's token has no access to
@@ -348,7 +348,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - A double tap on the pay button sent a second charge
   - A charge sent again after a code without an HTTP status, when the first one had reached the gateway after all
 - **Developer Action**:
-  - Do not charge again: read the charge that exists with `getChargeState()` or `awaitChargeState()` and follow its state
+  - Do not charge again: read the charge that exists with `getChargeState()`, `awaitChargeState()` or `getPaymentOutcome()` and follow its state
   - Disable the pay button while a charge is in flight
 - **A charge may exist**: Yes: the first charge exists; this one was not made
 - **Safe to retry**: No: read the charge state instead
