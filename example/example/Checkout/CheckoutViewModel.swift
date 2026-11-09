@@ -147,13 +147,6 @@ final class CheckoutViewModel {
             }
         } catch is CancellationError {
             // The checkout's own task going away, not the shopper: nothing left to show it on.
-        } catch let error as GopaySDKError where error.chargeMayExist {
-            // The charge call failed, but a charge may still be on the payment: PAYMENT_013 (the
-            // gateway has one already, e.g. from a double tap), a 5xx, or no answer at all. Not a
-            // failure screen: the payment is read like one whose answer was lost, as the Android
-            // demo does.
-            chargeSent = true
-            await settleAfterInterruption(error)
         } catch let error as GopaySDKError where error.code == .paymentCancelled || chargeSent {
             await settleAfterInterruption(error)
         } catch let error as GopaySDKError {
@@ -312,7 +305,17 @@ final class CheckoutViewModel {
 
     /// Charge, then settle. Shared by every card-based method.
     private func runCharge(session: PaymentSession, _ charge: () async throws -> ChargePaymentResponse) async throws {
-        _ = try await charge()
+        do {
+            _ = try await charge()
+        } catch let error as GopaySDKError where error.chargeMayExist {
+            // The charge call failed, but a charge may still be on the payment: PAYMENT_013 (the
+            // gateway has one already, e.g. from a double tap), a 5xx, or no answer at all. Marked
+            // as sent, so `pay()` reads the payment like one whose answer was lost instead of
+            // showing a failure, as the Android demo does. Only the charge call itself counts:
+            // the same codes from the session start or the QR info mean no charge went out.
+            chargeSent = true
+            throw error
+        }
         chargeSent = true
         outcome = try await settle(session: session)
     }
