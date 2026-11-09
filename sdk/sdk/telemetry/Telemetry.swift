@@ -638,7 +638,8 @@ final class Telemetry: @unchecked Sendable {
     static func isGatewayResponse(_ error: GopaySDKError) -> Bool {
         guard error.httpStatus != nil else { return false }
         switch error.code {
-        case .networkClientError, .networkServerError, .authPaymentTokenExpired, .authPaymentCredentialsInvalid:
+        case .networkClientError, .networkServerError, .authPaymentTokenExpired, .authPaymentCredentialsInvalid,
+             .paymentNotFound, .paymentChargeAlreadyExists:
             return true
         default:
             return false

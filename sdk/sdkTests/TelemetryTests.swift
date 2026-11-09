@@ -541,6 +541,8 @@ struct TelemetryTests {
         let probe = TelemetryProbe()
         probe.telemetry.error(GopaySDKError(.networkServerError, message: "Failed: HTTP 503", httpStatus: 503), paymentId: "1")
         probe.telemetry.error(GopaySDKError(.authPaymentCredentialsInvalid, message: "rejected", httpStatus: 401), paymentId: "1")
+        probe.telemetry.error(GopaySDKError(.paymentNotFound, message: "Failed: HTTP 404", httpStatus: 404), paymentId: "1")
+        probe.telemetry.error(GopaySDKError(.paymentChargeAlreadyExists, message: "Failed: HTTP 409", httpStatus: 409), paymentId: "1")
         probe.telemetry.error(
             GopaySDKError(.paymentVerificationUnreachable, message: "The 3DS page: HTTP 404", httpStatus: 404), paymentId: "1"
         )

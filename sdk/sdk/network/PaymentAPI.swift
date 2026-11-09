@@ -29,17 +29,19 @@ final class PaymentAPI {
         self.telemetry = telemetry
     }
 
-    /// `GET /payments/{payment_id}`
+    /// `GET /payments/{payment_id}`. A 404 is ``GopaySDKError/Code/paymentNotFound``.
     func getPaymentStatus(paymentId: String) async throws -> PaymentDetails {
-        try await run(action: "get payment status", paymentId: paymentId) {
+        try await run(action: "get payment status", paymentId: paymentId, codes: Self.paymentCodes) {
             self.jsonGET(path: "payments/\(paymentId)")
         }
     }
 
-    /// `POST /payments/{payment_id}/charge`
+    /// `POST /payments/{payment_id}/charge`. A 404 is ``GopaySDKError/Code/paymentNotFound``; a
+    /// 409, when the payment already has a charge, is
+    /// ``GopaySDKError/Code/paymentChargeAlreadyExists``.
     func charge(paymentId: String, request: ChargePaymentRequest) async throws -> ChargePaymentResponse {
         let body = try JSONEncoder().encode(request)
-        return try await run(action: "charge payment", paymentId: paymentId) {
+        return try await run(action: "charge payment", paymentId: paymentId, codes: Self.chargeCodes) {
             guard let url = self.client.makeURL(path: "payments/\(paymentId)/charge") else { return nil }
             var r = URLRequest(url: url)
             r.httpMethod = "POST"
@@ -50,9 +52,10 @@ final class PaymentAPI {
         }
     }
 
-    /// `GET /payments/{payment_id}/charge`
+    /// `GET /payments/{payment_id}/charge`. A 404, no charge yet, is
+    /// ``GopaySDKError/Code/paymentNotFound``.
     func getChargeState(paymentId: String) async throws -> ChargePaymentResponse {
-        try await run(action: "get charge state", paymentId: paymentId) {
+        try await run(action: "get charge state", paymentId: paymentId, codes: Self.paymentCodes) {
             self.jsonGET(path: "payments/\(paymentId)/charge")
         }
     }
@@ -113,6 +116,14 @@ final class PaymentAPI {
 
     // MARK: - Internals
 
+    /// The SDK's own codes over the gateway's documented answers on the payment and its charge,
+    /// shared with the Android SDK. The wallet and QR info keep `NETWORK_002`.
+    private static let paymentCodes: [Int: GopaySDKError.Code] = [404: .paymentNotFound]
+    /// The same for a charge, which adds the 409 of a payment that already has one.
+    private static let chargeCodes: [Int: GopaySDKError.Code] = [
+        404: .paymentNotFound, 409: .paymentChargeAlreadyExists
+    ]
+
     private func jsonGET(path: String) -> URLRequest? {
         guard let url = client.makeURL(path: path) else { return nil }
         var r = URLRequest(url: url)
@@ -121,7 +132,12 @@ final class PaymentAPI {
         return r
     }
 
-    private func run<T: Decodable>(action: String, paymentId: String, build: () -> URLRequest?) async throws -> T {
+    private func run<T: Decodable>(
+        action: String,
+        paymentId: String,
+        codes: [Int: GopaySDKError.Code] = [:],
+        build: () -> URLRequest?
+    ) async throws -> T {
         guard let provider = tokenProvider else {
             throw GopaySDKError(.authPaymentSessionClosed, message: "PaymentSession is closed")
         }
@@ -148,7 +164,7 @@ final class PaymentAPI {
             }
         }
 
-        return try decodeOrThrow(T.self, from: result, action: action)
+        return try decodeOrThrow(T.self, from: result, action: action, codes: codes)
     }
 
     private func validToken(from provider: SessionTokenProviding) async throws -> String {

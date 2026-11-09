@@ -84,6 +84,16 @@ public struct GopaySDKError: LocalizedError, Sendable {
         /// offering it again. Cancelling the task that awaits the call is not this code; that stays
         /// `CancellationError`.
         case paymentCancelled = "PAYMENT_011"
+        /// The gateway answered HTTP 404 to a call on the payment: a charge,
+        /// ``PaymentSession/getChargeState()`` or a read of ``PaymentSession/awaitChargeState(_:)``,
+        /// or ``PaymentSession/getStatus()``. The payment or its charge does not exist, or the
+        /// session's token has no access to the payment. ``GopaySDKError/httpStatus`` is 404. A 404
+        /// from any other call stays ``networkClientError``. The Android SDK throws the same code.
+        case paymentNotFound = "PAYMENT_012"
+        /// The gateway answered HTTP 409 to a charge: the payment already has one, and a payment is
+        /// charged once. The first charge stands; read its state rather than charging again.
+        /// ``GopaySDKError/httpStatus`` is 409. The Android SDK throws the same code.
+        case paymentChargeAlreadyExists = "PAYMENT_013"
 
         // Validation (VALIDATION_XXX)
         /// Invalid input data provided.

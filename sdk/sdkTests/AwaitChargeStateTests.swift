@@ -523,6 +523,21 @@ extension SessionNetworkTests {
         #expect(recorder.states == [.processing])
     }
 
+    /// A 404 on a read, when the payment has no charge, ends the polling with PAYMENT_012.
+    @Test func aChargeThatDoesNotExistEndsThePollingWithPaymentNotFound() async throws {
+        serveCharges([(200, charge("PROCESSING")), (404, ["error": "NOT_FOUND", "message": "Charge not found"])])
+        let clock = VirtualClock(), recorder = Recorder()
+        let session = try await makePollingSession(clock: clock, recorder: recorder)
+
+        let error = try #require(await failure { try await session.awaitChargeState(options(recorder)) })
+
+        #expect(error.code == .paymentNotFound)
+        #expect(error.httpStatus == 404)
+        #expect(error.gatewayError?.message == "Charge not found")
+        #expect(chargeReads() == 2)
+        #expect(recorder.states == [.processing])
+    }
+
     @Test func aClosedSessionIsReported() async throws {
         serveCharges([charge("SUCCEEDED")])
         let session = try await makeSession()

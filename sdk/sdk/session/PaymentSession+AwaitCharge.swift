@@ -139,7 +139,8 @@ public extension PaymentSession {
     ///   with that state as ``GopaySDKError/chargeState``.
     ///
     /// A failed read ends the call with that read's own error, unchanged: `NETWORK_*` for a
-    /// transport or HTTP failure, ``GopaySDKError/Code/authPaymentSessionClosed`` for a closed
+    /// transport or HTTP failure, ``GopaySDKError/Code/paymentNotFound`` for an HTTP 404, when the
+    /// payment has no charge, ``GopaySDKError/Code/authPaymentSessionClosed`` for a closed
     /// session. A 3DS challenge that fails ends it the same way with the verification's error,
     /// ``GopaySDKError/Code/paymentCancelled`` for a closed screen among them, and as after the
     /// manual call the charge may still be through: read ``getChargeState()`` before offering the

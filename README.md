@@ -621,9 +621,9 @@ func settle(_ session: PaymentSession) async throws -> ChargePaymentResponse {
 
 A charge that comes back in `actionRequired` with `action?.redirectUrl` needs
 `handle3dsVerification`; call `settle` again once it returns. When no charge went out, for
-instance after an Apple Pay sheet closed without paying, `getChargeState()` throws `NETWORK_002`
-with HTTP 404, on either path. Your backend, not the app, decides whether the order is paid (see
-[Your backend](#your-backend)).
+instance after an Apple Pay sheet closed without paying, `getChargeState()` throws `PAYMENT_012`
+(`paymentNotFound`, HTTP 404), on either path. Your backend, not the app, decides whether the
+order is paid (see [Your backend](#your-backend)).
 
 The SDK keeps nothing on disk, and a payment in progress does not survive the app being
 terminated, which happens above all while the user is away in a banking app during 3DS. Keep only
@@ -696,10 +696,11 @@ JWE promptly. **The visible fields are emptied too**: after a successful `submit
 form returns to its pristine state, so the user sees an empty card form and your own UI should
 move on rather than wait for further input. Treat the moment the JWE exists as the start of the
 payment: switch the screen to a "payment in progress" state, with the pay button disabled and the
-form out of reach, and keep it there until the charge is decided. The emptied form is not an
-invitation to type the card again, and the card cannot be shown again: the SDK keeps no copy of
-it. A failed encryption leaves everything as the user typed it, since nothing has been authorized
-yet.
+form out of reach, and keep it there until the charge is decided. A second charge on a payment
+that already has one is refused with `PAYMENT_013`; the first charge stands, so read its state
+rather than charging again. The emptied form is not an invitation to type the card again, and the
+card cannot be shown again: the SDK keeps no copy of it. A failed encryption leaves everything as
+the user typed it, since nothing has been authorized yet.
 
 The gateway accepts each JWE **once** and its payload expires 10 minutes after creation; to retry
 a failed charge, have the user confirm the card again. A charge that never reached the gateway did
@@ -1007,8 +1008,10 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `PAYMENT_009` | An Apple Pay sheet is already in progress |
 | `PAYMENT_010` | The 3DS challenge never reached the user: the page would not load, e.g. the redirect URL is dead or is not a web address, the screen would not present (that cause is iOS-only), or no app took the hand-off |
 | `PAYMENT_011` | The Apple Pay sheet or the 3DS screen closed before it finished, or the 3DS page failed after it had drawn; read the charge before paying again |
+| `PAYMENT_012` | HTTP 404 from a charge, `getChargeState`, `awaitChargeState` or `getStatus`: the payment or its charge does not exist |
+| `PAYMENT_013` | HTTP 409 from a charge: the payment already has a charge, e.g. after a double tap; read it instead of charging again |
 | `NETWORK_001` | No HTTP response: the request timed out |
-| `NETWORK_002` | Gateway returned 4xx |
+| `NETWORK_002` | Gateway returned 4xx; a 404 on the payment calls is `PAYMENT_012`, a 409 on a charge `PAYMENT_013` |
 | `NETWORK_003` | Gateway returned 5xx |
 | `NETWORK_004` | No HTTP response: no connection (offline, the host does not resolve, the connection is refused) |
 | `NETWORK_005` | No HTTP response: a certificate failed (any other TLS failure is `NETWORK_007`) |
@@ -1067,7 +1070,7 @@ failed. What to do depends on the call that threw it.
   - **Without an HTTP status** (`NETWORK_001`, `NETWORK_004`, `NETWORK_005`, `NETWORK_007`), the
     charge may not have gone out, or it reached the gateway and the answer was lost. Read
     `getChargeState()`: a charge state means the charge exists, so follow it as above;
-    `NETWORK_002` with HTTP status 404 means no charge exists.
+    `PAYMENT_012` means no charge exists.
 
 ```swift
 import GopaySDK
@@ -1077,9 +1080,8 @@ func chargeExists(_ session: PaymentSession) async throws -> Bool {
     do {
         _ = try await session.getChargeState()
         return true
-    } catch let error as GopaySDKError
-        where error.code == .networkClientError && error.httpStatus == 404 {
-        // No charge is HTTP 404; anything else, such as still being offline, does not tell.
+    } catch let error as GopaySDKError where error.code == .paymentNotFound {
+        // No charge; anything else, such as still being offline, does not tell.
         return false
     }
 }
@@ -1118,6 +1120,19 @@ same arguments and the same codes. The response types stay platform-specific
 arguments: Android takes an `activity` where the wallet, the 3DS screen and the automatic
 polling need one, iOS finds the presenting view controller itself. The errors are the shared
 code contract above, with one rule for `errorCallback` on both.
+
+---
+
+## What changed in 2.7
+
+Nothing was removed or renamed, but two gateway answers have codes of their own now, and an
+integration written against an earlier 2.x that matches them may notice:
+
+- An HTTP 404 from a charge, `getChargeState`, `awaitChargeState` or `getStatus` throws
+  `PAYMENT_012` (`paymentNotFound`) instead of `NETWORK_002`. `httpStatus` is still 404, so a
+  check on the status alone keeps working; one that also asks for `NETWORK_002` no longer matches.
+- An HTTP 409 from a charge throws `PAYMENT_013` (`chargeAlreadyExists`) instead of `NETWORK_002`,
+  with `httpStatus` 409.
 
 ---
 

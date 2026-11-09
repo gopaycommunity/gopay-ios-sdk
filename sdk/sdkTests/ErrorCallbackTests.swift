@@ -381,7 +381,8 @@ extension SessionNetworkTests {
             try await session.awaitChargeState(AwaitChargeOptions(interval: 0.01, initialTimeout: 1))
         }
 
-        #expect(reported.codes == [.networkClientError])
+        // A 404 on the charge read is PAYMENT_012 since GPMOB-198.
+        #expect(reported.codes == [.paymentNotFound])
     }
 
     @Test func aPollCancelledDuringTheWaitIsNotReported() async throws {

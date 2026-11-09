@@ -191,7 +191,7 @@ final class CheckoutViewModel {
                 outcome = nil
                 banner = pickAgain
             }
-        } catch let error as GopaySDKError where error.code == .networkClientError && error.httpStatus == 404 {
+        } catch let error as GopaySDKError where error.code == .paymentNotFound {
             // The gateway confirms there is no charge on this payment: nothing went out.
             outcome = nil
             banner = pickAgain

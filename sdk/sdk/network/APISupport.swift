@@ -61,17 +61,18 @@ private let imfFixdateFormatter: DateFormatter = {
 /// Validates an HTTP result and decodes its body, or throws a ``GopaySDKError`` describing the
 /// failure. The iOS counterpart of the Android `Response<T>.unwrap(action)` helper.
 ///
-/// - Non-2xx → ``GopaySDKError/Code/networkClientError`` (4xx) or
-///   ``GopaySDKError/Code/networkServerError`` (5xx), carrying the HTTP status and the gateway's
-///   error body.
+/// - Non-2xx → the code `codes` names for the status, otherwise
+///   ``GopaySDKError/Code/networkClientError`` (4xx) or ``GopaySDKError/Code/networkServerError``
+///   (5xx), carrying the HTTP status and the gateway's error body.
 /// - Decoding failure → ``GopaySDKError/Code/decoding``.
 func decodeOrThrow<T: Decodable>(
     _ type: T.Type,
     from result: (Data, HTTPURLResponse),
-    action: String
+    action: String,
+    codes: [Int: GopaySDKError.Code] = [:]
 ) throws -> T {
     let (data, http) = result
-    try throwIfNotSuccessful(http, body: data, action: action)
+    try throwIfNotSuccessful(http, body: data, action: action, codes: codes)
     do {
         return try JSONDecoder().decode(T.self, from: data)
     } catch {
@@ -86,9 +87,19 @@ func decodeOrThrow<T: Decodable>(
 /// Validates an HTTP result without decoding a body, throwing on non-2xx. The gateway's error
 /// body, when `body` holds one, goes into ``GopaySDKError/gatewayError`` and its `message` into
 /// the error's own message, so "HTTP 403" says why.
-func throwIfNotSuccessful(_ http: HTTPURLResponse, body: Data, action: String) throws {
+///
+/// - Parameter codes: Codes of their own for statuses of this call, such as
+///   ``GopaySDKError/Code/paymentNotFound`` for a 404 on the payment; any other status is
+///   `NETWORK_002` or `NETWORK_003`.
+func throwIfNotSuccessful(
+    _ http: HTTPURLResponse,
+    body: Data,
+    action: String,
+    codes: [Int: GopaySDKError.Code] = [:]
+) throws {
     guard (200..<300).contains(http.statusCode) else {
-        let code: GopaySDKError.Code = http.statusCode >= 500 ? .networkServerError : .networkClientError
+        let code = codes[http.statusCode]
+            ?? (http.statusCode >= 500 ? .networkServerError : .networkClientError)
         let gatewayError = GopayGatewayError.parse(body)
         throw GopaySDKError(
             code,

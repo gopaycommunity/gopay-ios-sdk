@@ -131,7 +131,7 @@ public actor PaymentSession {
 
     // MARK: - Endpoints
 
-    /// `GET /payments/{payment_id}`
+    /// `GET /payments/{payment_id}`. An HTTP 404 throws ``GopaySDKError/Code/paymentNotFound``.
     public func getStatus() async throws -> PaymentDetails {
         try await reported {
             try ensureOpen()
@@ -140,6 +140,10 @@ public actor PaymentSession {
     }
 
     /// `POST /payments/{payment_id}/charge`.
+    ///
+    /// An HTTP 409, a payment that already has a charge, throws
+    /// ``GopaySDKError/Code/paymentChargeAlreadyExists``: the first charge stands, so read its state
+    /// rather than charging again. An HTTP 404 throws ``GopaySDKError/Code/paymentNotFound``.
     ///
     /// The gateway rejects a charge whose `browser_data` lacks `ip`, and the device cannot know
     /// its own public address, so the request's ``BrowserData`` first goes through
@@ -248,7 +252,8 @@ public actor PaymentSession {
         }
     }
 
-    /// `GET /payments/{payment_id}/charge`
+    /// `GET /payments/{payment_id}/charge`. An HTTP 404, when the payment has no charge yet, throws
+    /// ``GopaySDKError/Code/paymentNotFound``.
     public func getChargeState() async throws -> ChargePaymentResponse {
         try await reported { try await readChargeState() }
     }
