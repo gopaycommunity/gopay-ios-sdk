@@ -380,7 +380,7 @@ final class CheckoutViewModel {
     }
 }
 
-private extension GopaySDKError {
+extension GopaySDKError {
     /// Whether a charge call that threw this may still have left a charge on the payment: the
     /// gateway has one already, it answered with a 5xx, or no answer arrived at all.
     var chargeMayExist: Bool {
