@@ -1,3 +1,10 @@
+# 2.6.0 (2026-11-09)
+
+
+### Features
+
+* tell GoPay which SDK works with the payment when a session starts GPMOB-194 524bcd9
+
 # 2.5.0 (2026-11-05)
 
 
