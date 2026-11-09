@@ -1,3 +1,16 @@
+# 2.7.0 (2026-11-09)
+
+
+### Bug Fixes
+
+* read the payment after a failed charge only when the charge call itself failed GPMOB-198 2a8c80a
+
+
+### Features
+
+* give a missing payment and a second charge codes of their own GPMOB-198 17a2643
+* read the payment's outcome in one call GPMOB-198 47b1ea8
+
 # 2.6.0 (2026-11-09)
 
 
