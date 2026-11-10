@@ -13,7 +13,7 @@ import GopaySDK
 Select the appropriate environment for your use case:
 
 ```swift
-let environment: GopayEnvironment = .sandbox // or .development(baseURL: "https://your-dev-url.com"), .production
+let environment: GopayEnvironment = .sandbox // or .development(baseUrl: "https://your-dev-url.com"), .production
 ```
 
 ## Step 3: Configure the SDK
@@ -26,11 +26,11 @@ once, except the two outcomes of a payment window, `PAYMENT_007` and `PAYMENT_01
 cancellation; the rule is the same on Android:
 
 ```swift
-let config = GopaySDKConfig(
+let config = GopayConfig(
     environment: environment,
     clientId: "<your-client-id>",
     shareableKey: "<your-shareable-key>",
-    enableDebugLogging: true, // Optional
+    debugLoggingEnabled: true, // Optional
     errorCallback: { error in // Optional
         print("GopaySDK Error: \(error)")
     }
@@ -54,7 +54,7 @@ share, then wait for the result:
 ```swift
 let session = try await GopaySDK.shared.startPaymentSession(paymentId: paymentId, paymentSecret: paymentSecret)
 _ = try await session.chargeWithCardToken(cardToken)       // or chargeWithEncryptedCard(jwe), chargeWithWallet()
-let charge = try await session.awaitChargeState(AwaitChargeOptions(returnURL: returnURL))
+let charge = try await session.awaitChargeState(AwaitChargeOptions(returnUrl: returnUrl))
 ```
 
 ## Full Example
@@ -62,11 +62,11 @@ let charge = try await session.awaitChargeState(AwaitChargeOptions(returnURL: re
 ```swift
 import GopaySDK
 
-let config = GopaySDKConfig(
-    environment: .sandbox, // or .development(baseURL: "https://your-dev-url.com"), .production
+let config = GopayConfig(
+    environment: .sandbox, // or .development(baseUrl: "https://your-dev-url.com"), .production
     clientId: "<your-client-id>",
     shareableKey: "<your-shareable-key>",
-    enableDebugLogging: true,
+    debugLoggingEnabled: true,
     errorCallback: { error in
         print("GopaySDK Error: \(error)")
     }
@@ -77,4 +77,4 @@ GopaySDK.shared.initialize(with: config)
 
 ---
 
-For more details, see the API reference for [`GopaySDK`](<doc:GopaySDK>), [`GopaySDKConfig`](<doc:GopaySDKConfig>), and [`GopayEnvironment`](<doc:GopayEnvironment>). 
+For more details, see the API reference for [`GopaySDK`](<doc:GopaySDK>), [`GopayConfig`](<doc:GopayConfig>), and [`GopayEnvironment`](<doc:GopayEnvironment>). 

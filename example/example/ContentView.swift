@@ -7,7 +7,7 @@
 //  Demonstrates the per-payment session flow:
 //   1. (server-side, simulated here) create a payment -> payment_id + payment_secret
 //   2. startPaymentSession(paymentId:paymentSecret:)
-//   3. session.getStatus / chargeWithApplePay / handle3dsVerification / getChargeState /
+//   3. session.getStatus / chargeWithWallet / handle3dsVerification / getChargeState /
 //      awaitChargeState / getQrPaymentInfo
 //   4. card form -> JWE (which your server tokenizes)
 //   5. session.close()
@@ -21,7 +21,7 @@ struct ContentView: View {
     @State private var paymentId = ""
     @State private var paymentSecret = ""
     // The callback.return_url the payment was created with; handle3dsVerification watches for it.
-    @State private var returnURL = ""
+    @State private var returnUrl = ""
     @State private var session: PaymentSession?
     @State private var cardToken: String = ""
     @State private var jwe: String = ""
@@ -74,13 +74,15 @@ struct ContentView: View {
                 await MainActor.run {
                     paymentId = created.paymentId
                     paymentSecret = created.paymentSecret
-                    returnURL = created.returnURL?.absoluteString ?? ""
+                    returnUrl = created.returnUrl?.absoluteString ?? ""
                 }
-                log("// merchant backend created a payment (1 CZK)\npayment_id: \(created.paymentId)\npayment_secret: \(created.paymentSecret)\nreturn_url: \(created.returnURL?.absoluteString ?? "")")
+                // The secret goes into the field below, which the session reads; the console does not
+                // print it.
+                log("// merchant backend created a payment (1 CZK)\npayment_id: \(created.paymentId)\npayment_secret: \(JSONPreview.hidden), filled into the field below\nreturn_url: \(created.returnUrl?.absoluteString ?? "")")
             }
             labeledField("payment_id", text: $paymentId)
             labeledField("payment_secret", text: $paymentSecret)
-            labeledField("return_url", text: $returnURL)
+            labeledField("return_url", text: $returnUrl)
         }
     }
 
@@ -120,11 +122,11 @@ struct ContentView: View {
                 logResponse("getStatus() -> PaymentDetails", try await requireSession().getStatus())
             }
             button("Get Apple Pay info", system: "info.circle") {
-                logResponse("getApplePayInfo() -> GopayApplePayAppInfoResponse",
-                            try await requireSession().getApplePayInfo())
+                logResponse("getWalletInfo() -> GopayApplePayAppInfoResponse",
+                            try await requireSession().getWalletInfo())
             }
             button("Charge with Apple Pay", system: "applelogo") {
-                try await chargeWithApplePay()
+                try await chargeWithWallet()
             }
             button("Get test card token (server)", system: "wand.and.stars") {
                 try await fetchTestCardToken()
@@ -201,7 +203,7 @@ struct ContentView: View {
             // is deliberately not part of the identity: it is a plain property the SDK reapplies,
             // so switching it restyles the form live and the typed card stays where it is.
             // `.onSubmit` shows the localized error messages only after the user taps submit.
-            GopayCardForm(
+            PaymentCardForm(
                 theme: ThemeShowcase.shared.theme(named: themeName),
                 locale: selectedLocale,
                 validation: .onSubmit,
@@ -220,7 +222,8 @@ struct ContentView: View {
                 let encrypted = try await GopaySDK.shared.submitCardForm()
                 // The SDK empties the fields on success and sets didAttemptSubmit back to false.
                 await MainActor.run { jwe = encrypted }
-                log("// submitCardForm() -> JWE (filled into the field below)\n\(encrypted)")
+                // The encrypted card is not printed either, only that it exists and how long it is.
+                log("// submitCardForm() -> JWE, \(encrypted.count) characters (filled into the field below)")
             }
 
             labeledField("JWE (from on-device card encryption)", text: $jwe)
@@ -252,7 +255,7 @@ struct ContentView: View {
     /// simulated "server", then fills the card_token field and copies the token to the clipboard.
     /// In production the SDK only produces the JWE; tokenization happens on your real server.
     private func fetchTestCardToken() async throws {
-        let card = GopayCardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
+        let card = CardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
         let jwe = try await GopaySDK.shared.encryptCardData(card)
         let token = try await MerchantBackendSimulator.tokenizeCard(jwe: jwe)
         await MainActor.run {
@@ -314,15 +317,15 @@ struct ContentView: View {
         return true
     }
 
-    private func chargeWithApplePay() async throws {
+    private func chargeWithWallet() async throws {
         guard GopaySDK.canUseApplePay() else {
             log("Apple Pay is not available on this device.")
             return
         }
         // Down the same path as the card charges: a wallet charge gets its action late just as
         // often, and the console has to show the browser data it sent either way.
-        try await runCharge(labelled: "chargeWithApplePay()") { session, browserData in
-            try await session.chargeWithApplePay(browserData: browserData)
+        try await runCharge(labelled: "chargeWithWallet()") { session, browserData in
+            try await session.chargeWithWallet(browserData: browserData)
         }
     }
 
@@ -396,7 +399,7 @@ struct ContentView: View {
         // The SDK runs the challenge itself here, so the manual link is dropped.
         await MainActor.run { pending3ds = nil }
         let result = try await session.awaitChargeState(AwaitChargeOptions(
-            returnURL: URL(string: returnURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+            returnUrl: URL(string: returnUrl.trimmingCharacters(in: .whitespacesAndNewlines)),
             onStateChange: { charge in log("// awaitChargeState: \(charge.state.rawValue)") },
             onActionRequired: { redirect in log("// awaitChargeState: 3DS required, opening \(redirect)") }
         ))
@@ -407,7 +410,7 @@ struct ContentView: View {
         let session = try requireSession()
         try await session.handle3dsVerification(
             redirectURL: pending.redirectURL,
-            returnURL: URL(string: returnURL.trimmingCharacters(in: .whitespacesAndNewlines))
+            returnUrl: URL(string: returnUrl.trimmingCharacters(in: .whitespacesAndNewlines))
         )
         await MainActor.run { pending3ds = nil }
         let finalState = try await session.getChargeState()

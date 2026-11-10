@@ -64,7 +64,7 @@ final class CheckoutViewModel {
         var sdkNote: String {
             switch self {
             case .card:
-                "GopayCardForm collects the card, submitCardForm() encrypts it into a JWE on device, and chargeWithEncryptedCard() sends it. The PAN never touches this app's code."
+                "PaymentCardForm collects the card, submitCardForm() encrypts it into a JWE on device, and chargeWithEncryptedCard() sends it. The PAN never touches this app's code."
             case .applePay:
                 "chargeWithWallet() presents the PassKit sheet configured from the gateway's /apple-pay/app-info and charges the resulting token. The same name charges with Google Pay on Android."
             case .savedCard:
@@ -107,7 +107,7 @@ final class CheckoutViewModel {
     /// Not private only so the tests can hand the view model a session without the network.
     var session: PaymentSession?
     /// The `callback.return_url` the current payment was created with; the 3DS challenge ends there.
-    private var returnURL: URL?
+    private var returnUrl: URL?
     /// Whether the current attempt's charge has gone out, which decides what a closed window means.
     private var chargeSent = false
 
@@ -287,7 +287,7 @@ final class CheckoutViewModel {
         // Stands in for a card the shopper saved on a previous order. In a real integration your
         // server holds the token; here we mint one on the fly from a known test card.
         busyLabel = "Loading saved card…"
-        let card = GopayCardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
+        let card = CardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
         let jwe = try await GopaySDK.shared.encryptCardData(card)
         let token = try await MerchantBackendSimulator.tokenizeCard(jwe: jwe)
 
@@ -334,7 +334,7 @@ final class CheckoutViewModel {
         busyLabel = "Confirming payment…"
         do {
             let charge = try await session.awaitChargeState(AwaitChargeOptions(
-                returnURL: returnURL,
+                returnUrl: returnUrl,
                 onStateChange: { [weak self] charge in
                     if charge.state != .actionRequired { self?.busyLabel = "Confirming payment…" }
                 },
@@ -374,7 +374,7 @@ final class CheckoutViewModel {
         )
         session = started
         paymentId = created.paymentId
-        returnURL = created.returnURL
+        returnUrl = created.returnUrl
         return started
     }
 

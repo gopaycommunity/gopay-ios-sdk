@@ -3,7 +3,7 @@
 //  example
 //
 //  Design tokens for the demo e-shop. Defined in code (rather than an asset catalog) so the whole
-//  checkout is readable in one place, and so the `GopayCardFormTheme` handed to `GopayCardForm`
+//  checkout is readable in one place, and so the `PaymentCardFormTheme` handed to `PaymentCardForm`
 //  visibly derives from the same palette — that's the point of the theming demo.
 //
 
@@ -41,10 +41,10 @@ enum CheckoutTheme {
 
     // MARK: - SDK card form theme
 
-    /// Handed to `GopayCardForm` so the SDK's inputs sit in the eshop's design language rather
+    /// Handed to `PaymentCardForm` so the SDK's inputs sit in the eshop's design language rather
     /// than the SDK defaults.
-    static var cardForm: GopayCardFormTheme {
-        GopayCardFormTheme(
+    static var cardForm: PaymentCardFormTheme {
+        PaymentCardFormTheme(
             labelColor: inkMuted,
             labelFontSize: 12,
             labelFontWeight: 600,

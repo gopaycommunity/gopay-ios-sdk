@@ -19,7 +19,7 @@ enum DemoEnvironment: String {
     /// duplicating a URL here.
     var gopayEnvironment: GopayEnvironment {
         switch self {
-        case .development: .development(baseURL: DemoConfig.baseURL)
+        case .development: .development(baseUrl: DemoConfig.baseUrl)
         case .sandbox: .sandbox
         case .production: .production
         }
@@ -43,7 +43,7 @@ final class DemoConfig {
     static let shared = DemoConfig()
 
     /// Gateway from `GOPAY_DEMO_BASE_URL`. Empty means the SDK's own sandbox host.
-    static let baseURL = normalizedBaseURL(infoValue("GOPAY_DEMO_BASE_URL"))
+    static let baseUrl = normalizedBaseURL(infoValue("GOPAY_DEMO_BASE_URL"))
 
     /// Trims the configured value, appends the trailing `/` the SDK concatenates paths onto, and
     /// refuses anything that is neither empty nor an `http(s)` URL. Android rejects the same
@@ -70,15 +70,15 @@ final class DemoConfig {
     /// Which environment a normalized `GOPAY_DEMO_BASE_URL` names: empty means the SDK's own
     /// sandbox, a URL equal to one of the SDK's built-in hosts names that environment (so the
     /// badge reads SANDBOX or PRODUCTION, not DEVELOPMENT), and anything else is a custom gateway.
-    static func environment(for baseURL: String) -> DemoEnvironment {
-        switch baseURL {
-        case "", GopayEnvironment.sandbox.baseURL: .sandbox
-        case GopayEnvironment.production.baseURL: .production
+    static func environment(for baseUrl: String) -> DemoEnvironment {
+        switch baseUrl {
+        case "", GopayEnvironment.sandbox.baseUrl: .sandbox
+        case GopayEnvironment.production.baseUrl: .production
         default: .development
         }
     }
 
-    let environment: DemoEnvironment = DemoConfig.environment(for: DemoConfig.baseURL)
+    let environment: DemoEnvironment = DemoConfig.environment(for: DemoConfig.baseUrl)
 
     private init() {
         // Empty — enforces the singleton via `shared`; there is no per-instance state to initialize.
@@ -86,7 +86,7 @@ final class DemoConfig {
 
     /// Builds the SDK config for `environment`: the custom locale, debug logging and the rest of
     /// what the app registers at launch.
-    static func buildConfig(for environment: DemoEnvironment) -> GopaySDKConfig {
+    static func buildConfig(for environment: DemoEnvironment) -> GopayConfig {
         // Register a custom locale (code "xx") the form can select alongside the built-ins, and
         // leave `locale = nil` so the default follows the device language (falling back to cs).
         var customLocale = GopayLocales.en
@@ -94,11 +94,11 @@ final class DemoConfig {
         customLocale.expLabel = "Doom date"
         customLocale.cvvLabel = "Secret code"
 
-        return GopaySDKConfig(
+        return GopayConfig(
             environment: environment.gopayEnvironment,
             clientId: credentials.clientId,
             shareableKey: credentials.shareableKey,
-            enableDebugLogging: true,
+            debugLoggingEnabled: true,
             customLocales: ["xx": customLocale]
         )
     }

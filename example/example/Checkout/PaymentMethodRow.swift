@@ -3,7 +3,7 @@
 //  example
 //
 //  One selectable payment method. Selecting a row expands it to reveal the method's own content —
-//  for cards that's the SDK's `GopayCardForm`, for everything else a short note about which SDK
+//  for cards that's the SDK's `PaymentCardForm`, for everything else a short note about which SDK
 //  call the row runs.
 //
 

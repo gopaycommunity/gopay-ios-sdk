@@ -21,7 +21,7 @@ enum MerchantBackendSimulator {
         let paymentSecret: String
         /// The `callback.return_url` the payment was created with. A real backend hands it to the
         /// app together with the pair, and the app passes it to `handle3dsVerification`.
-        let returnURL: URL?
+        let returnUrl: URL?
     }
 
     /// Authenticates as the merchant and creates a payment, returning the pair the SDK needs.
@@ -79,7 +79,7 @@ enum MerchantBackendSimulator {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         // A real backend puts its own address here; the SDK constant is also what the 3DS WebView
         // falls back to without one. The gateway accepts only an absolute http(s) return_url.
-        let returnURL = GopaySDK.chargeReturnURL
+        let returnUrl = GopaySDK.chargeReturnUrl
         let body: [String: Any] = [
             "amount": amount,
             "currency": currency,
@@ -88,7 +88,7 @@ enum MerchantBackendSimulator {
             "customer": ["email": "demo@example.com"],
             "callback": [
                 "notification_url": "https://example.com/gopay/notify",
-                "return_url": returnURL
+                "return_url": returnUrl
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -102,7 +102,7 @@ enum MerchantBackendSimulator {
         guard let paymentId = id, let secret = json["payment_secret"] as? String else {
             throw error("Missing id / payment_secret in payment response")
         }
-        return CreatedPayment(paymentId: paymentId, paymentSecret: secret, returnURL: URL(string: returnURL))
+        return CreatedPayment(paymentId: paymentId, paymentSecret: secret, returnUrl: URL(string: returnUrl))
     }
 
     // MARK: - Helpers
@@ -112,8 +112,8 @@ enum MerchantBackendSimulator {
     /// Every environment resolves to a host, so the only way to get a failure here is empty
     /// credentials, which fail at the gateway in `ensureOK(_:_:action:)`.
     private static func url(_ path: String) -> URL {
-        let baseURL = GopaySDK.shared.config?.environment.baseURL ?? ""
-        return URL(string: baseURL + path)!
+        let baseUrl = GopaySDK.shared.config?.environment.baseUrl ?? ""
+        return URL(string: baseUrl + path)!
     }
 
     /// iOS 13-safe async wrapper around `dataTask` (`URLSession.data(for:)` is iOS 15+).

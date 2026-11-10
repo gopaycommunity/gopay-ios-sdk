@@ -108,10 +108,10 @@ private struct EnvironmentBadge: View {
         }
     }
 
-    /// Sandbox and production resolve to fixed hosts inside the SDK; `baseURL` is public
+    /// Sandbox and production resolve to fixed hosts inside the SDK; `baseUrl` is public
     /// specifically so this can read them without duplicating the URLs here.
     private var host: String? {
-        URL(string: environment.gopayEnvironment.baseURL)?.host
+        URL(string: environment.gopayEnvironment.baseUrl)?.host
     }
 
     private var tint: Color {

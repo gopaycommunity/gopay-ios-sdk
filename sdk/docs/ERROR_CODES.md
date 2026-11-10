@@ -17,11 +17,11 @@ Every code the SDK throws also says whether **a charge may exist** on the gatewa
 **safe to retry**. A charge is created by `charge` and the `chargeWith*` calls; `awaitChargeState`,
 `handle3dsVerification` and the reads come after one. Where the answer is "read the charge state first", ask your
 backend or `getChargeState()` before charging again, because the gateway may have created the charge even though the
-answer never reached the device. Codes the SDK does not throw carry neither line.
+answer never reached the device. 3.0 removed the codes the SDK never threw.
 
 ## The `errorCallback` rule
 
-`GopaySDKConfig.errorCallback` is for central logging and monitoring, not a substitute for
+`GopayConfig.errorCallback` is for central logging and monitoring, not a substitute for
 catching the error at the call. The rule is the same on both platforms:
 
 - Every `GopaySDKError` a public call of `GopaySDK` or of a `PaymentSession` throws reaches the
@@ -81,12 +81,12 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
 
 ### AUTH_011: Shareable Key Missing
 - **Case**: `authShareableKeyMissing`
-- **Description**: `clientId` / `shareableKey` are absent from `GopaySDKConfig` but required by the requested operation
+- **Description**: `clientId` / `shareableKey` are absent from `GopayConfig` but required by the requested operation
 - **Common Causes**:
   - SDK initialized without them, then a card was encrypted (`encryptCardData` / `submitCardForm` fetch `GET /cards/public-key` every time); no request is sent
   - A charge, which first fetches `GET /cards/browser-data` with the same credentials; the charge is not sent
 - **Developer Action**:
-  - Supply both in `GopaySDKConfig` — they are safe to embed in the app
+  - Supply both in `GopayConfig` — they are safe to embed in the app
 - **A charge may exist**: No: the call stops before anything is sent
 - **Safe to retry**: Yes, once `clientId` and `shareableKey` are set
 
@@ -198,7 +198,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Case**: `invalidBaseURL`
 - **Description**: The resolved API base URL is empty, or concatenating a path onto it does not yield an absolute `http(s)` URL with a host
 - **Common Causes**:
-  - A malformed or empty URL passed to `.development(baseURL:)`
+  - A malformed or empty URL passed to `.development(baseUrl:)`
 - **Developer Action**:
   - Pass an absolute `https://` URL ending in `/`; `initialize(with:)` also logs a warning when the selected environment has no base URL
   - `.sandbox` and `.production` carry their own hosts and cannot hit this
@@ -276,7 +276,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Case**: `paymentApplePayInProgress`
 - **Description**: An Apple Pay sheet is already running; only one can run at a time (the Android SDK uses this code for Google Pay)
 - **Common Causes**:
-  - `chargeWithApplePay` invoked twice, e.g. from a double tap
+  - `chargeWithWallet` invoked twice, e.g. from a double tap
 - **Developer Action**:
   - Disable the pay button while a charge is in flight
 - **A charge may exist**: Not from this call, refused before the sheet; the sheet already up may still end in a charge
@@ -387,7 +387,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - A request got a response that is not an HTTP response
   - No view controller could be found to present the 3DS screen from
 - **Developer Action**:
-  - Enable `enableDebugLogging` and report the message
+  - Enable `debugLoggingEnabled` and report the message
 - **A charge may exist**: From the encryption or the token request, no: both fail before a charge is sent. From the 3DS screen failing to start, the charge exists already
 - **Safe to retry**: Yes for the encryption and the token request; for the 3DS screen, read the charge state first
 
@@ -414,7 +414,7 @@ Two different things end a payment window early, and they are reported different
   for the charge and returns its result or its error.
 - **Your code cancelled the task** that awaits the call. For `handle3dsVerification` that closes
   the 3DS screen and throws `CancellationError`, which is not a `GopaySDKError`.
-  `chargeWithApplePay` cancelled before the sheet is shown throws it and shows nothing. A sheet
+  `chargeWithWallet` cancelled before the sheet is shown throws it and shows nothing. A sheet
   already up is not closed: the call waits until the sheet closes, then returns the charge if it
   succeeded and otherwise throws `CancellationError` in place of `PAYMENT_011` or the charge's
   error, and reports neither. The Android SDK differs here, see its `ERROR_CODES.md`.

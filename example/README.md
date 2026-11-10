@@ -76,11 +76,11 @@ The app opens on `RootView`: two destinations, and an environment badge.
 A deliberately ordinary-looking checkout (`CheckoutView` / `CheckoutViewModel`) for a fictional
 shop, with a real cart total, that exercises every payment method the SDK offers:
 
-- **Credit or debit card** — `GopayCardForm` (themed to match the shop) → `submitCardForm()` → a
+- **Credit or debit card** — `PaymentCardForm` (themed to match the shop) → `submitCardForm()` → a
   JWE → `chargeWithEncryptedCard(_:)`. The PAN never touches this app's code.
 - **Apple Pay** — `chargeWithWallet()` after `isWalletAvailable()`, the wallet names shared with
   the Android demo. The row is hidden when the device cannot pay (`canUseApplePay()`, the
-  synchronous alias a view body can read).
+  synchronous check a view body can read).
 - **Saved card** — a known test card encrypted with `encryptCardData(_:)`, tokenized by
   `MerchantBackendSimulator` (simulating your server's `POST /cards/tokens`), then charged with
   `chargeWithCardToken(_:)`.
@@ -113,7 +113,7 @@ Four sections, top to bottom. Sections 3 and 4 only appear once a session is liv
 3. **Operations** — *Get status*, *Get Apple Pay info*, *Charge with Apple Pay*,
    *Get test card token (server)*, *Charge a payment*, *Get charge state*, *Await charge state*,
    *Handle 3DS verification*, *Get QR payment info*.
-4. **Card form → JWE** — a **Theme** picker, a locale picker, `GopayCardForm`,
+4. **Card form → JWE** — a **Theme** picker, a locale picker, `PaymentCardForm`,
    *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*.
 
 A 3DS redirect URL in the charge response enables **Handle 3DS verification**, which opens the

@@ -199,7 +199,7 @@ struct CheckoutView: View {
                 // The SDK's own component, themed to match the shop. Card data never leaves it —
                 // `submitCardForm()` hands back a JWE, not a PAN, and `chargeWithEncryptedCard()`
                 // sends it.
-                GopayCardForm(
+                PaymentCardForm(
                     theme: CheckoutTheme.cardForm,
                     locale: model.locale,
                     validation: .onSubmit,

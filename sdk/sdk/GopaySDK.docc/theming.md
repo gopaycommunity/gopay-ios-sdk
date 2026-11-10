@@ -1,6 +1,6 @@
 # Theming the Card Form
 
-Style ``GopayCardForm`` with the same parameter names the GoPay web card form uses.
+Style ``PaymentCardForm`` with the same parameter names the GoPay web card form uses.
 
 ## Overview
 
@@ -9,15 +9,15 @@ sentence-case labels, ordinary spacing. The web card form is a page of its own; 
 a merchant's screen, so nobody should have to undo an SDK style to make it fit. Theming is fully
 available, it is a choice rather than the starting point.
 
-``GopayCardFormTheme`` is **a subset of the web card form theme (cc-v4)**, carrying its parameter
+``PaymentCardFormTheme`` is **a subset of the web card form theme (cc-v4)**, carrying its parameter
 names so one design decision covers the web, iOS and Android. The subset is the part a native field
 can carry: every parameter is a property of the text field itself or of the layout around it, and
 the SDK draws nothing of its own.
 
 ```swift
 // Nothing here is required; each line moves the form one step away from the platform default.
-GopayCardForm(
-    theme: GopayCardFormTheme(
+PaymentCardForm(
+    theme: PaymentCardFormTheme(
         labelUppercase: true,
         inputBorderRadius: 0,
         inputPaddingHorizontal: 0,
@@ -33,7 +33,7 @@ GopayCardForm(
 The 28 parameters carry the same names on Android and, with one exception, the same types, and both
 SDKs mark an invalid field the same way. Two things differ:
 
-- ``GopayCardFormTheme/fontFamily`` is a font name here and resolves at render, while Android takes
+- ``PaymentCardFormTheme/fontFamily`` is a font name here and resolves at render, while Android takes
   a typed `FontFamily`. It is the only parameter whose type differs.
 - The Android SDK adds `helperTextColor` and `helperFontSize` of its own, for a helper line neither
   the web form nor this SDK renders.
@@ -44,8 +44,8 @@ channel while the same values give a GoPay-styled one.
 A weight is rounded to the nearest hundred here, because `Font.Weight` has nine steps; Android hands
 the exact number to a variable font.
 
-On iOS 13 the text inside an input keeps the system colors. ``GopayCardFormTheme/inputTextColor``
-and ``GopayCardFormTheme/placeholderColor`` reach a `UITextField`, and turning a SwiftUI `Color`
+On iOS 13 the text inside an input keeps the system colors. ``PaymentCardFormTheme/inputTextColor``
+and ``PaymentCardFormTheme/placeholderColor`` reach a `UITextField`, and turning a SwiftUI `Color`
 into a `UIColor` needs iOS 14. Everything SwiftUI draws itself, the labels, the border and the
 error text, is themed on iOS 13 too.
 
@@ -64,21 +64,21 @@ Some web keys have no counterpart here.
   default, and a native text field on neither platform draws one, so honouring it would mean the
   SDK painting the field itself.
 - `inputLetterSpacing` would have to override how the field measures itself.
-  ``GopayCardFormTheme/labelLetterSpacing`` stays, because a label is ordinary text.
+  ``PaymentCardFormTheme/labelLetterSpacing`` stays, because a label is ordinary text.
 - `inputLineHeight` pins the height of a field across browser engines. A single-line native field
-  has no such problem; ``GopayCardFormTheme/inputHeight`` is here to set a minimum.
+  has no such problem; ``PaymentCardFormTheme/inputHeight`` is here to set a minimum.
 
 They are simply not parameters of this type, so the compiler says so where you would have set
 them.
 
-``GopayCardFormTheme/placeholderColor`` is worth setting whenever a theme paints the form dark:
+``PaymentCardFormTheme/placeholderColor`` is worth setting whenever a theme paints the form dark:
 unset, it follows the system's light or dark appearance rather than the theme's, so the hint text
 can come out dark on a dark field.
 
 ## The error and focus states
 
-- valid: ``GopayCardFormTheme/inputBorderColor``
-- invalid: ``GopayCardFormTheme/inputErrorBorderColor``
+- valid: ``PaymentCardFormTheme/inputBorderColor``
+- invalid: ``PaymentCardFormTheme/inputErrorBorderColor``
 
 The error border only appears while the form draws inline errors, so the default
 `validation: .hidden` leaves the border untouched.
@@ -87,7 +87,7 @@ Neither platform marks the active field with its frame. A native text field mark
 caret and the keyboard, and any more than that is something the SDK would have to paint itself, so
 it does not. There is no theme parameter for it on either.
 
-The border runs inside the field, so raising ``GopayCardFormTheme/inputBorderWidth`` thickens the
+The border runs inside the field, so raising ``PaymentCardFormTheme/inputBorderWidth`` thickens the
 frame inwards and never changes how much room the form takes. It stops at half the field's height,
 past which a border would have nothing left to enclose.
 
@@ -95,7 +95,7 @@ past which a border would have nothing left to enclose.
 
 Version 2.0 renamed every parameter and split the composite ones, without aliases. The values carry
 over as they are, and 2.0 keeps almost all of the platform defaults 1.x had. One default changed:
-``GopayCardFormTheme/inputBackgroundColor`` is now `.clear` where 1.x filled the inputs with
+``PaymentCardFormTheme/inputBackgroundColor`` is now `.clear` where 1.x filled the inputs with
 `Color(.systemBackground)`, so the surface behind the form shows through.
 
 | 1.x | 2.0 |
@@ -112,15 +112,15 @@ over as they are, and 2.0 keeps almost all of the platform defaults 1.x had. One
 | `spacing` | `groupSpacing` |
 | `textFieldPadding` | `inputPaddingVertical` and `inputPaddingHorizontal` |
 
-``GopayCardFormTheme/inputHeight`` is the smallest height of the input, with the vertical padding
+``PaymentCardFormTheme/inputHeight`` is the smallest height of the input, with the vertical padding
 inside it rather than on top of it. It is a minimum on both platforms, not the fixed height it is
 on the web, so a large font scale can still grow the field rather than overflow it.
 
 Eight more keys were carried for part of the 2.0 work and removed with the move to native
 rendering: `inputBorderCollapse`, `inputBorderStyle`, `focusRingWidth`, `focusRingColor`,
 `focusGradientStart`, `focusGradientEnd`, `inputLetterSpacing` and `inputLineHeight`. Setting one is
-a compile error now. ``GopayCardFormTheme/labelLetterSpacing`` and
-``GopayCardFormTheme/inputHeight`` cover what is left of the last two.
+a compile error now. ``PaymentCardFormTheme/labelLetterSpacing`` and
+``PaymentCardFormTheme/inputHeight`` cover what is left of the last two.
 
 The full parity table, with the iOS and web defaults side by side, is in the README.
 
@@ -128,4 +128,4 @@ The full parity table, with the iOS and web defaults side by side, is in the REA
 
 ### Theme
 
-- ``GopayCardFormTheme``
+- ``PaymentCardFormTheme``

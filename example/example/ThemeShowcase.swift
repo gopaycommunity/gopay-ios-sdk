@@ -17,20 +17,20 @@ struct ThemeShowcase {
     /// Theme names in picker order, matching the Android demo.
     let names = ["Default", "Dark", "Red"]
 
-    private let themes: [String: GopayCardFormTheme] = [
-        "Default": GopayCardFormTheme(),
+    private let themes: [String: PaymentCardFormTheme] = [
+        "Default": PaymentCardFormTheme(),
         "Dark": dark,
         "Red": red
     ]
 
     /// The named theme, or the SDK defaults when the name is unknown.
-    func theme(named name: String) -> GopayCardFormTheme {
-        themes[name] ?? GopayCardFormTheme()
+    func theme(named name: String) -> PaymentCardFormTheme {
+        themes[name] ?? PaymentCardFormTheme()
     }
 
     // MARK: - The web card form's palettes
 
-    private static let dark = GopayCardFormTheme(
+    private static let dark = PaymentCardFormTheme(
         labelColor: Color(hex: 0x94A3B8),
         labelFontSize: 11,
         labelFontWeight: 600,
@@ -54,7 +54,7 @@ struct ThemeShowcase {
         formBackgroundColor: Color(hex: 0x1A1F2E)
     )
 
-    private static let red = GopayCardFormTheme(
+    private static let red = PaymentCardFormTheme(
         labelColor: Color(hex: 0xC8102E),
         labelFontSize: 11,
         labelFontWeight: 600,
