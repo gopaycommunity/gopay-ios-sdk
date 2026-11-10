@@ -67,7 +67,7 @@ public enum ChargeState: String, Codable, GatewayEnum, Sendable {
     /// The charge is with the payment processor. Not a result yet.
     case processing = "PROCESSING"
     /// A 3DS challenge is waiting: pass `action?.redirectUrl` to
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)``.
+    /// ``PaymentSession/handle3dsVerification(redirectUrl:returnUrl:presenting:)``.
     case actionRequired = "ACTION_REQUIRED"
     /// The charge went through. A result.
     case succeeded = "SUCCEEDED"
@@ -505,7 +505,7 @@ public struct ChargeAction: Codable, Sendable {
 /// Per the spec `id` and `state` are required; instrument details and the follow-up action are
 /// absent in early states, and `fail_reason` is only present when `state == failed`. The
 /// `return_url` the gateway may still repeat with a charge is not read: the address to pass to
-/// ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)`` is the
+/// ``PaymentSession/handle3dsVerification(redirectUrl:returnUrl:presenting:)`` is the
 /// `callback.return_url` your backend created the payment with.
 public struct ChargePaymentResponse: Codable, Sendable {
     public let id: String

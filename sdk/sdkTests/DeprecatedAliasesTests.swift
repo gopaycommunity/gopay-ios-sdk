@@ -54,14 +54,12 @@ struct DeprecatedAliasesTests {
         #expect(GopaySDK.chargeReturnURL == GopaySDK.chargeReturnUrl)
     }
 
-    @Test func theCardDataOf2xIsTheCardDataOf3() {
-        let old = GopayCardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
-        let new: CardData = old
+    /// `GopayCardData` and the QR models keep their names of 2.7 in 3.0, so this code builds
+    /// without a warning. Only `mnbQR` is an alias, of `mnbQr`.
+    @Test func theCardDataAndTheQrModelsKeepTheirNames() throws {
+        let card = GopayCardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
+        #expect(card.cardPan == "4444444444444448")
 
-        #expect(new.cardPan == "4444444444444448")
-    }
-
-    @Test func theQrNamesOf2xDecodeAsTheNamesOf3() throws {
         let json = """
         {
           "name": "Shop",
@@ -72,17 +70,16 @@ struct DeprecatedAliasesTests {
           "address": { "street": "Main 1", "city": "Praha" }
         }
         """
-        let recipient = try JSONDecoder().decode(QrRecipient.self, from: Data(json.utf8))
+        let recipient: QrRecipient = try JSONDecoder().decode(QrRecipient.self, from: Data(json.utf8))
         let account: QrRecipientBankAccount? = recipient.bankAccount
         let local: QrLocalBankAccount? = account?.local
         let international: QrInternationalBankAccount? = account?.international
         let address: QrRecipientAddress? = recipient.address
-        let same: BankTransferRecipient = recipient
 
-        #expect(same.name == "Shop")
-        #expect(local != nil)
-        #expect(international != nil)
-        #expect(address != nil)
+        #expect(recipient.name == "Shop")
+        #expect(local?.accountNumber == "123")
+        #expect(international?.iban == "CZ00")
+        #expect(address?.city == "Praha")
 
         let codes = try JSONDecoder().decode(QrCodeList.self, from: Data(#"{ "mnb_qr": "HCT" }"#.utf8))
         #expect(codes.mnbQR == "HCT")
@@ -130,6 +127,38 @@ struct DeprecatedAliasesTests {
     }
 }
 
+extension SessionNetworkTests {
+
+    /// `handle3dsVerification` under the labels of 2.x is the call of 3.0: a redirect address the
+    /// WebView cannot load ends both the same way, before anything is presented, in every form
+    /// the call of 2.x had.
+    @Test func the3dsCallOf2xEndsLikeTheCallOf3() async throws {
+        StubURLProtocol.reset(handler: Self.gatewayHandler())
+        let session = try await makeSession()
+        let unloadable = try #require(URL(string: "ftp://acs.example/challenge"))
+        let returnAddress = URL(string: "https://shop.example/return")
+
+        func outcome(_ call: () async throws -> Void) async -> GopaySDKError? {
+            do { try await call() } catch let error as GopaySDKError { return error } catch {}
+            return nil
+        }
+
+        let current = await outcome { try await session.handle3dsVerification(redirectUrl: unloadable, returnUrl: returnAddress) }
+        let old = [
+            await outcome { try await session.handle3dsVerification(redirectURL: unloadable) },
+            await outcome { try await session.handle3dsVerification(redirectURL: unloadable, returnURL: returnAddress) },
+            await outcome { try await session.handle3dsVerification(redirectURL: unloadable, presenting: nil) },
+            await outcome { try await session.handle3dsVerification(redirectURL: unloadable, returnURL: returnAddress, presenting: nil) },
+        ]
+
+        #expect(current?.code == .paymentVerificationUnreachable)
+        for error in old {
+            #expect(error?.code == current?.code)
+            #expect(error?.message == current?.message)
+        }
+    }
+}
+
 /// The wallet and the 3DS screen under their old names: compiled, never run, since both need a
 /// payment. That they still resolve is what an integration needs to build.
 @available(*, deprecated)
@@ -137,8 +166,10 @@ func deprecatedSessionCallsStillCompile(_ session: PaymentSession, redirect: URL
     _ = try await session.getApplePayInfo()
     _ = try await session.chargeWithApplePay()
     _ = try await session.chargeWithApplePay(browserData: nil, challengePreference: nil)
-    try await session.handle3dsVerification(redirectURL: redirect, returnURL: nil)
-    try await session.handle3dsVerification(redirectURL: redirect, returnURL: redirect, presenting: nil)
+    // Every form of the 3DS call 2.x had, under `redirectURL` and `returnURL`.
     try await session.handle3dsVerification(redirectURL: redirect)
+    try await session.handle3dsVerification(redirectURL: redirect, returnURL: nil)
+    try await session.handle3dsVerification(redirectURL: redirect, presenting: nil)
+    try await session.handle3dsVerification(redirectURL: redirect, returnURL: redirect, presenting: nil)
     _ = GopaySDK.canUseApplePay()
 }

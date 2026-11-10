@@ -116,7 +116,7 @@ extension SessionNetworkTests {
             window.isHidden = false
             return (presenter, window)
         }
-        let task = Task { try await session.handle3dsVerification(redirectURL: url, presenting: presenter) }
+        let task = Task { try await session.handle3dsVerification(redirectUrl: url, presenting: presenter) }
         func screen() async -> GopayChargeVerificationViewController? {
             await MainActor.run { presenter.presentedViewController as? GopayChargeVerificationViewController }
         }
@@ -214,7 +214,7 @@ extension SessionNetworkTests {
         let error = await Task { () -> Error? in
             withUnsafeCurrentTask { $0?.cancel() }
             do {
-                try await session.handle3dsVerification(redirectURL: URL(string: "https://3ds.example/step")!)
+                try await session.handle3dsVerification(redirectUrl: URL(string: "https://3ds.example/step")!)
                 return nil
             } catch {
                 return error

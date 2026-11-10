@@ -174,7 +174,7 @@ struct ChargeVerificationNavigationPolicyTests {
 
     private func completes(_ string: String, returnUrl: String?) -> Bool {
         let prefix = GopayVerificationNavigationPolicy.completionPrefix(
-            forReturnURL: returnUrl.flatMap(URL.init(string:))
+            forReturnUrl: returnUrl.flatMap(URL.init(string:))
         )
         return GopayVerificationNavigationPolicy.completesVerification(
             URL(string: string)!,
@@ -215,7 +215,7 @@ struct ChargeVerificationNavigationPolicyTests {
     }
 
     private func prefix(_ returnUrl: String) -> String {
-        GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: URL(string: returnUrl))
+        GopayVerificationNavigationPolicy.completionPrefix(forReturnUrl: URL(string: returnUrl))
     }
 
     /// WebKit reports a navigation with its scheme and host in lowercase, so the return URL is
@@ -254,7 +254,7 @@ struct ChargeVerificationReportingTests {
         onResult: @escaping (GopayChargeVerificationResult) -> Void
     ) -> GopayChargeVerificationViewController {
         GopayChargeVerificationViewController(
-            redirectURL: URL(string: "https://3ds.example/step")!,
+            redirectUrl: URL(string: "https://3ds.example/step")!,
             returnUrl: nil,
             onResult: onResult
         )
@@ -412,7 +412,7 @@ struct ChargeVerificationReportingTests {
     @Test func theControllerEndsTheChallengeOnTheMerchantsReturnURL() {
         var results: [GopayChargeVerificationResult] = []
         let controller = GopayChargeVerificationViewController(
-            redirectURL: URL(string: "https://3ds.example/step")!,
+            redirectUrl: URL(string: "https://3ds.example/step")!,
             returnUrl: URL(string: "https://shop.example/return"),
             onResult: { results.append($0) }
         )

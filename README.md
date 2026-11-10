@@ -507,7 +507,7 @@ _ = try await session.charge(request)
 
 ### 3DS verification
 
-`handle3dsVerification(redirectURL:returnUrl:presenting:)` opens the challenge in an SDK-managed
+`handle3dsVerification(redirectUrl:returnUrl:presenting:)` opens the challenge in an SDK-managed
 WebView and suspends. Pass it the address your backend created the payment with
 (`callback.return_url`), which the app gets from its backend together with `payment_id` and
 `payment_secret`; the ACS comes back to it when the challenge is done. The charge response does not
@@ -549,7 +549,7 @@ Only one verification runs per process at a time; a second one throws
 // The redirect from the charge response, the return URL from your backend.
 guard let url = charge.action?.redirectUrl.flatMap(URL.init(string:)) else { return }
 do {
-    try await session.handle3dsVerification(redirectURL: url, returnUrl: returnUrl)
+    try await session.handle3dsVerification(redirectUrl: url, returnUrl: returnUrl)
 } catch let error as GopaySDKError where error.code == .paymentVerificationUnreachable {
     retryCharge()
     return
@@ -703,7 +703,7 @@ You can also encrypt card data you collected yourself:
 
 ```swift
 let jwe = try await GopaySDK.shared.encryptCardData(
-    CardData(cardPan: "...", expMonth: "12", expYear: "30", cvv: "123")
+    GopayCardData(cardPan: "...", expMonth: "12", expYear: "30", cvv: "123")
 )
 ```
 
@@ -1160,7 +1160,7 @@ What stays platform-specific, on purpose:
 | Wallet configuration | `GopayApplePayAppInfoResponse` | `GooglePayInfoResponse` |
 | `handle3dsVerification` redirect | `URL` | `String` |
 | `AwaitChargeOptions` | seconds (`interval`, `initialTimeout`) | milliseconds (`intervalMs`, `initialTimeoutMs`) |
-| Request timeout | `requestTimeout`, seconds, 60 by default, between two pieces of data | `requestTimeoutMs`, 30 seconds by default, for the whole call |
+| Request timeout | `requestTimeout`, seconds, 60 by default | `requestTimeoutMs`, milliseconds, 30 seconds by default |
 | Manual wallet path | the `applePay` card input | `GooglePayHelper` |
 | Where the 3DS screen and the wallet sheet appear | the SDK finds the presenting view controller | the SDK follows the current Activity |
 
@@ -1177,7 +1177,7 @@ of either. The full list, the same for both SDKs, is in
 [Migrating to 3.0](#migrating-to-30).
 
 - **One set of names.** The config, the environment, the card form and its theme, the card data,
-  the QR recipient and the return address have the same name on both platforms. A name that 2.x
+  the QR models and the return address have the same name on both platforms. A name that 2.x
   documented stays as a deprecated alias that points at the new one, so an integration written
   against 2.7 builds with warnings.
 - **One shape of data.** Which fields of `PaymentDetails`, `QrPaymentDetails` and
@@ -1281,20 +1281,16 @@ the new symbol, so the renames are fix-its.
 | `GopayCardForm` | `PaymentCardForm` |
 | `GopayCardFormTheme` | `PaymentCardFormTheme` |
 | `GopayCardFormValidationDisplay` | `PaymentCardFormValidationDisplay` |
-| `GopayCardData` | `CardData` |
 | `returnURL`, `chargeReturnURL` | `returnUrl`, `chargeReturnUrl` |
-| `QrRecipient` | `BankTransferRecipient` |
-| `QrRecipientBankAccount` | `RecipientBankAccount` |
-| `QrLocalBankAccount` | `BankAccountLocalDetails` |
-| `QrInternationalBankAccount` | `BankAccountInternationalDetails` |
-| `QrRecipientAddress` | `RecipientAddress` |
+| `redirectURL` in `handle3dsVerification` | `redirectUrl` |
 | `mnbQR` | `mnbQr` |
 | `GopayLocales.register(_:for:)` | `GopayLocales.register(_:strings:)`, the code first |
 
 The old names are deprecated aliases: they do exactly what the new names do. They leave in 4.0.
 
-One alias only builds the value: `.development(baseURL:)` still creates the environment, but a
-`switch` that matches `case .development(baseURL: let url)` has to be renamed by hand.
+`GopayCardData` and the QR models (`QrRecipient`, `QrRecipientBankAccount`, `QrLocalBankAccount`,
+`QrInternationalBankAccount`, `QrRecipientAddress`) keep their names: they are the names on both
+platforms in 3.0, so that a type of the SDK is not mistaken for one of the app.
 
 ### Deprecated
 
@@ -1326,9 +1322,12 @@ where one is named.
 
 What has to change before the app builds:
 
+- `case .development(baseURL: let url)` in a `switch`: the alias `.development(baseURL:)` still
+  creates the environment, but it cannot be matched. Write `case .development(baseUrl: let url)`;
+  `case .development(let url)` keeps working.
 - `PaymentDetails.orderNumber` and `gatewayUrl` are no longer optional, and `PaymentDetails` has a
   `customer`. `QrPaymentDetails.recipient` and `qrCode`, and the four fields of
-  `BankAccountLocalDetails`, are no longer optional. `PaymentInstrumentData.details` is optional.
+  `QrLocalBankAccount`, are no longer optional. `PaymentInstrumentData.details` is optional.
 - `isValid` of the card form is a `Binding<Bool>`, no longer a `Binding<Bool?>`.
 - The "on submit" validation mode is `.onSubmit` without an argument; the binding that
   `.onSubmit(attempted:)` took is the form's `submitAttempted` parameter.
@@ -1352,6 +1351,10 @@ PaymentCardForm(validation: .onSubmit, submitAttempted: $attempted, isValid: $is
 
 A host that keeps `isValid` as `Bool?` still builds, with a deprecation warning: the form reads
 `nil` as `false`.
+
+Nothing changes for an app that does not set the new `requestTimeout`: the default is the 60
+seconds the SDK waited until now. A value the client cannot use, zero, negative or out of range,
+falls back to that default, as on Android, whose default stays 30 seconds.
 
 ---
 
@@ -1568,7 +1571,7 @@ sandbox send real reports to the sandbox ingest, like any other run of the SDK.
   empties the form's visible fields, so the card is not left on screen holding a reference the SDK
   has already let go of. Swift strings cannot be securely overwritten, so this releases the
   references rather than zeroing bytes.
-- A `CardData` you print, log or `dump` shows only the last four digits of the card number and
+- A `GopayCardData` you print, log or `dump` shows only the last four digits of the card number and
   hides the CVV, so a card you collect yourself does not end up in a log or a crash report whole.
   Its encoding for the JWE is unchanged.
 - The card form covers itself while your app goes to the background, so the snapshot iOS keeps
@@ -1664,7 +1667,10 @@ declares no test target, so `swift test` will not find them.
 session. Let your code depend on `PaymentSessionApi`, hand it the real session in the app and
 your own implementation in tests. The response models have public initializers, so the fake can
 return any answer; `PaymentOutcome` takes the `outcome` and the `payment`, and its `charge` is
-still the one in the payment.
+still the one in the payment. The protocol is `Sendable`, so the session can cross to another
+actor or task as `any PaymentSessionApi`; a fake has to be `Sendable` as well: an actor, a
+`final class` of constants as below, or a class that guards its state and is marked
+`@unchecked Sendable`.
 
 ```swift
 // The app's code knows the session only as the protocol.

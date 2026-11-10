@@ -5,7 +5,7 @@ import UIKit
 /// Mirrors the Android `ThreeDSMode`.
 public enum ThreeDSMode: Sendable {
     /// The SDK opens the challenge itself through
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)``, with the
+    /// ``PaymentSession/handle3dsVerification(redirectUrl:returnUrl:presenting:)``, with the
     /// `returnUrl` and `presenting` from ``AwaitChargeOptions``, and keeps polling once it
     /// returns. The default.
     case automatic
@@ -32,7 +32,7 @@ public struct AwaitChargeOptions: Sendable {
     /// Whether the SDK runs a 3DS challenge itself. Defaults to ``ThreeDSMode/automatic``.
     public var threeDSMode: ThreeDSMode
     /// The `callback.return_url` the payment was created with, for the automatic 3DS challenge;
-    /// the same address ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)``
+    /// the same address ``PaymentSession/handle3dsVerification(redirectUrl:returnUrl:presenting:)``
     /// takes. Without a usable one the SDK waits for ``GopaySDK/chargeReturnUrl`` instead.
     public var returnUrl: URL?
     /// The view controller to present the automatic 3DS challenge from. When `nil`, the SDK
@@ -74,7 +74,7 @@ struct AwaitChargeHooks {
     /// Suspends for the given seconds and throws `CancellationError` when the task is cancelled.
     var sleep: (TimeInterval) async throws -> Void
     /// Runs the 3DS challenge for a redirect URL and returns once it is answered.
-    var verify: (PaymentSession, _ redirectURL: String, _ returnUrl: URL?, _ presenting: UIViewController?) async throws -> Void
+    var verify: (PaymentSession, _ redirectUrl: String, _ returnUrl: URL?, _ presenting: UIViewController?) async throws -> Void
 
     static let live = AwaitChargeHooks(
         now: { ProcessInfo.processInfo.systemUptime },
@@ -88,7 +88,7 @@ struct AwaitChargeHooks {
             guard let url = URL(string: redirect) else {
                 throw GopayVerificationNavigationPolicy.unloadableRedirect(reason: "not a URL")
             }
-            try await session.verify(redirectURL: url, returnUrl: returnUrl, presenting: presenting)
+            try await session.verify(redirectUrl: url, returnUrl: returnUrl, presenting: presenting)
         }
     )
 
@@ -110,7 +110,7 @@ public extension PaymentSession {
     /// Call it after any charge on this session: ``charge(_:)``, ``chargeWithWallet(browserData:challengePreference:)``
     /// or a charge your backend made. It is the one call that replaces a polling loop of your
     /// own; the manual path, ``getChargeState()`` plus
-    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)``, stays as it is. The Android
+    /// ``handle3dsVerification(redirectUrl:returnUrl:presenting:)``, stays as it is. The Android
     /// SDK has the same `awaitChargeState` with the matching options, defaults and codes.
     ///
     /// The first read goes out at once, every later one ``AwaitChargeOptions/interval`` after the
@@ -130,7 +130,7 @@ public extension PaymentSession {
     /// - `actionRequired` with a `redirect_url` not seen before lifts the timeout, because a
     ///   challenge takes as long as the user needs, and goes to
     ///   ``AwaitChargeOptions/onActionRequired``. In ``ThreeDSMode/automatic`` the SDK then opens
-    ///   ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` with the options' `returnUrl`
+    ///   ``handle3dsVerification(redirectUrl:returnUrl:presenting:)`` with the options' `returnUrl`
     ///   and `presenting`, and once it returns polls on under a fresh `initialTimeout`, so a
     ///   gateway that never decides after the challenge still ends in `paymentTimeout`; in
     ///   ``ThreeDSMode/manual`` it polls on at once, without a timeout, and the challenge is yours

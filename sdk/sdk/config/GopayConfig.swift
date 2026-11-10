@@ -94,11 +94,12 @@ public struct GopayConfig: Sendable {
 
     /// How long a request to the gateway waits for the next data before it fails with
     /// ``GopaySDKError/Code/networkTimeout``, in seconds. Defaults to 60, what the SDK waited
-    /// until 3.0. A value that is not a positive, finite number is replaced by the default.
+    /// until 3.0. A value the client cannot use, zero, negative or not finite, falls back to that
+    /// default, as the Android SDK falls back to its own.
     ///
     /// The Android SDK has the same setting as `requestTimeoutMs`, in milliseconds, with a
-    /// default of 30 seconds, and there it limits the whole call; here it is `URLSession`'s
-    /// request timeout, which starts again with every piece of data that arrives.
+    /// default of 30 seconds. It is how long a request waits for the next data, on both
+    /// platforms; neither limits the whole call.
     public let requestTimeout: TimeInterval
 
     /// The ``requestTimeout`` the SDK uses when none is given.

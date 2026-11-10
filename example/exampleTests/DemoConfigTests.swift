@@ -11,16 +11,16 @@ struct DemoConfigTests {
     // MARK: - Base URL normalization
 
     @Test func emptyBaseURL_staysEmpty() {
-        #expect(DemoConfig.normalizedBaseURL("") == "")
-        #expect(DemoConfig.normalizedBaseURL("   ") == "")
+        #expect(DemoConfig.normalizedBaseUrl("") == "")
+        #expect(DemoConfig.normalizedBaseUrl("   ") == "")
     }
 
     @Test func baseURL_getsATrailingSlash() {
-        #expect(DemoConfig.normalizedBaseURL("https://host/api/4.0") == "https://host/api/4.0/")
+        #expect(DemoConfig.normalizedBaseUrl("https://host/api/4.0") == "https://host/api/4.0/")
     }
 
     @Test func baseURL_keepsAnExistingTrailingSlash() {
-        #expect(DemoConfig.normalizedBaseURL("  https://host/api/4.0/  ") == "https://host/api/4.0/")
+        #expect(DemoConfig.normalizedBaseUrl("  https://host/api/4.0/  ") == "https://host/api/4.0/")
     }
 
     // MARK: - Environment mapping

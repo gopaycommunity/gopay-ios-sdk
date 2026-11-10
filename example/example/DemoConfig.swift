@@ -43,12 +43,12 @@ final class DemoConfig {
     static let shared = DemoConfig()
 
     /// Gateway from `GOPAY_DEMO_BASE_URL`. Empty means the SDK's own sandbox host.
-    static let baseUrl = normalizedBaseURL(infoValue("GOPAY_DEMO_BASE_URL"))
+    static let baseUrl = normalizedBaseUrl(infoValue("GOPAY_DEMO_BASE_URL"))
 
     /// Trims the configured value, appends the trailing `/` the SDK concatenates paths onto, and
     /// refuses anything that is neither empty nor an `http(s)` URL. Android rejects the same
     /// values while building; here the value is only visible at runtime, so this is where it fails.
-    static func normalizedBaseURL(_ raw: String) -> String {
+    static func normalizedBaseUrl(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 

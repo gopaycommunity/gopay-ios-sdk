@@ -167,7 +167,7 @@ extension SessionNetworkTests {
 
         do {
             _ = try await sdk().encryptCardData(
-                CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+                GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
             )
             Issue.record("expected failure")
         } catch let error as GopaySDKError {

@@ -18,7 +18,7 @@ public extension PaymentSession {
     ///
     /// Suspends while the sheet is visible. Returns the ``ChargePaymentResponse`` on success —
     /// inspect `action?.redirectUrl` and call
-    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` if 3DS is required, then
+    /// ``handle3dsVerification(redirectUrl:returnUrl:presenting:)`` if 3DS is required, then
     /// ``getChargeState()`` for the final result.
     ///
     /// Only one Apple Pay sheet can be presented per process; a concurrent attempt throws
@@ -43,18 +43,6 @@ public extension PaymentSession {
     ///     `nil` the SDK derives it from the device via ``BrowserData/deviceDefault()``.
     ///   - challengePreference: 3DS challenge preference forwarded to the gateway.
     func chargeWithWallet(
-        browserData: BrowserData? = nil,
-        challengePreference: ChallengePreference? = nil
-    ) async throws -> ChargePaymentResponse {
-        try await reported {
-            try await runApplePay(browserData: browserData, challengePreference: challengePreference)
-        }
-    }
-
-    /// The platform name of ``chargeWithWallet(browserData:challengePreference:)``, which does
-    /// the same with the same arguments.
-    @available(*, deprecated, renamed: "chargeWithWallet(browserData:challengePreference:)")
-    func chargeWithApplePay(
         browserData: BrowserData? = nil,
         challengePreference: ChallengePreference? = nil
     ) async throws -> ChargePaymentResponse {

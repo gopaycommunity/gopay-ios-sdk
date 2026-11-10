@@ -287,7 +287,7 @@ final class CheckoutViewModel {
         // Stands in for a card the shopper saved on a previous order. In a real integration your
         // server holds the token; here we mint one on the fly from a known test card.
         busyLabel = "Loading saved card…"
-        let card = CardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
+        let card = GopayCardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
         let jwe = try await GopaySDK.shared.encryptCardData(card)
         let token = try await MerchantBackendSimulator.tokenizeCard(jwe: jwe)
 

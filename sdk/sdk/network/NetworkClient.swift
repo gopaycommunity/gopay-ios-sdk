@@ -21,27 +21,34 @@ extension AsyncHTTPClient {
 }
 
 /// URLSession-backed HTTP client. The single low-level networking primitive for the SDK.
-/// `@unchecked Sendable`: its two properties are set once and `URLSession` is thread-safe.
+/// `@unchecked Sendable`: its properties are set once and `URLSession` is thread-safe.
 final class DefaultNetworkClient: @unchecked Sendable {
     let baseUrl: String
+    /// ``GopayConfig/requestTimeout``: what ``send(_:cancellable:)`` puts on every request that
+    /// sets no timeout of its own.
+    let requestTimeout: TimeInterval
     private let session: URLSession
 
-    /// - Parameter requestTimeout: ``GopayConfig/requestTimeout``, which becomes the session's
-    ///   request timeout. A request that sets its own, as `init-session` does, keeps it.
+    /// The `timeoutInterval` of a `URLRequest` nobody set one on. A request carries a timeout of
+    /// its own whether it was set or not, and the loading system reads that one, so the session's
+    /// `timeoutIntervalForRequest` alone would leave every request at these 60 seconds.
+    static let unsetRequestTimeout = URLRequest(url: URL(fileURLWithPath: "/")).timeoutInterval
+
+    /// - Parameter requestTimeout: ``GopayConfig/requestTimeout``, set on every request and as
+    ///   the session's request timeout. A request that sets its own, as `init-session` does,
+    ///   keeps it.
     init(
         baseUrl: String,
         configuration: URLSessionConfiguration = .default,
         requestTimeout: TimeInterval = GopayConfig.defaultRequestTimeout
     ) {
         self.baseUrl = baseUrl
+        self.requestTimeout = requestTimeout
         // `.default` hands out a copy, and so does this for a configuration the caller keeps.
         let configuration = (configuration.copy() as? URLSessionConfiguration) ?? configuration
         configuration.timeoutIntervalForRequest = requestTimeout
         self.session = URLSession(configuration: configuration)
     }
-
-    /// The request timeout the session runs with, for tests.
-    var requestTimeout: TimeInterval { session.configuration.timeoutIntervalForRequest }
 
     /// Builds a request URL by concatenating `path` onto ``baseUrl``, or returns `nil` when the
     /// result is not an absolute `http(s)` URL with a host.
@@ -77,6 +84,8 @@ extension DefaultNetworkClient: AsyncHTTPClient {
     /// `browser_data.user_agent` and the issuer expects that value to match the browser it later
     /// sees. Overwriting it here would put the SDK's HTTP client name into the AReq instead.
     ///
+    /// A request that sets no timeout of its own waits ``requestTimeout`` for the next data.
+    ///
     /// A request that gets no HTTP response throws a ``GopaySDKError`` from
     /// ``GopaySDKError/transport(_:)``, never the bare `URLError`; a cancelled one throws
     /// `CancellationError`.
@@ -91,6 +100,9 @@ extension DefaultNetworkClient: AsyncHTTPClient {
         var mutableRequest = request
         if mutableRequest.value(forHTTPHeaderField: "User-Agent") == nil {
             mutableRequest.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        }
+        if mutableRequest.timeoutInterval == Self.unsetRequestTimeout {
+            mutableRequest.timeoutInterval = requestTimeout
         }
 
         guard cancellable else {

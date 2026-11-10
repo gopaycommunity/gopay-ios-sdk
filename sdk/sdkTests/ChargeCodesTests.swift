@@ -76,7 +76,7 @@ private let gatewayStatusCases: [GatewayStatusCase] = [
     GatewayStatusCase(name: "getQrPaymentInfo", failingPath: "qr-payment/info", status: 404, code: .networkClientError) {
         _ = try await $0.getQrPaymentInfo()
     },
-    GatewayStatusCase(name: "getApplePayInfo", failingPath: "apple-pay/app-info", status: 404, code: .networkClientError) {
+    GatewayStatusCase(name: "getWalletInfo", failingPath: "apple-pay/app-info", status: 404, code: .networkClientError) {
         _ = try await $0.getWalletInfo()
     },
     GatewayStatusCase(name: "completeBrowserData", failingPath: "cards/browser-data", status: 404, code: .networkClientError) {

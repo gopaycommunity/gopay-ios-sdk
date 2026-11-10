@@ -100,7 +100,7 @@ struct TelemetryIngestValidationTests {
             ),
             paymentId: paymentId
         )
-        telemetry.verificationOpened(redirectURL: URL(string: "https://acs.test/challenge?creq=x")!, paymentId: paymentId)
+        telemetry.verificationOpened(redirectUrl: URL(string: "https://acs.test/challenge?creq=x")!, paymentId: paymentId)
         telemetry.cardFormUnmounted(owner: owner)
         telemetry.walletAvailability(caller: "chargeWithApplePay", available: true, startedAt: Telemetry.now(), paymentId: paymentId)
         telemetry.walletAvailability(caller: "isWalletAvailable", available: false, startedAt: Telemetry.now())

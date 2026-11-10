@@ -89,7 +89,7 @@ public struct PaymentCustomer: Codable, Sendable {
 ///
 /// `orderNumber`, `gatewayUrl` and `customer` are always present, as the API requires them and
 /// as the Android SDK reads them; a payment without one of them fails to decode with
-/// ``GopaySDKError/Code/decodingError``.
+/// ``GopaySDKError/Code/decoding``.
 ///
 /// Includes the latest `charge` summary when one exists. `payment_secret` is echoed by the API but
 /// the app already holds it from ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` —
@@ -178,7 +178,7 @@ public enum QrCodeFormat: String, Codable, Sendable {
 
 /// Local bank account details for a QR payment recipient. All four fields are always present,
 /// as the API requires them; `prefix` may be an empty string.
-public struct BankAccountLocalDetails: Codable, Sendable {
+public struct QrLocalBankAccount: Codable, Sendable {
     public let prefix: String
     public let accountNumber: String
     public let bankCode: String
@@ -206,7 +206,7 @@ public struct BankAccountLocalDetails: Codable, Sendable {
 }
 
 /// International bank account details for a QR payment recipient.
-public struct BankAccountInternationalDetails: Codable, Sendable {
+public struct QrInternationalBankAccount: Codable, Sendable {
     public let bic: String?
     public let iban: String?
     public let reference: String?
@@ -220,19 +220,19 @@ public struct BankAccountInternationalDetails: Codable, Sendable {
 }
 
 /// Bank account details for a QR payment recipient.
-public struct RecipientBankAccount: Codable, Sendable {
-    public let local: BankAccountLocalDetails?
-    public let international: BankAccountInternationalDetails?
+public struct QrRecipientBankAccount: Codable, Sendable {
+    public let local: QrLocalBankAccount?
+    public let international: QrInternationalBankAccount?
 
     /// Creates the value, e.g. for a test that stands in for the gateway's answer.
-    public init(local: BankAccountLocalDetails? = nil, international: BankAccountInternationalDetails? = nil) {
+    public init(local: QrLocalBankAccount? = nil, international: QrInternationalBankAccount? = nil) {
         self.local = local
         self.international = international
     }
 }
 
 /// Postal address details for a QR payment recipient.
-public struct RecipientAddress: Codable, Sendable {
+public struct QrRecipientAddress: Codable, Sendable {
     public let street: String?
     public let city: String?
     public let zipCode: String?
@@ -260,16 +260,16 @@ public struct RecipientAddress: Codable, Sendable {
 }
 
 /// Recipient details for a QR payment.
-public struct BankTransferRecipient: Codable, Sendable {
+public struct QrRecipient: Codable, Sendable {
     public let name: String?
-    public let bankAccount: RecipientBankAccount?
-    public let address: RecipientAddress?
+    public let bankAccount: QrRecipientBankAccount?
+    public let address: QrRecipientAddress?
 
     /// Creates the value, e.g. for a test that stands in for the gateway's answer.
     public init(
         name: String? = nil,
-        bankAccount: RecipientBankAccount? = nil,
-        address: RecipientAddress? = nil
+        bankAccount: QrRecipientBankAccount? = nil,
+        address: QrRecipientAddress? = nil
     ) {
         self.name = name
         self.bankAccount = bankAccount
@@ -316,14 +316,14 @@ public struct QrCodeList: Codable, Sendable {
 public struct QrPaymentDetails: Codable, Sendable {
     public let amount: Int
     public let currency: Currency
-    public let recipient: BankTransferRecipient
+    public let recipient: QrRecipient
     public let qrCode: QrCodeList
 
     /// Creates the value, e.g. for a test that stands in for the gateway's answer.
     public init(
         amount: Int,
         currency: Currency,
-        recipient: BankTransferRecipient,
+        recipient: QrRecipient,
         qrCode: QrCodeList
     ) {
         self.amount = amount

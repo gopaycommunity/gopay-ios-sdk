@@ -13,7 +13,11 @@ import UIKit
 /// A protocol requirement cannot carry a default argument, so the defaults ``PaymentSession``
 /// offers are an extension below: a call through the protocol reads the same as one on the
 /// session.
-public protocol PaymentSessionApi {
+///
+/// The protocol is `Sendable`, as ``PaymentSession`` is, so `any PaymentSessionApi` can be handed
+/// to another actor or task. An implementation of your own has to be `Sendable` too: an actor, a
+/// `final class` of constants, or a class that guards its state and says `@unchecked Sendable`.
+public protocol PaymentSessionApi: Sendable {
     /// The payment this session belongs to.
     var paymentId: String { get }
 
@@ -50,9 +54,9 @@ public protocol PaymentSessionApi {
         browserData: BrowserData?,
         challengePreference: ChallengePreference?
     ) async throws -> ChargePaymentResponse
-    /// See ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)``.
+    /// See ``PaymentSession/handle3dsVerification(redirectUrl:returnUrl:presenting:)``.
     func handle3dsVerification(
-        redirectURL: URL,
+        redirectUrl: URL,
         returnUrl: URL?,
         presenting: UIViewController?
     ) async throws
@@ -115,15 +119,15 @@ public extension PaymentSessionApi {
         try await chargeWithWallet(browserData: nil, challengePreference: challengePreference)
     }
 
-    func handle3dsVerification(redirectURL: URL) async throws {
-        try await handle3dsVerification(redirectURL: redirectURL, returnUrl: nil, presenting: nil)
+    func handle3dsVerification(redirectUrl: URL) async throws {
+        try await handle3dsVerification(redirectUrl: redirectUrl, returnUrl: nil, presenting: nil)
     }
 
-    func handle3dsVerification(redirectURL: URL, returnUrl: URL?) async throws {
-        try await handle3dsVerification(redirectURL: redirectURL, returnUrl: returnUrl, presenting: nil)
+    func handle3dsVerification(redirectUrl: URL, returnUrl: URL?) async throws {
+        try await handle3dsVerification(redirectUrl: redirectUrl, returnUrl: returnUrl, presenting: nil)
     }
 
-    func handle3dsVerification(redirectURL: URL, presenting: UIViewController?) async throws {
-        try await handle3dsVerification(redirectURL: redirectURL, returnUrl: nil, presenting: presenting)
+    func handle3dsVerification(redirectUrl: URL, presenting: UIViewController?) async throws {
+        try await handle3dsVerification(redirectUrl: redirectUrl, returnUrl: nil, presenting: presenting)
     }
 }

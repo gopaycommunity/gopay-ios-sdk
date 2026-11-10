@@ -107,8 +107,8 @@ extension SessionNetworkTests {
         return GopaySDK(config: config, networkClient: client)
     }
 
-    private var card: CardData {
-        CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+    private var card: GopayCardData {
+        GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
     }
 
     private func serveKey(_ key: TestEncryptionKey, headers: [String: String], delay: TimeInterval = 0) {

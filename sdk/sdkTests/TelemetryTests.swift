@@ -510,7 +510,7 @@ struct TelemetryTests {
     @Test func reportsTheVerificationAsTheLeaveWithTheAcsButNotItsQuery() async throws {
         let probe = TelemetryProbe()
         probe.telemetry.verificationOpened(
-            redirectURL: URL(string: "https://acs.example-bank.com/challenge?creq=SECRETCREQ")!, paymentId: "1"
+            redirectUrl: URL(string: "https://acs.example-bank.com/challenge?creq=SECRETCREQ")!, paymentId: "1"
         )
         let event = try #require(await probe.events(1).first)
         #expect(event["navigation_type"] as? String == "leave")
@@ -1212,7 +1212,7 @@ extension GopayLocalesTests {
         sdk.initialize(with: config)
         _ = try? await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         _ = try? await sdk.encryptCardData(
-            CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+            GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
         )
         sdk.initialize(with: config)
 

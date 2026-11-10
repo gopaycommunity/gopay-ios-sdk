@@ -37,10 +37,10 @@ func json(_ object: [String: Any]) -> Data {
 
 let stubBaseURL = "https://stub.test/"
 
-func stubbedClient() -> DefaultNetworkClient {
+func stubbedClient(requestTimeout: TimeInterval = GopayConfig.defaultRequestTimeout) -> DefaultNetworkClient {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubURLProtocol.self]
-    return DefaultNetworkClient(baseUrl: stubBaseURL, configuration: config)
+    return DefaultNetworkClient(baseUrl: stubBaseURL, configuration: config, requestTimeout: requestTimeout)
 }
 
 func tokenResponse() -> (Int, Data) {
@@ -565,8 +565,11 @@ struct ChargeInputEncodingTests {
 @Suite(.serialized)
 struct SessionNetworkTests {
 
-    func makeSession(shareableKey: String? = "shareable") async throws -> PaymentSession {
-        let client = stubbedClient()
+    func makeSession(
+        shareableKey: String? = "shareable",
+        requestTimeout: TimeInterval = GopayConfig.defaultRequestTimeout
+    ) async throws -> PaymentSession {
+        let client = stubbedClient(requestTimeout: requestTimeout)
         return try await PaymentSession.create(
             paymentId: "p1", paymentSecret: "secret", scope: "payment:charge",
             authApi: AuthAPI(client: client),

@@ -255,7 +255,7 @@ struct ContentView: View {
     /// simulated "server", then fills the card_token field and copies the token to the clipboard.
     /// In production the SDK only produces the JWE; tokenization happens on your real server.
     private func fetchTestCardToken() async throws {
-        let card = CardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
+        let card = GopayCardData(cardPan: "4444444444444448", expMonth: "12", expYear: "28", cvv: "123")
         let jwe = try await GopaySDK.shared.encryptCardData(card)
         let token = try await MerchantBackendSimulator.tokenizeCard(jwe: jwe)
         await MainActor.run {
@@ -409,7 +409,7 @@ struct ContentView: View {
     private func handle3ds(_ pending: Pending3ds) async throws {
         let session = try requireSession()
         try await session.handle3dsVerification(
-            redirectURL: pending.redirectURL,
+            redirectUrl: pending.redirectUrl,
             returnUrl: URL(string: returnUrl.trimmingCharacters(in: .whitespacesAndNewlines))
         )
         await MainActor.run { pending3ds = nil }
@@ -546,13 +546,13 @@ struct ContentView: View {
 /// The 3DS link the console has armed. The challenge ends at the `return_url` the payment was
 /// created with, which the console keeps next to `payment_id` and `payment_secret`.
 private struct Pending3ds {
-    let redirectURL: URL
+    let redirectUrl: URL
 
     init?(_ charge: ChargePaymentResponse) {
         guard let redirect = charge.action?.redirectUrl, let url = URL(string: redirect) else {
             return nil
         }
-        redirectURL = url
+        redirectUrl = url
     }
 }
 

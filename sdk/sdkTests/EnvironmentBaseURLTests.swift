@@ -1,5 +1,5 @@
 //
-//  EnvironmentBaseURLTests.swift
+//  EnvironmentBaseUrlTests.swift
 //  sdkTests
 //
 //  What each `GopayEnvironment` resolves to, and what the network client does with it. The built-in
@@ -12,7 +12,7 @@ import Testing
 import Foundation
 @testable import sdk
 
-struct EnvironmentBaseURLTests {
+struct EnvironmentBaseUrlTests {
 
     @Test func sandbox_resolvesToTheGateway40Host() {
         #expect(GopayEnvironment.sandbox.baseUrl == "https://gw.sandbox.gopay.com/gp-gw/api/4.0/")

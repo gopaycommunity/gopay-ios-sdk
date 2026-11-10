@@ -91,7 +91,7 @@ struct ResponseShapeTests {
     @Test func aQrPaymentCarriesItsRecipientAndCodes() throws {
         let details = try decode(QrPaymentDetails.self, object(qr))
 
-        let recipient: BankTransferRecipient = details.recipient
+        let recipient: QrRecipient = details.recipient
         let codes: QrCodeList = details.qrCode
         let local = try #require(recipient.bankAccount?.local)
         let prefix: String = local.prefix
@@ -122,13 +122,13 @@ struct ResponseShapeTests {
         var local: [String: Any] = ["prefix": "", "account_number": "1", "bank_code": "2010", "variable_symbol": "9"]
         local[field] = nil
 
-        #expect(throws: DecodingError.self) { try decode(BankAccountLocalDetails.self, local) }
+        #expect(throws: DecodingError.self) { try decode(QrLocalBankAccount.self, local) }
     }
 
     /// A recipient without a local account still decodes: only the account's own fields are
     /// required, not the account.
     @Test func aRecipientWithoutALocalAccountDecodes() throws {
-        let recipient = try decode(BankTransferRecipient.self, ["name": "Shop", "bank_account": ["international": ["iban": "CZ65"]]])
+        let recipient = try decode(QrRecipient.self, ["name": "Shop", "bank_account": ["international": ["iban": "CZ65"]]])
 
         #expect(recipient.bankAccount?.local == nil)
         #expect(recipient.bankAccount?.international?.iban == "CZ65")
@@ -167,7 +167,7 @@ struct RequestTimeoutTests {
         #expect(GopayConfig.defaultRequestTimeout == URLSessionConfiguration.default.timeoutIntervalForRequest)
     }
 
-    @Test func theConfiguredTimeoutReachesTheSession() {
+    @Test func theConfiguredTimeoutReachesTheClient() {
         let config = GopayConfig(environment: .sandbox, requestTimeout: 12.5)
         #expect(config.requestTimeout == 12.5)
 
@@ -180,5 +180,41 @@ struct RequestTimeoutTests {
     @Test(arguments: [0, -1, TimeInterval.infinity, TimeInterval.nan])
     func aTimeoutThatCannotBeUsedFallsBackToTheDefault(value: TimeInterval) {
         #expect(GopayConfig(environment: .sandbox, requestTimeout: value).requestTimeout == 60)
+    }
+}
+
+// Part of the serialized `SessionNetworkTests`: every test here shares the one stub.
+extension SessionNetworkTests {
+
+    /// What leaves the device: a request carries a timeout of its own, 60 seconds unless set, and
+    /// the loading system reads that one, so the configured value has to be on the request.
+    @Test func theConfiguredTimeoutIsOnEveryRequestThatSetsNone() async throws {
+        StubURLProtocol.reset { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("oauth2/token") { return tokenResponse() }
+            if path.hasSuffix("/charge") { return (200, json(["id": "ch_1", "state": "SUCCEEDED"])) }
+            return (500, Data())
+        }
+        let session = try await makeSession(requestTimeout: 12.5)
+
+        _ = try await session.getChargeState()
+
+        let token = try #require(StubURLProtocol.requests(forPathSuffix: "oauth2/token").first)
+        let charge = try #require(StubURLProtocol.requests(forPathSuffix: "/charge").first)
+        #expect(token.timeoutInterval == 12.5)
+        #expect(charge.timeoutInterval == 12.5)
+    }
+
+    @Test func aRequestWithoutAConfiguredTimeoutWaitsTheDefault() async throws {
+        StubURLProtocol.reset { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("oauth2/token") { return tokenResponse() }
+            return (200, json(["id": "ch_1", "state": "SUCCEEDED"]))
+        }
+        let session = try await makeSession()
+
+        _ = try await session.getChargeState()
+
+        #expect(StubURLProtocol.requests(forPathSuffix: "/charge").first?.timeoutInterval == 60)
     }
 }

@@ -40,7 +40,7 @@ public class GopaySDK: @unchecked Sendable {
 
     /// Fallback return URL for the 3DS verification.
     ///
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)`` watches for the
+    /// ``PaymentSession/handle3dsVerification(redirectUrl:returnUrl:presenting:)`` watches for the
     /// `returnUrl` it is given, the address your backend created the payment with
     /// (`callback.return_url`). Only without a usable one does it wait for this address instead,
     /// and then the payment has to be created with it as `callback.return_url`. The 3DS WebView
@@ -366,13 +366,13 @@ public class GopaySDK: @unchecked Sendable {
     ///   fails validation, the public key fetch's own code when that fails, or
     ///   ``GopaySDKError/Code/unexpected`` when the encryption itself fails, with the step that
     ///   failed in the message and the system's error as `underlying`.
-    public func encryptCardData(_ cardData: CardData) async throws -> String {
+    public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
         try await reported(paymentId: nil) { try await encrypt(cardData) }
     }
 
     /// ``encryptCardData(_:)`` without the reporting, the step ``submitCardForm(formId:)`` ends
     /// with.
-    private func encrypt(_ cardData: CardData) async throws -> String {
+    private func encrypt(_ cardData: GopayCardData) async throws -> String {
         // One read: the key and the client ID must come from the same configuration.
         guard let (config, gateway) = configured else { throw notInitializedError() }
         try validateCardData(cardData)
@@ -450,7 +450,7 @@ public class GopaySDK: @unchecked Sendable {
         guard data.isValid else {
             throw GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.invalidCardFormData)
         }
-        let cardData = CardData(
+        let cardData = GopayCardData(
             cardPan: data.cardNumber,
             expMonth: data.expirationMonth,
             expYear: data.expirationYear,
@@ -619,7 +619,7 @@ public class GopaySDK: @unchecked Sendable {
         )
     }
 
-    private func validateCardData(_ cardData: CardData) throws {
+    private func validateCardData(_ cardData: GopayCardData) throws {
         func require(_ condition: Bool, _ message: String) throws {
             guard condition else { throw GopaySDKError(.validationInvalidInput, message: message) }
         }

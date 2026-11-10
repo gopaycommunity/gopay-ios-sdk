@@ -2,7 +2,7 @@
 //  CardDataDescriptionTests.swift
 //  sdkTests
 //
-//  CardData prints masked, the way the Android SDK's CardData.toString() does, so a host that
+//  GopayCardData prints masked, the way the Android SDK's GopayCardData.toString() does, so a host that
 //  logs the value or hands it to a crash reporter does not leak the PAN or the CVV.
 //
 
@@ -12,13 +12,13 @@ import Foundation
 
 struct CardDataDescriptionTests {
 
-    private let card = CardData(cardPan: "4111111111111111", expMonth: "12", expYear: "29", cvv: "737")
+    private let card = GopayCardData(cardPan: "4111111111111111", expMonth: "12", expYear: "29", cvv: "737")
 
     @Test func descriptionHidesThePanAndTheCvv() {
         let text = "\(card)"
         #expect(!text.contains("4111111111111111"))
         #expect(!text.contains("737"))
-        #expect(text == "CardData(cardPan=****1111, expMonth=12, expYear=29, cvv=***)")
+        #expect(text == "GopayCardData(cardPan=****1111, expMonth=12, expYear=29, cvv=***)")
     }
 
     @Test func debugDescriptionHidesThePanAndTheCvv() {
@@ -38,13 +38,13 @@ struct CardDataDescriptionTests {
     }
 
     @Test func shortPanIsMaskedWhole() {
-        let short = CardData(cardPan: "411111", expMonth: "12", expYear: "29", cvv: "737")
-        #expect("\(short)" == "CardData(cardPan=****, expMonth=12, expYear=29, cvv=***)")
+        let short = GopayCardData(cardPan: "411111", expMonth: "12", expYear: "29", cvv: "737")
+        #expect("\(short)" == "GopayCardData(cardPan=****, expMonth=12, expYear=29, cvv=***)")
     }
 
     @Test func panMaskingStartsAtThirteenDigits() {
-        #expect(CardData.maskedPan("411111111111") == "****")
-        #expect(CardData.maskedPan("4111111111111") == "****1111")
+        #expect(GopayCardData.maskedPan("411111111111") == "****")
+        #expect(GopayCardData.maskedPan("4111111111111") == "****1111")
     }
 
     @Test func encodingStillCarriesTheWholeCard() throws {

@@ -5,6 +5,8 @@ import UIKit
 // The names 2.x documented and 3.0 renamed, kept as deprecated aliases so an integration written
 // against 2.7 builds with warnings that name the new symbol. Each alias is the new name under the
 // old one and does exactly the same. They leave in 4.0. The list is sdk/docs/API_3_0.md, "Renamed".
+// `GopayCardData` and the QR models (`QrRecipient` and the rest) are not here: they keep their
+// names of 2.7 in 3.0, on both platforms.
 
 // MARK: - Types
 
@@ -20,24 +22,6 @@ public typealias GopayCardFormTheme = PaymentCardFormTheme
 @available(*, deprecated, renamed: "PaymentCardFormValidationDisplay")
 public typealias GopayCardFormValidationDisplay = PaymentCardFormValidationDisplay
 
-@available(*, deprecated, renamed: "CardData")
-public typealias GopayCardData = CardData
-
-@available(*, deprecated, renamed: "BankTransferRecipient")
-public typealias QrRecipient = BankTransferRecipient
-
-@available(*, deprecated, renamed: "RecipientBankAccount")
-public typealias QrRecipientBankAccount = RecipientBankAccount
-
-@available(*, deprecated, renamed: "BankAccountLocalDetails")
-public typealias QrLocalBankAccount = BankAccountLocalDetails
-
-@available(*, deprecated, renamed: "BankAccountInternationalDetails")
-public typealias QrInternationalBankAccount = BankAccountInternationalDetails
-
-@available(*, deprecated, renamed: "RecipientAddress")
-public typealias QrRecipientAddress = RecipientAddress
-
 // MARK: - Config and environment
 
 public extension GopayConfig {
@@ -46,7 +30,7 @@ public extension GopayConfig {
 
     /// The initializer of 2.x, with `enableDebugLogging`. The argument has no default here, so a
     /// call that does not name it resolves to the initializer of 3.0 without a warning.
-    @available(*, deprecated, renamed: "init(environment:clientId:shareableKey:debugLoggingEnabled:errorCallback:locale:customLocales:)")
+    @available(*, deprecated, renamed: "init(environment:clientId:shareableKey:debugLoggingEnabled:errorCallback:locale:customLocales:requestTimeout:)")
     init(
         environment: GopayEnvironment,
         clientId: String? = nil,
@@ -114,15 +98,16 @@ public extension GopaySDK {
 }
 
 public extension PaymentSession {
-    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` with the label of 2.x. The
-    /// argument has no default here, so a call without it resolves to the method of 3.0.
-    @available(*, deprecated, renamed: "handle3dsVerification(redirectURL:returnUrl:presenting:)")
+    /// ``handle3dsVerification(redirectUrl:returnUrl:presenting:)`` with the labels of 2.x. The
+    /// first label tells the two apart, so every call of 2.x resolves here, with or without the
+    /// return address and the presenter.
+    @available(*, deprecated, renamed: "handle3dsVerification(redirectUrl:returnUrl:presenting:)")
     func handle3dsVerification(
         redirectURL: URL,
-        returnURL: URL?,
+        returnURL: URL? = nil,
         presenting: UIViewController? = nil
     ) async throws {
-        try await handle3dsVerification(redirectURL: redirectURL, returnUrl: returnURL, presenting: presenting)
+        try await handle3dsVerification(redirectUrl: redirectURL, returnUrl: returnURL, presenting: presenting)
     }
 }
 
@@ -154,6 +139,26 @@ public extension AwaitChargeOptions {
             onStateChange: onStateChange,
             onActionRequired: onActionRequired
         )
+    }
+}
+
+// MARK: - Wallet
+
+public extension PaymentSession {
+    /// The platform name of ``getWalletInfo()``, which does the same.
+    @available(*, deprecated, renamed: "getWalletInfo()")
+    func getApplePayInfo() async throws -> GopayApplePayAppInfoResponse {
+        try await getWalletInfo()
+    }
+
+    /// The platform name of ``chargeWithWallet(browserData:challengePreference:)``, which does
+    /// the same with the same arguments.
+    @available(*, deprecated, renamed: "chargeWithWallet(browserData:challengePreference:)")
+    func chargeWithApplePay(
+        browserData: BrowserData? = nil,
+        challengePreference: ChallengePreference? = nil
+    ) async throws -> ChargePaymentResponse {
+        try await chargeWithWallet(browserData: browserData, challengePreference: challengePreference)
     }
 }
 

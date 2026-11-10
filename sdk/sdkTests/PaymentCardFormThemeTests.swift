@@ -1,5 +1,5 @@
 //
-//  GopayCardFormThemeTests.swift
+//  PaymentCardFormThemeTests.swift
 //  sdkTests
 //
 //  Pins the public shape of PaymentCardFormTheme: the defaults, the CSS font weight mapping and
@@ -11,7 +11,7 @@ import SwiftUI
 import UIKit
 @testable import sdk
 
-struct GopayCardFormThemeTests {
+struct PaymentCardFormThemeTests {
 
     // MARK: - Defaults
 

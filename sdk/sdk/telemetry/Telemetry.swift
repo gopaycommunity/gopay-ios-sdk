@@ -292,11 +292,11 @@ final class Telemetry: @unchecked Sendable {
         detach(paymentId: paymentId)
     }
 
-    /// The 3DS verification screen is about to load `redirectURL`: the leave that is part of a
+    /// The 3DS verification screen is about to load `redirectUrl`: the leave that is part of a
     /// payment, with where it went, by origin and path only.
-    func verificationOpened(redirectURL: URL, paymentId: String) {
+    func verificationOpened(redirectUrl: URL, paymentId: String) {
         post(.lifecycle, paymentId: paymentId, duration: nil, flow: "3ds-redirect") {
-            .navigation(type: "leave", target: TelemetryRedaction.safeTarget(redirectURL))
+            .navigation(type: "leave", target: TelemetryRedaction.safeTarget(redirectUrl))
         }
     }
 

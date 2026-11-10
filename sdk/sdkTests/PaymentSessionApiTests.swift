@@ -19,7 +19,7 @@ private struct Checkout {
     func pay(jwe: String) async throws -> String {
         let charge = try await session.chargeWithEncryptedCard(jwe)
         if let redirect = charge.action?.redirectUrl.flatMap(URL.init(string:)) {
-            try await session.handle3dsVerification(redirectURL: redirect)
+            try await session.handle3dsVerification(redirectUrl: redirect)
         }
         _ = try await session.awaitChargeState()
         return try await resultText()
@@ -94,13 +94,13 @@ private final class FakeSession: PaymentSessionApi, @unchecked Sendable {
     func getQrPaymentInfo(format: QrCodeFormat?) async throws -> QrPaymentDetails {
         QrPaymentDetails(
             amount: 1000, currency: .czk,
-            recipient: BankTransferRecipient(
+            recipient: QrRecipient(
                 name: "Shop",
-                bankAccount: RecipientBankAccount(
-                    local: BankAccountLocalDetails(prefix: "", accountNumber: "2000123456", bankCode: "2010", variableSymbol: "1"),
-                    international: BankAccountInternationalDetails(bic: "FIOBCZPP", iban: "CZ65")
+                bankAccount: QrRecipientBankAccount(
+                    local: QrLocalBankAccount(prefix: "", accountNumber: "2000123456", bankCode: "2010", variableSymbol: "1"),
+                    international: QrInternationalBankAccount(bic: "FIOBCZPP", iban: "CZ65")
                 ),
-                address: RecipientAddress(city: "Praha")
+                address: QrRecipientAddress(city: "Praha")
             ),
             qrCode: QrCodeList(spayd: "SPD*1.0")
         )
@@ -123,7 +123,7 @@ private final class FakeSession: PaymentSessionApi, @unchecked Sendable {
         return ChargePaymentResponse(id: "ch1", state: .processing)
     }
 
-    func handle3dsVerification(redirectURL: URL, returnUrl: URL?, presenting: UIViewController?) async throws {
+    func handle3dsVerification(redirectUrl: URL, returnUrl: URL?, presenting: UIViewController?) async throws {
         calls.append("handle3dsVerification")
     }
 
@@ -164,7 +164,7 @@ struct PaymentSessionApiTests {
         _ = try await session.chargeWithWallet()
         _ = try await session.awaitChargeState()
         _ = try await session.getQrPaymentInfo()
-        try await session.handle3dsVerification(redirectURL: URL(string: "https://3ds.example")!, returnUrl: nil)
+        try await session.handle3dsVerification(redirectUrl: URL(string: "https://3ds.example")!, returnUrl: nil)
         await session.close()
 
         #expect(fake.calls == [

@@ -22,7 +22,7 @@ public extension PaymentSession {
     /// behind the link, which is the case this reports. The Android SDK reports the same code.
     /// A screen the system refuses to present, which is what an immediate retry runs into while
     /// the previous one is still animating away, is reported the same way and can be retried, and
-    /// so is a `redirectURL` that is not an `http(s)` address — that one throws before anything is
+    /// so is a `redirectUrl` that is not an `http(s)` address — that one throws before anything is
     /// presented at all.
     ///
     /// This applies only while the challenge has not started rendering. Once it has, the user may
@@ -31,13 +31,13 @@ public extension PaymentSession {
     ///
     /// The verification ends when the challenge navigates to `returnUrl`, the address your backend
     /// created the payment with (`callback.return_url`). The app gets it from its backend together
-    /// with `payment_id` and `payment_secret`; GoPay is removing it from the charge response, so
-    /// do not take it from there. Without it the SDK waits for ``GopaySDK/chargeReturnUrl``
+    /// with `payment_id` and `payment_secret`; the charge response has not carried it since 3.0.
+    /// Without it the SDK waits for ``GopaySDK/chargeReturnUrl``
     /// instead, and then the payment has to be created with that address, otherwise the window
     /// never closes and the user can only cancel.
     ///
     /// - Parameters:
-    ///   - redirectURL: The `action.redirect_url` returned by the charge.
+    ///   - redirectUrl: The `action.redirect_url` returned by the charge.
     ///   - returnUrl: The `callback.return_url` the payment was created with. When `nil`, blank,
     ///     not `http(s)` or without a host, ``GopaySDK/chargeReturnUrl`` is used. Scheme and host
     ///     are matched without case. The return URL should carry no fragment (`#…`): what the
@@ -47,23 +47,23 @@ public extension PaymentSession {
     ///   - presenting: The view controller to present from. When `nil`, the SDK finds the topmost
     ///     view controller automatically.
     func handle3dsVerification(
-        redirectURL: URL,
+        redirectUrl: URL,
         returnUrl: URL? = nil,
         presenting: UIViewController? = nil
     ) async throws {
         try await reported {
-            try await verify(redirectURL: redirectURL, returnUrl: returnUrl, presenting: presenting)
+            try await verify(redirectUrl: redirectUrl, returnUrl: returnUrl, presenting: presenting)
         }
     }
 
-    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` without the reporting, the
+    /// ``handle3dsVerification(redirectUrl:returnUrl:presenting:)`` without the reporting, the
     /// challenge ``awaitChargeState(_:)`` runs in ``ThreeDSMode/automatic``.
     ///
     /// Touches neither the secret nor the token: the challenge is between the WebView and the
     /// issuer, so it runs on a closed session as well, as it does on Android. The charge state
     /// afterwards does need a live session.
     internal func verify(
-        redirectURL: URL,
+        redirectUrl: URL,
         returnUrl: URL?,
         presenting: UIViewController?
     ) async throws {
@@ -71,7 +71,7 @@ public extension PaymentSession {
         // load never reaches the navigation decision — that only sees where the page navigates
         // next — so the hand-off suppression downstream would swallow its load failure and the
         // caller would wait for an outcome that cannot come, with the in-progress guard held.
-        if let unloadable = GopayVerificationNavigationPolicy.loadFailure(forRedirect: redirectURL) {
+        if let unloadable = GopayVerificationNavigationPolicy.loadFailure(forRedirect: redirectUrl) {
             throw unloadable
         }
         try Task.checkCancellation()
@@ -80,7 +80,7 @@ public extension PaymentSession {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 Task { @MainActor in
                     self.startVerificationFlow(
-                        redirectURL: redirectURL,
+                        redirectUrl: redirectUrl,
                         returnUrl: returnUrl,
                         presenting: presenting,
                         cancellation: cancellation,
@@ -94,11 +94,11 @@ public extension PaymentSession {
     }
 
     /// Presents the verification WebView on the main actor and resolves `continuation` with the
-    /// outcome. Split out of ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` to keep
+    /// outcome. Split out of ``handle3dsVerification(redirectUrl:returnUrl:presenting:)`` to keep
     /// closure nesting shallow.
     @MainActor
     private func startVerificationFlow(
-        redirectURL: URL,
+        redirectUrl: URL,
         returnUrl: URL?,
         presenting: UIViewController?,
         cancellation: HostCancellation,
@@ -136,7 +136,7 @@ public extension PaymentSession {
 
         weak var shown: GopayChargeVerificationViewController?
         let verificationVC = GopayChargeVerificationViewController(
-            redirectURL: redirectURL,
+            redirectUrl: redirectUrl,
             returnUrl: returnUrl
         ) { result in
             guard claimTheOutcome() else { return }
@@ -167,7 +167,7 @@ public extension PaymentSession {
         shown = verificationVC
         cancellation.onCancel { [weak verificationVC] in verificationVC?.report(.cancelled) }
         // The leave that is part of the payment, reported before the challenge loads.
-        telemetry.verificationOpened(redirectURL: redirectURL, paymentId: paymentId)
+        telemetry.verificationOpened(redirectUrl: redirectUrl, paymentId: paymentId)
         presenter.present(verificationVC, animated: true)
         // UIKit refuses to present while the presenter is still animating something else away and
         // says so only in the console: nothing reaches the screen, no delegate callback ever

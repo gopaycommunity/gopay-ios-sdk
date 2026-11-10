@@ -19,8 +19,8 @@ struct BankTransferSheet: View {
     @State private var copied: String?
     @State private var isSharePresented = false
 
-    private var local: BankAccountLocalDetails? { details.recipient.bankAccount?.local }
-    private var international: BankAccountInternationalDetails? { details.recipient.bankAccount?.international }
+    private var local: QrLocalBankAccount? { details.recipient.bankAccount?.local }
+    private var international: QrInternationalBankAccount? { details.recipient.bankAccount?.international }
 
     var body: some View {
         NavigationStack {

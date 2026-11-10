@@ -113,7 +113,7 @@ enum GopayVerificationNavigationPolicy {
     /// gateway appends lands in front of it, and the address no longer matches.
     /// A host with non-ASCII characters is not recognised on iOS 13 to 16, where Foundation
     /// cannot parse such an address, and the SDK waits for the constant instead.
-    static func completionPrefix(forReturnURL returnUrl: URL?) -> String {
+    static func completionPrefix(forReturnUrl returnUrl: URL?) -> String {
         guard let returnUrl,
               var components = URLComponents(url: returnUrl, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(), redirectSchemes.contains(scheme),
@@ -172,9 +172,9 @@ enum GopayVerificationNavigationPolicy {
 /// when verification is complete, then dismisses itself.
 final class GopayChargeVerificationViewController: UIViewController {
 
-    private let redirectURL: URL
+    private let redirectUrl: URL
     /// Prefix of the address that ends the verification, from
-    /// ``GopayVerificationNavigationPolicy/completionPrefix(forReturnURL:)``.
+    /// ``GopayVerificationNavigationPolicy/completionPrefix(forReturnUrl:)``.
     private let completionPrefix: String
     private let onResult: (GopayChargeVerificationResult) -> Void
 
@@ -236,18 +236,18 @@ final class GopayChargeVerificationViewController: UIViewController {
     // MARK: - Initialisation
 
     /// - Parameters:
-    ///   - redirectURL: The URL to load in the WebView (from the charge action).
+    ///   - redirectUrl: The URL to load in the WebView (from the charge action).
     ///   - returnUrl: The `callback.return_url` the payment was created with. Navigation to it
     ///     signals that verification is complete. `nil` or an unusable one falls back to
     ///     ``GopaySDK/chargeReturnUrl``.
     ///   - onResult: Called exactly once with the verification outcome.
     init(
-        redirectURL: URL,
+        redirectUrl: URL,
         returnUrl: URL?,
         onResult: @escaping (GopayChargeVerificationResult) -> Void
     ) {
-        self.redirectURL = redirectURL
-        self.completionPrefix = GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: returnUrl)
+        self.redirectUrl = redirectUrl
+        self.completionPrefix = GopayVerificationNavigationPolicy.completionPrefix(forReturnUrl: returnUrl)
         self.onResult = onResult
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
@@ -266,7 +266,7 @@ final class GopayChargeVerificationViewController: UIViewController {
         setupActivityIndicator()
 
         activityIndicator.startAnimating()
-        webView.load(URLRequest(url: redirectURL))
+        webView.load(URLRequest(url: redirectUrl))
     }
 
     override func viewDidAppear(_ animated: Bool) {

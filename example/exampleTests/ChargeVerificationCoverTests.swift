@@ -28,7 +28,7 @@ struct ChargeVerificationCoverTests {
 
         var results: [GopayChargeVerificationResult] = []
         let screen = GopayChargeVerificationViewController(
-            redirectURL: URL(string: "about:blank")!,
+            redirectUrl: URL(string: "about:blank")!,
             returnUrl: nil
         ) { results.append($0) }
         presenter.present(screen, animated: false)
