@@ -137,6 +137,8 @@ iOS, Android and the web. The web ships both palettes with an underlined field, 
 mobile SDK carries, so the demos show the same colors and spacing in a bordered field.
 
 Every result, or a `GopaySDKError` with its code, is logged into the **Response** box at the bottom.
+A response is printed without its `payment_secret` and without the customer's `email` and
+`phone_number`: each shows as `(hidden)`.
 Each charge also logs the `browser_data` it sent, with the `ip` and `accept_header` the SDK fetched
 from the gateway for it; the address is cut to its first two groups.
 

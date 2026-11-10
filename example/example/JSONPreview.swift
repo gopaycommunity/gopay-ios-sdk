@@ -6,7 +6,9 @@
 //  response through it, and the checkout hides one behind a "Developer details" disclosure.
 //
 //  A `payment_secret` in a response is never printed: the console is a place people copy from
-//  and take screenshots of, and the secret authorizes a charge.
+//  and take screenshots of, and the secret authorizes a charge. Neither are the customer's
+//  `email` and `phone_number`, which a payment carries since 3.0: personal data has no place in
+//  a screenshot either.
 //
 
 import Foundation
@@ -16,7 +18,7 @@ enum JSONPreview {
     static let hidden = "(hidden)"
 
     /// The keys whose values are replaced by ``hidden``, at any depth.
-    private static let secretKeys: Set<String> = ["payment_secret"]
+    private static let secretKeys: Set<String> = ["payment_secret", "email", "phone_number"]
 
     static func string<T: Encodable>(_ value: T) -> String {
         let options: JSONSerialization.WritingOptions = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed]

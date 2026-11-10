@@ -2,8 +2,9 @@
 //  JSONPreviewTests.swift
 //  exampleTests
 //
-//  The demo console prints SDK responses, and a payment carries its `payment_secret`. The
-//  printer hides it, whatever the response and however deep it sits.
+//  The demo console prints SDK responses, and a payment carries its `payment_secret` and the
+//  customer's e-mail and phone. The printer hides them, whatever the response and however deep
+//  they sit.
 //
 
 import Testing
@@ -25,6 +26,21 @@ struct JSONPreviewTests {
         #expect(!printed.contains("s3cr3t-value"))
         #expect(printed.contains("\"payment_secret\" : \"(hidden)\""))
         #expect(printed.contains("\"order_number\" : \"ORD-1\""))
+    }
+
+    @Test func aPaymentIsPrintedWithoutTheCustomersContact() {
+        let payment = PaymentDetails(
+            id: "p1", orderNumber: "ORD-1", state: .paid, amount: 100, currency: .czk,
+            gatewayUrl: "https://gw.example/p1",
+            customer: PaymentCustomer(email: "jan@example.com", phoneNumber: "+420777123456")
+        )
+
+        let printed = JSONPreview.string(payment)
+
+        #expect(!printed.contains("jan@example.com"))
+        #expect(!printed.contains("777123456"))
+        #expect(printed.contains("\"email\" : \"(hidden)\""))
+        #expect(printed.contains("\"phone_number\" : \"(hidden)\""))
     }
 
     @Test func aSecretNestedInAnOutcomeOrAListIsHiddenToo() {
