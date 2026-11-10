@@ -44,18 +44,18 @@ private final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
     private var storedStates: [ChargeState] = []
     private var storedRedirects: [String] = []
-    private var storedVerifications: [(redirect: String, returnURL: URL?, presenting: UIViewController?)] = []
+    private var storedVerifications: [(redirect: String, returnUrl: URL?, presenting: UIViewController?)] = []
 
     var states: [ChargeState] { lock.lock(); defer { lock.unlock() }; return storedStates }
     var redirects: [String] { lock.lock(); defer { lock.unlock() }; return storedRedirects }
-    var verifications: [(redirect: String, returnURL: URL?, presenting: UIViewController?)] {
+    var verifications: [(redirect: String, returnUrl: URL?, presenting: UIViewController?)] {
         lock.lock(); defer { lock.unlock() }; return storedVerifications
     }
 
     func state(_ charge: ChargePaymentResponse) { lock.lock(); storedStates.append(charge.state); lock.unlock() }
     func redirect(_ url: String) { lock.lock(); storedRedirects.append(url); lock.unlock() }
-    func verification(_ redirect: String, _ returnURL: URL?, _ presenting: UIViewController?) {
-        lock.lock(); storedVerifications.append((redirect, returnURL, presenting)); lock.unlock()
+    func verification(_ redirect: String, _ returnUrl: URL?, _ presenting: UIViewController?) {
+        lock.lock(); storedVerifications.append((redirect, returnUrl, presenting)); lock.unlock()
     }
 }
 
@@ -114,8 +114,8 @@ extension SessionNetworkTests {
         await session.useAwaitChargeHooks(AwaitChargeHooks(
             now: { clock.now },
             sleep: { try await clock.sleep($0) },
-            verify: { _, redirect, returnURL, presenting in
-                recorder.verification(redirect, returnURL, presenting)
+            verify: { _, redirect, returnUrl, presenting in
+                recorder.verification(redirect, returnUrl, presenting)
                 try await verify?(redirect)
             }
         ))
@@ -127,14 +127,14 @@ extension SessionNetworkTests {
         interval: TimeInterval = 1,
         initialTimeout: TimeInterval = 30,
         threeDSMode: ThreeDSMode = .automatic,
-        returnURL: URL? = nil,
+        returnUrl: URL? = nil,
         presenting: UIViewController? = nil
     ) -> AwaitChargeOptions {
         AwaitChargeOptions(
             interval: interval,
             initialTimeout: initialTimeout,
             threeDSMode: threeDSMode,
-            returnURL: returnURL,
+            returnUrl: returnUrl,
             presenting: presenting,
             onStateChange: { recorder.state($0) },
             onActionRequired: { recorder.redirect($0) }
@@ -354,18 +354,18 @@ extension SessionNetworkTests {
         ])
         let clock = VirtualClock(), recorder = Recorder()
         let session = try await makePollingSession(clock: clock, recorder: recorder)
-        let returnURL = URL(string: "https://shop.example/return")!
+        let returnUrl = URL(string: "https://shop.example/return")!
         let presenter = await MainActor.run { UIViewController() }
 
         let result = try await session.awaitChargeState(
-            options(recorder, returnURL: returnURL, presenting: presenter)
+            options(recorder, returnUrl: returnUrl, presenting: presenter)
         )
 
         #expect(result.state == .succeeded)
         #expect(recorder.redirects == ["https://acs.example/a"])
         #expect(recorder.verifications.count == 1)
         #expect(recorder.verifications.first?.redirect == "https://acs.example/a")
-        #expect(recorder.verifications.first?.returnURL == returnURL)
+        #expect(recorder.verifications.first?.returnUrl == returnUrl)
         #expect(recorder.verifications.first?.presenting === presenter)
         #expect(chargeReads() == 4)
         #expect(clock.sleeps == [1, 1, 1])

@@ -241,7 +241,7 @@ extension SessionNetworkTests {
         let error = await Task { () -> Error? in
             withUnsafeCurrentTask { $0?.cancel() }
             do {
-                _ = try await session.chargeWithApplePay(browserData: browserData)
+                _ = try await session.chargeWithWallet(browserData: browserData)
                 return nil
             } catch {
                 return error

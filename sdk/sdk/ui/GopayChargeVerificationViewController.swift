@@ -101,7 +101,7 @@ enum GopayVerificationNavigationPolicy {
     ///
     /// The ACS finishes by sending the browser to the `return_url` the payment was created with.
     /// That is the merchant's own address, so it wins. Without a usable one the SDK falls back to
-    /// ``GopaySDK/chargeReturnURL``, which only works when the payment was created with it. A
+    /// ``GopaySDK/chargeReturnUrl``, which only works when the payment was created with it. A
     /// blank address, one that is not `http(s)` and one without a host are not usable: as a
     /// prefix, `https://` would match the challenge's own first navigation and end the
     /// verification before the user saw it. The Android SDK applies the same conditions.
@@ -113,17 +113,17 @@ enum GopayVerificationNavigationPolicy {
     /// gateway appends lands in front of it, and the address no longer matches.
     /// A host with non-ASCII characters is not recognised on iOS 13 to 16, where Foundation
     /// cannot parse such an address, and the SDK waits for the constant instead.
-    static func completionPrefix(forReturnURL returnURL: URL?) -> String {
-        guard let returnURL,
-              var components = URLComponents(url: returnURL, resolvingAgainstBaseURL: false),
+    static func completionPrefix(forReturnURL returnUrl: URL?) -> String {
+        guard let returnUrl,
+              var components = URLComponents(url: returnUrl, resolvingAgainstBaseURL: false),
               let scheme = components.scheme?.lowercased(), redirectSchemes.contains(scheme),
               let host = components.host?.lowercased(), !host.isEmpty
-        else { return GopaySDK.chargeReturnURL }
+        else { return GopaySDK.chargeReturnUrl }
         components.scheme = scheme
         components.host = host
         if components.port == defaultPorts[scheme] { components.port = nil }
         if components.percentEncodedPath.isEmpty { components.percentEncodedPath = "/" }
-        guard var canonical = components.string else { return GopaySDK.chargeReturnURL }
+        guard var canonical = components.string else { return GopaySDK.chargeReturnUrl }
         // iOS 17 and later percent-encode trailing whitespace instead of refusing the string.
         while let tail = encodedWhitespace.first(where: { canonical.hasSuffix($0) }) {
             canonical.removeLast(tail.count)
@@ -237,17 +237,17 @@ final class GopayChargeVerificationViewController: UIViewController {
 
     /// - Parameters:
     ///   - redirectURL: The URL to load in the WebView (from the charge action).
-    ///   - returnURL: The `callback.return_url` the payment was created with. Navigation to it
+    ///   - returnUrl: The `callback.return_url` the payment was created with. Navigation to it
     ///     signals that verification is complete. `nil` or an unusable one falls back to
-    ///     ``GopaySDK/chargeReturnURL``.
+    ///     ``GopaySDK/chargeReturnUrl``.
     ///   - onResult: Called exactly once with the verification outcome.
     init(
         redirectURL: URL,
-        returnURL: URL?,
+        returnUrl: URL?,
         onResult: @escaping (GopayChargeVerificationResult) -> Void
     ) {
         self.redirectURL = redirectURL
-        self.completionPrefix = GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: returnURL)
+        self.completionPrefix = GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: returnUrl)
         self.onResult = onResult
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen

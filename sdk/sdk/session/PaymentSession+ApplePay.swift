@@ -3,41 +3,22 @@ import PassKit
 
 public extension PaymentSession {
 
-    // MARK: - The shared wallet names
+    // MARK: - The wallet
 
-    /// The wallet configuration for this payment under the name both SDKs share; on iOS the same
-    /// read as ``getApplePayInfo()``, and on Android `getGooglePayInfo()`. Code written
-    /// against the shared API reads the wallet through this name on both platforms.
+    /// `GET /payments/{payment_id}/apple-pay/app-info`: the wallet configuration for this payment,
+    /// the Apple Pay request your GoPay account is set up with, which the native sheet is built
+    /// from. The name both SDKs share; on Android it reads the Google Pay configuration.
     func getWalletInfo() async throws -> GopayApplePayAppInfoResponse {
         try await reported { try await fetchApplePayInfo() }
     }
 
-    /// The managed wallet charge under the name both SDKs share; on iOS the same flow as
-    /// ``chargeWithApplePay(browserData:challengePreference:)``, with the same arguments, and on
-    /// Android `chargeWithGooglePay(activity, browserData, challengePreference)`.
-    /// Everything that call documents, from the codes it throws to what a cancellation does,
-    /// holds here.
-    ///
-    /// - Parameters:
-    ///   - browserData: Optional 3DS browser data; `nil` derives it from the device.
-    ///   - challengePreference: 3DS challenge preference forwarded to the gateway.
-    func chargeWithWallet(
-        browserData: BrowserData? = nil,
-        challengePreference: ChallengePreference? = nil
-    ) async throws -> ChargePaymentResponse {
-        try await reported {
-            try await runApplePay(browserData: browserData, challengePreference: challengePreference)
-        }
-    }
-
-    // MARK: - Apple Pay
-
-    /// Managed Apple Pay flow: fetches the Apple Pay config for this payment, presents the Apple Pay
-    /// sheet, maps the resulting token, and submits the charge in one call.
+    /// The managed wallet charge under the name both SDKs share: fetches the Apple Pay config for
+    /// this payment, presents the Apple Pay sheet, maps the resulting token, and submits the
+    /// charge in one call.
     ///
     /// Suspends while the sheet is visible. Returns the ``ChargePaymentResponse`` on success —
     /// inspect `action?.redirectUrl` and call
-    /// ``handle3dsVerification(redirectURL:returnURL:presenting:)`` if 3DS is required, then
+    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` if 3DS is required, then
     /// ``getChargeState()`` for the final result.
     ///
     /// Only one Apple Pay sheet can be presented per process; a concurrent attempt throws
@@ -61,6 +42,18 @@ public extension PaymentSession {
     ///   - browserData: Optional 3DS browser data. The spec requires it on every card charge; when
     ///     `nil` the SDK derives it from the device via ``BrowserData/deviceDefault()``.
     ///   - challengePreference: 3DS challenge preference forwarded to the gateway.
+    func chargeWithWallet(
+        browserData: BrowserData? = nil,
+        challengePreference: ChallengePreference? = nil
+    ) async throws -> ChargePaymentResponse {
+        try await reported {
+            try await runApplePay(browserData: browserData, challengePreference: challengePreference)
+        }
+    }
+
+    /// The platform name of ``chargeWithWallet(browserData:challengePreference:)``, which does
+    /// the same with the same arguments.
+    @available(*, deprecated, renamed: "chargeWithWallet(browserData:challengePreference:)")
     func chargeWithApplePay(
         browserData: BrowserData? = nil,
         challengePreference: ChallengePreference? = nil

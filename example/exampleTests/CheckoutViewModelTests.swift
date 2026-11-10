@@ -17,10 +17,10 @@ struct CheckoutViewModelTests {
     /// Stands in for the gateway in memory: answers the session's token request and counts
     /// every other request, which it refuses. Nothing leaves the process.
     final class RecordingClient: AsyncHTTPClient, @unchecked Sendable {
-        let baseURL = "https://gateway.invalid/"
+        let baseUrl = "https://gateway.invalid/"
         private(set) var paymentRequests = 0
 
-        func makeURL(path: String) -> URL? { URL(string: baseURL + path) }
+        func makeURL(path: String) -> URL? { URL(string: baseUrl + path) }
 
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
             guard request.url?.path.hasSuffix("/oauth2/token") == true else {

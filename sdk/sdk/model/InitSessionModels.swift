@@ -30,7 +30,7 @@ struct InitSessionRequest: Encodable, Sendable {
 ///
 /// The gateway sets the payment's language from it. URLSession would send a value of its own
 /// otherwise, which follows the app's localizations as much as the device's, so the SDK sends the
-/// device's languages itself, as a browser does. `GopaySDKConfig.locale` does not come into it:
+/// device's languages itself, as a browser does. `GopayConfig.locale` does not come into it:
 /// that is the card form's language, not the payment's.
 ///
 /// A tag that is not ASCII letters and digits in hyphen-separated parts cannot go into the header

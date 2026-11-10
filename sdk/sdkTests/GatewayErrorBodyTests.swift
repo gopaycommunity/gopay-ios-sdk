@@ -68,7 +68,7 @@ extension SessionNetworkTests {
         let session = try await makeSession()
 
         do {
-            _ = try await session.getApplePayInfo()
+            _ = try await session.getWalletInfo()
             Issue.record("expected failure")
         } catch let error as GopaySDKError {
             #expect(error.code == .networkClientError)

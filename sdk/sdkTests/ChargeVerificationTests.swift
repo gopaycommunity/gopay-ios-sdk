@@ -172,9 +172,9 @@ struct ChargeVerificationNavigationPolicyTests {
 
     // MARK: - Return URL
 
-    private func completes(_ string: String, returnURL: String?) -> Bool {
+    private func completes(_ string: String, returnUrl: String?) -> Bool {
         let prefix = GopayVerificationNavigationPolicy.completionPrefix(
-            forReturnURL: returnURL.flatMap(URL.init(string:))
+            forReturnURL: returnUrl.flatMap(URL.init(string:))
         )
         return GopayVerificationNavigationPolicy.completesVerification(
             URL(string: string)!,
@@ -184,21 +184,21 @@ struct ChargeVerificationNavigationPolicyTests {
 
     /// The merchant's own return URL ends the verification, whatever the gateway appends to it.
     @Test func theReturnURLFromTheChargeEndsTheVerification() {
-        #expect(completes("https://shop.example/return", returnURL: "https://shop.example/return"))
-        #expect(completes("https://shop.example/return?id=51&state=done", returnURL: "https://shop.example/return"))
-        #expect(completes("https://3ds.example/step", returnURL: "https://shop.example/return") == false)
+        #expect(completes("https://shop.example/return", returnUrl: "https://shop.example/return"))
+        #expect(completes("https://shop.example/return?id=51&state=done", returnUrl: "https://shop.example/return"))
+        #expect(completes("https://3ds.example/step", returnUrl: "https://shop.example/return") == false)
     }
 
     /// Without a return URL the SDK falls back to its own constant.
     @Test func withoutAReturnURLTheConstantEndsTheVerification() {
-        #expect(completes(GopaySDK.chargeReturnURL, returnURL: nil))
-        #expect(completes(GopaySDK.chargeReturnURL + "?id=51", returnURL: nil))
-        #expect(completes("https://3ds.example/step", returnURL: nil) == false)
+        #expect(completes(GopaySDK.chargeReturnUrl, returnUrl: nil))
+        #expect(completes(GopaySDK.chargeReturnUrl + "?id=51", returnUrl: nil))
+        #expect(completes("https://3ds.example/step", returnUrl: nil) == false)
     }
 
     /// The merchant's address wins: the constant is a fallback, not a second way out.
     @Test func withAReturnURLTheConstantNoLongerEndsTheVerification() {
-        #expect(completes(GopaySDK.chargeReturnURL, returnURL: "https://shop.example/return") == false)
+        #expect(completes(GopaySDK.chargeReturnUrl, returnUrl: "https://shop.example/return") == false)
     }
 
     /// An address that cannot be the ACS coming back falls back to the constant. As a prefix,
@@ -209,20 +209,20 @@ struct ChargeVerificationNavigationPolicyTests {
             "https://:443", "https://user@/r", "https://@/r"
         ]
         for address in unusable {
-            #expect(prefix(address) == GopaySDK.chargeReturnURL, "\(address) should fall back")
+            #expect(prefix(address) == GopaySDK.chargeReturnUrl, "\(address) should fall back")
         }
-        #expect(completes("https://3ds.example/step", returnURL: "https://") == false)
+        #expect(completes("https://3ds.example/step", returnUrl: "https://") == false)
     }
 
-    private func prefix(_ returnURL: String) -> String {
-        GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: URL(string: returnURL))
+    private func prefix(_ returnUrl: String) -> String {
+        GopayVerificationNavigationPolicy.completionPrefix(forReturnURL: URL(string: returnUrl))
     }
 
     /// WebKit reports a navigation with its scheme and host in lowercase, so the return URL is
     /// matched in that form whatever case the merchant created the payment with.
     @Test func theReturnURLIsMatchedWithoutCaseInSchemeAndHost() {
         #expect(prefix("HTTPS://Shop.Example/return") == "https://shop.example/return")
-        #expect(completes("https://shop.example/return?id=1", returnURL: "HTTPS://Shop.Example/return"))
+        #expect(completes("https://shop.example/return?id=1", returnUrl: "HTTPS://Shop.Example/return"))
     }
 
     /// The rest of the canonical form: path and query keep their case, a default port and
@@ -255,7 +255,7 @@ struct ChargeVerificationReportingTests {
     ) -> GopayChargeVerificationViewController {
         GopayChargeVerificationViewController(
             redirectURL: URL(string: "https://3ds.example/step")!,
-            returnURL: nil,
+            returnUrl: nil,
             onResult: onResult
         )
     }
@@ -413,12 +413,12 @@ struct ChargeVerificationReportingTests {
         var results: [GopayChargeVerificationResult] = []
         let controller = GopayChargeVerificationViewController(
             redirectURL: URL(string: "https://3ds.example/step")!,
-            returnURL: URL(string: "https://shop.example/return"),
+            returnUrl: URL(string: "https://shop.example/return"),
             onResult: { results.append($0) }
         )
         controller.viewDidAppear(false)
 
-        let constant = decide(controller, GopaySDK.chargeReturnURL)
+        let constant = decide(controller, GopaySDK.chargeReturnUrl)
         #expect(constant == .allow)
         #expect(results.isEmpty)
 

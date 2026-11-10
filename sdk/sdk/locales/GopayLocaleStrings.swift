@@ -1,6 +1,6 @@
 import Foundation
 
-/// Localized strings for the payment card form (``GopayCardForm``).
+/// Localized strings for the payment card form (``PaymentCardForm``).
 ///
 /// A locale must provide every field — there are no defaults, so a partially translated locale
 /// cannot leak an untranslated fallback string into the middle of an otherwise localized form.
@@ -14,7 +14,7 @@ import Foundation
 /// locales).
 ///
 /// To supply your own translation, build a `GopayLocaleStrings` with the same structure and
-/// register it via ``GopayLocales/register(_:for:)`` (or `GopaySDKConfig.customLocales`), then
+/// register it via ``GopayLocales/register(_:strings:)`` (or `GopayConfig.customLocales`), then
 /// select it by code.
 public struct GopayLocaleStrings: Equatable, Sendable {
     /// Card number field label. Web key `cc.pan.label`.

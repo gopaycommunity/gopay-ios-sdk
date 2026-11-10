@@ -87,7 +87,7 @@ struct GopayLocalesTests {
         reset()
         var custom = GopayLocales.en
         custom.panLabel = "Custom PAN"
-        GopayLocales.register(custom, for: "xx")
+        GopayLocales.register("xx", strings: custom)
         #expect(GopayLocales.resolve("xx") == custom)
         reset()
     }
@@ -96,7 +96,7 @@ struct GopayLocalesTests {
         reset()
         var overridden = GopayLocales.de
         overridden.panLabel = "Overridden"
-        GopayLocales.register(overridden, for: "de")
+        GopayLocales.register("de", strings: overridden)
         #expect(GopayLocales.resolve("de").panLabel == "Overridden")
         reset()
     }
@@ -114,7 +114,7 @@ struct GopayLocalesTests {
     @Test func clearCustom_removesCustomButKeepsBuiltIns() {
         reset()
         withUnknownSystemLanguage {
-            GopayLocales.register(GopayLocales.en, for: "xx")
+            GopayLocales.register("xx", strings: GopayLocales.en)
             GopayLocales.clearCustom()
             #expect(GopayLocales.resolve("xx") == GopayLocales.cs) // custom gone -> fallback
             #expect(GopayLocales.resolve("de") == GopayLocales.de) // built-in intact
@@ -123,7 +123,7 @@ struct GopayLocalesTests {
 
     @Test func availableCodes_includesCustomAndBuiltIns() {
         reset()
-        GopayLocales.register(GopayLocales.en, for: "xx")
+        GopayLocales.register("xx", strings: GopayLocales.en)
         let codes = GopayLocales.availableCodes()
         #expect(codes.contains("xx"))
         #expect(codes.contains("cs"))

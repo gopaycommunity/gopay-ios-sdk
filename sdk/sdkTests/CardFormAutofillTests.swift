@@ -16,7 +16,7 @@ import UIKit
 struct CardFormAutofillTests {
 
     /// Lays the form out in a window and returns the card number, expiration and CVV fields.
-    private func hostedFields(_ form: GopayCardForm) -> [UITextField] {
+    private func hostedFields(_ form: PaymentCardForm) -> [UITextField] {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 400))
         window.rootViewController = UIHostingController(rootView: form)
         window.isHidden = false
@@ -26,13 +26,13 @@ struct CardFormAutofillTests {
     }
 
     @Test func autofillIsOffByDefault() throws {
-        let fields = hostedFields(GopayCardForm(locale: "en"))
+        let fields = hostedFields(PaymentCardForm(locale: "en"))
         try #require(fields.count == 3)
         #expect(fields.allSatisfy { $0.textContentType == nil })
     }
 
     @Test func allowingAutofillDeclaresTheCardNumberAndTheExpiration() throws {
-        let fields = hostedFields(GopayCardForm(locale: "en", allowsAutofill: true))
+        let fields = hostedFields(PaymentCardForm(locale: "en", allowsAutofill: true))
         try #require(fields.count == 3)
         #expect(fields[0].textContentType == .creditCardNumber)
         if #available(iOS 17.0, *) {
@@ -46,7 +46,7 @@ struct CardFormAutofillTests {
     /// Autofill, like a paste, hands the expiration over in one piece, often with a four-digit year.
     @Test(arguments: ["12/2027", "122027", "12/27"])
     func aWholeExpirationKeepsTheTwoDigitYear(inserted: String) throws {
-        let fields = hostedFields(GopayCardForm(locale: "en", allowsAutofill: true))
+        let fields = hostedFields(PaymentCardForm(locale: "en", allowsAutofill: true))
         try #require(fields.count == 3)
         let expiration = fields[1]
         _ = expiration.delegate?.textField?(
@@ -57,22 +57,22 @@ struct CardFormAutofillTests {
 
     @Test(arguments: [false, true])
     func keyboardNeverCorrectsOrChecksTheFields(allowsAutofill: Bool) throws {
-        let fields = hostedFields(GopayCardForm(locale: "en", allowsAutofill: allowsAutofill))
+        let fields = hostedFields(PaymentCardForm(locale: "en", allowsAutofill: allowsAutofill))
         try #require(fields.count == 3)
         #expect(fields.allSatisfy { $0.autocorrectionType == .no && $0.spellCheckingType == .no })
     }
 
     @Test func onlyTheCvvIsMasked() throws {
-        let fields = hostedFields(GopayCardForm(locale: "en"))
+        let fields = hostedFields(PaymentCardForm(locale: "en"))
         try #require(fields.count == 3)
         #expect(fields.map(\.isSecureTextEntry) == [false, false, true])
     }
 
     @Test func hiddenLabelsStayReadableToVoiceOver() throws {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.labelHidden = true
         let strings = GopayLocales.resolve("en")
-        let fields = hostedFields(GopayCardForm(theme: theme, locale: "en"))
+        let fields = hostedFields(PaymentCardForm(theme: theme, locale: "en"))
         try #require(fields.count == 3)
         #expect(fields.map(\.accessibilityLabel) == [strings.panLabel, strings.expLabel, strings.cvvLabel])
     }

@@ -3,7 +3,7 @@ import Foundation
 /// Public-resource endpoints authenticated with the `shareable_key` HTTP Basic scheme
 /// (`client_id:shareable_key`). Mirrors the Android `PublicApi` + `ShareableKeyInterceptor`.
 ///
-/// Requires both `clientId` and `shareableKey` from ``GopaySDKConfig``; if either is missing every
+/// Requires both `clientId` and `shareableKey` from ``GopayConfig``; if either is missing every
 /// call throws ``GopaySDKError/Code/authShareableKeyMissing``.
 struct PublicAPI {
     private let client: AsyncHTTPClient
@@ -71,7 +71,7 @@ struct PublicAPI {
               let shareableKey = shareableKey, !shareableKey.isEmpty else {
             throw GopaySDKError(
                 .authShareableKeyMissing,
-                message: "clientId and shareableKey must be set on GopaySDKConfig to use public endpoints"
+                message: "clientId and shareableKey must be set on GopayConfig to use public endpoints"
             )
         }
         return gopayBasicAuthHeader(user: clientId, secret: shareableKey)

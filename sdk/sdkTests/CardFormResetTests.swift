@@ -2,7 +2,7 @@
 //  CardFormResetTests.swift
 //  sdkTests
 //
-//  Covers the wipe from the form's side: a live GopayCardForm registers it, and running it
+//  Covers the wipe from the form's side: a live PaymentCardForm registers it, and running it
 //  empties the fields, reports the form as invalid and leaves nothing for the SDK to pick up
 //  (GPMOB-140; PCI DSS 4.0.1, req. 3.3.1).
 //
@@ -13,7 +13,7 @@ import SwiftUI
 import UIKit
 @testable import sdk
 
-/// Serialized: these drive the shared SDK instance, which is what `GopayCardForm` talks to.
+/// Serialized: these drive the shared SDK instance, which is what `PaymentCardForm` talks to.
 @Suite(.serialized)
 @MainActor
 struct CardFormResetTests {
@@ -26,7 +26,7 @@ struct CardFormResetTests {
 
     @Test func aLiveFormRegistersItsWipeAndSyncsOnAppear() async throws {
         GopaySDK.shared.clearCardFormData()
-        let window = try await host(GopayCardForm(formId: "reset-register"))
+        let window = try await host(PaymentCardForm(formId: "reset-register"))
         defer { window.isHidden = true }
 
         // onAppear syncs the (empty) form, which is how the SDK learns the form exists.
@@ -41,7 +41,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let validity = Box<Bool?>(nil)
         let window = try await host(
-            GopayCardForm(isValid: validity.binding, formId: "reset-binding")
+            PaymentCardForm(isValid: validity.binding, formId: "reset-binding")
         )
         defer { window.isHidden = true }
 
@@ -56,7 +56,7 @@ struct CardFormResetTests {
     /// card rather than the one the user typed.
     @Test func aWipedFormSyncsBackAnInvalidCard() async throws {
         GopaySDK.shared.clearCardFormData()
-        let window = try await host(GopayCardForm(formId: "reset-resync"))
+        let window = try await host(PaymentCardForm(formId: "reset-resync"))
         defer { window.isHidden = true }
         // A card the SDK would take, so the check below is about what the wipe left.
         let fields = textFields(in: window)
@@ -82,7 +82,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
         let window = try await host(
-            GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "reset-attempted")
+            PaymentCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "reset-attempted")
         )
         defer { window.isHidden = true }
 
@@ -105,8 +105,8 @@ struct CardFormResetTests {
     @Test func onlyTheRegisteredFormWritesTheSharedBinding() async throws {
         GopaySDK.shared.clearCardFormData()
         let validity = Box<Bool?>(nil)
-        let older = try await host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
-        let newer = try await host(GopayCardForm(isValid: validity.binding, formId: "reset-shared"))
+        let older = try await host(PaymentCardForm(isValid: validity.binding, formId: "reset-shared"))
+        let newer = try await host(PaymentCardForm(isValid: validity.binding, formId: "reset-shared"))
         defer {
             older.isHidden = true
             newer.isHidden = true
@@ -190,7 +190,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
         let window = try await host(
-            GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-attempted")
+            PaymentCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-attempted")
         )
         defer { window.isHidden = true }
 
@@ -210,7 +210,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
         let window = try await host(
-            GopayCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-bystander")
+            PaymentCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-bystander")
         )
         defer { window.isHidden = true }
 
@@ -232,7 +232,7 @@ private struct FormIdHostView: View {
     @ObservedObject var host: FormIdHost
     var body: some View {
         if host.isShown {
-            GopayCardForm(formId: host.id)
+            PaymentCardForm(formId: host.id)
         }
     }
 }

@@ -39,8 +39,8 @@ extension SessionNetworkTests {
     /// nothing does.
     private func initSessionSDK(_ reported: ReportedErrors, telemetry: Telemetry = .disabled) -> GopaySDK {
         let sdk = GopaySDK(
-            config: GopaySDKConfig(
-                environment: .development(baseURL: stubBaseURL),
+            config: GopayConfig(
+                environment: .development(baseUrl: stubBaseURL),
                 clientId: "client", shareableKey: "shareable",
                 errorCallback: { reported.append($0) }
             ),

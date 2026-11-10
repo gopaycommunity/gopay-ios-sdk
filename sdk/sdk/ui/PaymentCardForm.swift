@@ -114,8 +114,8 @@ internal struct GopayCardFormData {
     }
 }
 
-/// Controls whether and when ``GopayCardForm`` renders localized inline validation errors.
-public enum GopayCardFormValidationDisplay: Sendable {
+/// Controls whether and when ``PaymentCardForm`` renders localized inline validation errors.
+public enum PaymentCardFormValidationDisplay: Sendable {
     /// Do not render inline errors — display is host-driven (default). Read the localized strings
     /// via `GopaySDK.shared.currentLocaleStrings(...)` to show your own.
     case hidden
@@ -135,7 +135,7 @@ public enum GopayCardFormValidationDisplay: Sendable {
     case onSubmit(attempted: Binding<Bool>)
 }
 
-/// The identity a ``GopayCardForm`` registers its handlers under: an object with no state of its
+/// The identity a ``PaymentCardForm`` registers its handlers under: an object with no state of its
 /// own, so two forms under the same form ID stay distinguishable by reference.
 typealias CardFormOwner = NSObject
 
@@ -146,17 +146,17 @@ typealias CardFormOwner = NSObject
 ///
 /// The form manages card data internally and automatically syncs it to the SDK.
 /// Card data is never exposed to your app code for security.
-public struct GopayCardForm: View {
+public struct PaymentCardForm: View {
     /// Theme for customizing the appearance.
-    public var theme: GopayCardFormTheme
+    public var theme: PaymentCardFormTheme
 
     /// Localized strings used for the field labels and placeholders.
     public var localeStrings: GopayLocaleStrings
 
     /// Controls whether and when the form renders localized inline validation errors (from
-    /// `localeStrings`) beneath each field. Defaults to ``GopayCardFormValidationDisplay/hidden``,
+    /// `localeStrings`) beneath each field. Defaults to ``PaymentCardFormValidationDisplay/hidden``,
     /// which keeps error display host-driven.
-    public var validation: GopayCardFormValidationDisplay
+    public var validation: PaymentCardFormValidationDisplay
 
     /// Binding the form writes its current validity into, for driving a submit button.
     ///
@@ -232,15 +232,15 @@ public struct GopayCardForm: View {
     /// Creates a payment card form.
     ///
     /// Field labels and placeholders are localized. By default they follow the SDK-wide locale
-    /// (`GopaySDKConfig.locale`), then the device language, falling back to Czech. Pass `locale`
+    /// (`GopayConfig.locale`), then the device language, falling back to Czech. Pass `locale`
     /// to override per form, or `localeStrings` to supply strings directly.
     /// - Parameters:
-    ///   - theme: Theme for customizing the appearance (default: `GopayCardFormTheme()`).
+    ///   - theme: Theme for customizing the appearance (default: `PaymentCardFormTheme()`).
     ///   - locale: Locale code (e.g. `"cs"`, `"de"`) for the field labels. `nil` uses the SDK
     ///             default. Ignored when `localeStrings` is supplied.
     ///   - localeStrings: Explicit locale strings to use, bypassing `locale` resolution.
     ///   - validation: When/whether to render localized inline validation errors
-    ///                 (default: ``GopayCardFormValidationDisplay/hidden``).
+    ///                 (default: ``PaymentCardFormValidationDisplay/hidden``).
     ///   - isValid: Binding the form writes its validity into, filled from the first render
     ///              onwards. Omit it if you do not need the state; the default binding discards
     ///              the writes.
@@ -248,10 +248,10 @@ public struct GopayCardForm: View {
     ///   - allowsAutofill: Offer the system's saved-card autofill on the card number and the
     ///                     expiration (default: `false`). The CVV never takes part.
     public init(
-        theme: GopayCardFormTheme = GopayCardFormTheme(),
+        theme: PaymentCardFormTheme = PaymentCardFormTheme(),
         locale: String? = nil,
         localeStrings: GopayLocaleStrings? = nil,
-        validation: GopayCardFormValidationDisplay = .hidden,
+        validation: PaymentCardFormValidationDisplay = .hidden,
         isValid: Binding<Bool?> = .constant(nil),
         formId: String? = nil,
         allowsAutofill: Bool = false
@@ -449,19 +449,19 @@ public struct GopayCardForm: View {
     /// The minimum height of a whole field, padding included. Zero means the theme asked for
     /// none; a negative value from a theme set in code says nothing either and is read the same.
     private var minimumInputHeight: CGFloat {
-        GopayCardFormTheme.usableLength(theme.inputHeight ?? 0)
+        PaymentCardFormTheme.usableLength(theme.inputHeight ?? 0)
     }
 
     /// Padding inside a field. Both are public on the theme, so a theme built in code can carry a
     /// negative one, which would pull the text out of the field it belongs to.
-    private var verticalPadding: CGFloat { GopayCardFormTheme.usableLength(theme.inputPaddingVertical) }
-    private var horizontalPadding: CGFloat { GopayCardFormTheme.usableLength(theme.inputPaddingHorizontal) }
+    private var verticalPadding: CGFloat { PaymentCardFormTheme.usableLength(theme.inputPaddingVertical) }
+    private var horizontalPadding: CGFloat { PaymentCardFormTheme.usableLength(theme.inputPaddingHorizontal) }
 
     /// The remaining themed lengths, read the same way: a negative or unusable one is no length.
-    private var cornerRadius: CGFloat { GopayCardFormTheme.usableLength(theme.inputBorderRadius) }
-    private var groupSpacing: CGFloat { GopayCardFormTheme.usableLength(theme.groupSpacing) }
-    private var fieldSpacing: CGFloat { GopayCardFormTheme.usableLength(theme.fieldSpacing) }
-    private var formPadding: CGFloat { GopayCardFormTheme.usableLength(theme.formPadding) }
+    private var cornerRadius: CGFloat { PaymentCardFormTheme.usableLength(theme.inputBorderRadius) }
+    private var groupSpacing: CGFloat { PaymentCardFormTheme.usableLength(theme.groupSpacing) }
+    private var fieldSpacing: CGFloat { PaymentCardFormTheme.usableLength(theme.fieldSpacing) }
+    private var formPadding: CGFloat { PaymentCardFormTheme.usableLength(theme.formPadding) }
 
     /// How tall a field ends up. The theme and the text size decide it between them, so nothing
     /// has to be measured to know it.
@@ -475,7 +475,7 @@ public struct GopayCardForm: View {
     /// Capped at half the field, because `strokeBorder` insets the shape by half the width and a
     /// width past the field's height would inset it out of existence, losing the border entirely.
     private var borderWidth: CGFloat {
-        min(GopayCardFormTheme.usableLength(theme.inputBorderWidth), resolvedInputHeight / 2)
+        min(PaymentCardFormTheme.usableLength(theme.inputBorderWidth), resolvedInputHeight / 2)
     }
 
     public var body: some View {
@@ -771,7 +771,7 @@ public struct GopayCardForm: View {
     ///
     /// The edited flags go with the digits, so the emptied fields come back pristine instead of
     /// lit up with validation errors, and so do the focus flags, which closes the keyboard if the
-    /// user was still typing. For the same reason an ``GopayCardFormValidationDisplay/onSubmit(attempted:)``
+    /// user was still typing. For the same reason an ``PaymentCardFormValidationDisplay/onSubmit(attempted:)``
     /// binding is set back to `false`: left at `true`, every emptied field would show the
     /// "required" message, also while the 3DS challenge runs.
     ///
@@ -851,12 +851,12 @@ public struct GopayCardForm: View {
 struct GopayCardForm_Previews: PreviewProvider {
     static var previews: some View {
         VStack(spacing: 20) {
-            GopayCardForm()
+            PaymentCardForm()
                 .padding()
             
             // Custom theme example
-            GopayCardForm(
-                theme: GopayCardFormTheme(
+            PaymentCardForm(
+                theme: PaymentCardFormTheme(
                     labelColor: .blue,
                     inputTextColor: .blue,
                     inputBorderColor: .gray,

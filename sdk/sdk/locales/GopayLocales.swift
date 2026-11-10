@@ -3,9 +3,9 @@ import Foundation
 /// Registry and resolver for ``GopayLocaleStrings`` used by the payment card form.
 ///
 /// Ships 20 built-in translations keyed by ISO 639-1 language code. Host apps can add their own
-/// with ``register(_:for:)`` (or via `GopaySDKConfig.customLocales`) and select a locale
+/// with ``register(_:strings:)`` (or via `GopayConfig.customLocales`) and select a locale
 /// explicitly, or rely on the default resolution: the SDK-wide preferred locale (set from
-/// `GopaySDKConfig.locale`), else the device language, ultimately falling back to Czech
+/// `GopayConfig.locale`), else the device language, ultimately falling back to Czech
 /// (``defaultLocale``).
 public enum GopayLocales: Sendable {
 
@@ -356,17 +356,18 @@ public enum GopayLocales: Sendable {
     private static let lock = NSLock()
     /// Host-registered custom locales; take priority over ``builtIn`` for the same code.
     private static var custom: [String: GopayLocaleStrings] = [:]
-    /// SDK-wide preferred locale code, set from `GopaySDKConfig.locale`. `nil` means "use system".
+    /// SDK-wide preferred locale code, set from `GopayConfig.locale`. `nil` means "use system".
     private static var defaultLocaleCode: String?
 
     /// Registers (or overrides) a locale under `code`. A registered locale shadows any built-in of
-    /// the same code. Codes are matched case-insensitively on the language part only.
-    public static func register(_ strings: GopayLocaleStrings, for code: String) {
+    /// the same code. Codes are matched case-insensitively on the language part only. The code
+    /// comes first, then the strings, as in the Android SDK's `register(code, strings)`.
+    public static func register(_ code: String, strings: GopayLocaleStrings) {
         lock.lock(); defer { lock.unlock() }
         custom[normalize(code)] = strings
     }
 
-    /// Registers all entries of `locales`. Convenience for `GopaySDKConfig.customLocales`.
+    /// Registers all entries of `locales`. Convenience for `GopayConfig.customLocales`.
     public static func registerAll(_ locales: [String: GopayLocaleStrings]) {
         lock.lock(); defer { lock.unlock() }
         for (code, strings) in locales { custom[normalize(code)] = strings }

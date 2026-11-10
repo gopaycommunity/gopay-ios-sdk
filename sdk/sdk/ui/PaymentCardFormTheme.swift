@@ -16,7 +16,7 @@ import UIKit
 /// spacing. The web form is a page of its own, while this one sits inside a merchant's screen, so
 /// nobody should have to undo an SDK look to make it fit. Theming is fully available, it is just a
 /// choice rather than the starting point. Passing the web's values reproduces the web appearance.
-public struct GopayCardFormTheme: Equatable, Sendable {
+public struct PaymentCardFormTheme: Equatable, Sendable {
 
     // MARK: - Typography
 
@@ -178,7 +178,7 @@ public struct GopayCardFormTheme: Equatable, Sendable {
 
 // MARK: - Font weights
 
-extension GopayCardFormTheme {
+extension PaymentCardFormTheme {
     /// Maps a CSS font weight (100...900) to the closest `UIFont.Weight`. Values in between are
     /// rounded to the nearest hundred, values outside the range are clamped. Every rendered font
     /// goes through here; the SwiftUI `Font` values are built from the resolved `UIFont`.
@@ -204,7 +204,7 @@ extension GopayCardFormTheme {
 
 // MARK: - Resolved state
 
-extension GopayCardFormTheme {
+extension PaymentCardFormTheme {
     /// A themed length the layout can build on. A negative length is read as none, and so is one
     /// the arithmetic cannot carry: `nan` propagates into every sum it touches and makes UIKit
     /// fail the layout outright, and `infinity` collapses whatever it is measured against. A host
@@ -248,7 +248,7 @@ extension GopayCardFormTheme {
 
 // MARK: - Resolved fonts
 
-extension GopayCardFormTheme {
+extension PaymentCardFormTheme {
     /// The label font, scaled for the given Dynamic Type category the way the caption text style
     /// scales. The form reads the category from the environment so the scaling stays live.
     func labelUIFont(for sizeCategory: ContentSizeCategory) -> UIFont {

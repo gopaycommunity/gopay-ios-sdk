@@ -181,7 +181,7 @@ extension AsyncHTTPClient {
     /// gateway the SDK talks to.
     private func telemetryPath(of request: URLRequest) -> String {
         let path = request.url?.path ?? ""
-        guard let basePath = URL(string: baseURL)?.path, basePath.count > 1 else { return path }
+        guard let basePath = URL(string: baseUrl)?.path, basePath.count > 1 else { return path }
         let prefix = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
         return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : path
     }

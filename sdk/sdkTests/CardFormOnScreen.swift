@@ -2,7 +2,7 @@
 //  CardFormOnScreen.swift
 //  sdkTests
 //
-//  The SDK takes a card only from the form registered under its ID, as a GopayCardForm on screen
+//  The SDK takes a card only from the form registered under its ID, as a PaymentCardForm on screen
 //  is. Tests that only need a card held under an ID sync it through here.
 //
 

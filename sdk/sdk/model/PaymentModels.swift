@@ -98,7 +98,7 @@ public enum QrCodeFormat: String, Codable, Sendable {
 }
 
 /// Local bank account details for a QR payment recipient.
-public struct QrLocalBankAccount: Codable, Sendable {
+public struct BankAccountLocalDetails: Codable, Sendable {
     public let prefix: String?
     public let accountNumber: String?
     public let bankCode: String?
@@ -113,20 +113,20 @@ public struct QrLocalBankAccount: Codable, Sendable {
 }
 
 /// International bank account details for a QR payment recipient.
-public struct QrInternationalBankAccount: Codable, Sendable {
+public struct BankAccountInternationalDetails: Codable, Sendable {
     public let bic: String?
     public let iban: String?
     public let reference: String?
 }
 
 /// Bank account details for a QR payment recipient.
-public struct QrRecipientBankAccount: Codable, Sendable {
-    public let local: QrLocalBankAccount?
-    public let international: QrInternationalBankAccount?
+public struct RecipientBankAccount: Codable, Sendable {
+    public let local: BankAccountLocalDetails?
+    public let international: BankAccountInternationalDetails?
 }
 
 /// Postal address details for a QR payment recipient.
-public struct QrRecipientAddress: Codable, Sendable {
+public struct RecipientAddress: Codable, Sendable {
     public let street: String?
     public let city: String?
     public let zipCode: String?
@@ -141,10 +141,10 @@ public struct QrRecipientAddress: Codable, Sendable {
 }
 
 /// Recipient details for a QR payment.
-public struct QrRecipient: Codable, Sendable {
+public struct BankTransferRecipient: Codable, Sendable {
     public let name: String?
-    public let bankAccount: QrRecipientBankAccount?
-    public let address: QrRecipientAddress?
+    public let bankAccount: RecipientBankAccount?
+    public let address: RecipientAddress?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -158,13 +158,13 @@ public struct QrCodeList: Codable, Sendable {
     public let spayd: String?
     public let paybysquare: String?
     public let sepa: String?
-    public let mnbQR: String?
+    public let mnbQr: String?
 
     enum CodingKeys: String, CodingKey {
         case spayd
         case paybysquare
         case sepa
-        case mnbQR = "mnb_qr"
+        case mnbQr = "mnb_qr"
     }
 }
 
@@ -172,7 +172,7 @@ public struct QrCodeList: Codable, Sendable {
 public struct QrPaymentDetails: Codable, Sendable {
     public let amount: Int
     public let currency: Currency
-    public let recipient: QrRecipient?
+    public let recipient: BankTransferRecipient?
     public let qrCode: QrCodeList?
 
     enum CodingKeys: String, CodingKey {

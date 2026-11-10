@@ -29,7 +29,7 @@ struct ChargeVerificationCoverTests {
         var results: [GopayChargeVerificationResult] = []
         let screen = GopayChargeVerificationViewController(
             redirectURL: URL(string: "about:blank")!,
-            returnURL: nil
+            returnUrl: nil
         ) { results.append($0) }
         presenter.present(screen, animated: false)
         try await Task.sleep(nanoseconds: 500_000_000)

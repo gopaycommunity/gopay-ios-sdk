@@ -5,8 +5,8 @@ import UIKit
 /// Mirrors the Android `ThreeDSMode`.
 public enum ThreeDSMode: Sendable {
     /// The SDK opens the challenge itself through
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)``, with the
-    /// `returnURL` and `presenting` from ``AwaitChargeOptions``, and keeps polling once it
+    /// ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)``, with the
+    /// `returnUrl` and `presenting` from ``AwaitChargeOptions``, and keeps polling once it
     /// returns. The default.
     case automatic
     /// The SDK only reports the redirect URL through ``AwaitChargeOptions/onActionRequired`` and
@@ -32,9 +32,9 @@ public struct AwaitChargeOptions: Sendable {
     /// Whether the SDK runs a 3DS challenge itself. Defaults to ``ThreeDSMode/automatic``.
     public var threeDSMode: ThreeDSMode
     /// The `callback.return_url` the payment was created with, for the automatic 3DS challenge;
-    /// the same address ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)``
-    /// takes. Without a usable one the SDK waits for ``GopaySDK/chargeReturnURL`` instead.
-    public var returnURL: URL?
+    /// the same address ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)``
+    /// takes. Without a usable one the SDK waits for ``GopaySDK/chargeReturnUrl`` instead.
+    public var returnUrl: URL?
     /// The view controller to present the automatic 3DS challenge from. When `nil`, the SDK
     /// finds the topmost view controller, as the manual call does.
     public var presenting: UIViewController?
@@ -49,7 +49,7 @@ public struct AwaitChargeOptions: Sendable {
         interval: TimeInterval = 1,
         initialTimeout: TimeInterval = 30,
         threeDSMode: ThreeDSMode = .automatic,
-        returnURL: URL? = nil,
+        returnUrl: URL? = nil,
         presenting: UIViewController? = nil,
         onStateChange: (@MainActor @Sendable (ChargePaymentResponse) -> Void)? = nil,
         onActionRequired: (@MainActor @Sendable (String) -> Void)? = nil
@@ -57,7 +57,7 @@ public struct AwaitChargeOptions: Sendable {
         self.interval = interval
         self.initialTimeout = initialTimeout
         self.threeDSMode = threeDSMode
-        self.returnURL = returnURL
+        self.returnUrl = returnUrl
         self.presenting = presenting
         self.onStateChange = onStateChange
         self.onActionRequired = onActionRequired
@@ -74,21 +74,21 @@ struct AwaitChargeHooks {
     /// Suspends for the given seconds and throws `CancellationError` when the task is cancelled.
     var sleep: (TimeInterval) async throws -> Void
     /// Runs the 3DS challenge for a redirect URL and returns once it is answered.
-    var verify: (PaymentSession, _ redirectURL: String, _ returnURL: URL?, _ presenting: UIViewController?) async throws -> Void
+    var verify: (PaymentSession, _ redirectURL: String, _ returnUrl: URL?, _ presenting: UIViewController?) async throws -> Void
 
     static let live = AwaitChargeHooks(
         now: { ProcessInfo.processInfo.systemUptime },
         sleep: { seconds in
             try await Task.sleep(nanoseconds: nanoseconds(for: seconds))
         },
-        verify: { session, redirect, returnURL, presenting in
+        verify: { session, redirect, returnUrl, presenting in
             // The same answer the manual call gives a redirect that is not a web address: the
             // manual call needs a URL to be asked at all, so the string that cannot become one
             // is settled here with the same code and reason.
             guard let url = URL(string: redirect) else {
                 throw GopayVerificationNavigationPolicy.unloadableRedirect(reason: "not a URL")
             }
-            try await session.verify(redirectURL: url, returnURL: returnURL, presenting: presenting)
+            try await session.verify(redirectURL: url, returnUrl: returnUrl, presenting: presenting)
         }
     )
 
@@ -107,10 +107,10 @@ public extension PaymentSession {
     /// Polls `GET /payments/{payment_id}/charge` until the charge is decided, running a 3DS
     /// challenge on the way, and returns the charge once it is `succeeded`.
     ///
-    /// Call it after any charge on this session: ``charge(_:)``, ``chargeWithApplePay(browserData:challengePreference:)``
+    /// Call it after any charge on this session: ``charge(_:)``, ``chargeWithWallet(browserData:challengePreference:)``
     /// or a charge your backend made. It is the one call that replaces a polling loop of your
     /// own; the manual path, ``getChargeState()`` plus
-    /// ``handle3dsVerification(redirectURL:returnURL:presenting:)``, stays as it is. The Android
+    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)``, stays as it is. The Android
     /// SDK has the same `awaitChargeState` with the matching options, defaults and codes.
     ///
     /// The first read goes out at once, every later one ``AwaitChargeOptions/interval`` after the
@@ -130,7 +130,7 @@ public extension PaymentSession {
     /// - `actionRequired` with a `redirect_url` not seen before lifts the timeout, because a
     ///   challenge takes as long as the user needs, and goes to
     ///   ``AwaitChargeOptions/onActionRequired``. In ``ThreeDSMode/automatic`` the SDK then opens
-    ///   ``handle3dsVerification(redirectURL:returnURL:presenting:)`` with the options' `returnURL`
+    ///   ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` with the options' `returnUrl`
     ///   and `presenting`, and once it returns polls on under a fresh `initialTimeout`, so a
     ///   gateway that never decides after the challenge still ends in `paymentTimeout`; in
     ///   ``ThreeDSMode/manual`` it polls on at once, without a timeout, and the challenge is yours
@@ -219,7 +219,7 @@ public extension PaymentSession {
                         await onActionRequired(redirect)
                     }
                     if options.threeDSMode == .automatic {
-                        try await hooks.verify(self, redirect, options.returnURL, options.presenting)
+                        try await hooks.verify(self, redirect, options.returnUrl, options.presenting)
                         // The challenge is answered; the gateway gets the initial timeout again
                         // to decide, otherwise a charge it never decides would be polled forever.
                         deadline = hooks.now() + options.initialTimeout

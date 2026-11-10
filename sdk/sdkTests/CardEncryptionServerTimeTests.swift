@@ -96,19 +96,19 @@ extension SessionNetworkTests {
         let client: DefaultNetworkClient = {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [StubURLProtocol.self]
-            return DefaultNetworkClient(baseURL: "https://stub.test/", configuration: configuration)
+            return DefaultNetworkClient(baseUrl: "https://stub.test/", configuration: configuration)
         }()
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: "https://stub.test/"),
+        let config = GopayConfig(
+            environment: .development(baseUrl: "https://stub.test/"),
             clientId: clientId,
             shareableKey: shareableKey,
-            enableDebugLogging: debugLogging
+            debugLoggingEnabled: debugLogging
         )
         return GopaySDK(config: config, networkClient: client)
     }
 
-    private var card: GopayCardData {
-        GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+    private var card: CardData {
+        CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
     }
 
     private func serveKey(_ key: TestEncryptionKey, headers: [String: String], delay: TimeInterval = 0) {
@@ -248,8 +248,8 @@ extension SessionNetworkTests {
         StubURLProtocol.holdAnswers()
         defer { StubURLProtocol.releaseAnswers() }
         let reported = ReportedErrors()
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: "https://stub.test/"),
+        let config = GopayConfig(
+            environment: .development(baseUrl: "https://stub.test/"),
             clientId: "c",
             shareableKey: "k",
             errorCallback: { reported.append($0) }
@@ -257,7 +257,7 @@ extension SessionNetworkTests {
         let client: DefaultNetworkClient = {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [StubURLProtocol.self]
-            return DefaultNetworkClient(baseURL: "https://stub.test/", configuration: configuration)
+            return DefaultNetworkClient(baseUrl: "https://stub.test/", configuration: configuration)
         }()
         let sdk = GopaySDK(config: config, networkClient: client)
 
@@ -276,8 +276,8 @@ extension SessionNetworkTests {
         StubURLProtocol.holdAnswers()
         defer { StubURLProtocol.releaseAnswers() }
         let reported = ReportedErrors()
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: "https://stub.test/"),
+        let config = GopayConfig(
+            environment: .development(baseUrl: "https://stub.test/"),
             clientId: "c",
             shareableKey: "k",
             errorCallback: { reported.append($0) }
@@ -285,7 +285,7 @@ extension SessionNetworkTests {
         let client: DefaultNetworkClient = {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [StubURLProtocol.self]
-            return DefaultNetworkClient(baseURL: "https://stub.test/", configuration: configuration)
+            return DefaultNetworkClient(baseUrl: "https://stub.test/", configuration: configuration)
         }()
         let sdk = GopaySDK(config: config, networkClient: client)
         let formData = GopayCardFormData(

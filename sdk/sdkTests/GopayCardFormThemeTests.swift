@@ -2,7 +2,7 @@
 //  GopayCardFormThemeTests.swift
 //  sdkTests
 //
-//  Pins the public shape of GopayCardFormTheme: the defaults, the CSS font weight mapping and
+//  Pins the public shape of PaymentCardFormTheme: the defaults, the CSS font weight mapping and
 //  the fonts and border colours it resolves.
 //
 
@@ -18,7 +18,7 @@ struct GopayCardFormThemeTests {
     /// An untouched form is an iOS form: system type, a plain bordered field, no uppercasing and
     /// no reserved error line. The web look is values a host passes in, not the starting point.
     @Test func anUntouchedThemeIsThePlatformsOwnAppearance() {
-        let theme = GopayCardFormTheme()
+        let theme = PaymentCardFormTheme()
 
         #expect(theme.fontFamily == nil)
         #expect(theme.labelFontSize == 12)
@@ -44,7 +44,7 @@ struct GopayCardFormThemeTests {
 
     @Test("the default colors follow the system palette")
     func theDefaultColorsFollowTheSystemPalette() {
-        let theme = GopayCardFormTheme()
+        let theme = PaymentCardFormTheme()
 
         #expect(theme.labelColor == .primary)
         #expect(theme.inputTextColor == .primary)
@@ -59,30 +59,30 @@ struct GopayCardFormThemeTests {
     // MARK: - Font weights
 
     @Test func fontWeightMapsTheWholeCssScale() {
-        #expect(GopayCardFormTheme.uiFontWeight(100) == .ultraLight)
-        #expect(GopayCardFormTheme.uiFontWeight(200) == .thin)
-        #expect(GopayCardFormTheme.uiFontWeight(300) == .light)
-        #expect(GopayCardFormTheme.uiFontWeight(400) == .regular)
-        #expect(GopayCardFormTheme.uiFontWeight(500) == .medium)
-        #expect(GopayCardFormTheme.uiFontWeight(600) == .semibold)
-        #expect(GopayCardFormTheme.uiFontWeight(700) == .bold)
-        #expect(GopayCardFormTheme.uiFontWeight(800) == .heavy)
-        #expect(GopayCardFormTheme.uiFontWeight(900) == .black)
+        #expect(PaymentCardFormTheme.uiFontWeight(100) == .ultraLight)
+        #expect(PaymentCardFormTheme.uiFontWeight(200) == .thin)
+        #expect(PaymentCardFormTheme.uiFontWeight(300) == .light)
+        #expect(PaymentCardFormTheme.uiFontWeight(400) == .regular)
+        #expect(PaymentCardFormTheme.uiFontWeight(500) == .medium)
+        #expect(PaymentCardFormTheme.uiFontWeight(600) == .semibold)
+        #expect(PaymentCardFormTheme.uiFontWeight(700) == .bold)
+        #expect(PaymentCardFormTheme.uiFontWeight(800) == .heavy)
+        #expect(PaymentCardFormTheme.uiFontWeight(900) == .black)
     }
 
     @Test func fontWeightRoundsInBetweenValuesAndClampsOutOfRange() {
-        #expect(GopayCardFormTheme.uiFontWeight(449) == .regular)
-        #expect(GopayCardFormTheme.uiFontWeight(451) == .medium)
-        #expect(GopayCardFormTheme.uiFontWeight(0) == .ultraLight)
-        #expect(GopayCardFormTheme.uiFontWeight(-100) == .ultraLight)
-        #expect(GopayCardFormTheme.uiFontWeight(5000) == .black)
+        #expect(PaymentCardFormTheme.uiFontWeight(449) == .regular)
+        #expect(PaymentCardFormTheme.uiFontWeight(451) == .medium)
+        #expect(PaymentCardFormTheme.uiFontWeight(0) == .ultraLight)
+        #expect(PaymentCardFormTheme.uiFontWeight(-100) == .ultraLight)
+        #expect(PaymentCardFormTheme.uiFontWeight(5000) == .black)
     }
 
     // MARK: - Border state
 
     @Test("borderColor: a resting field uses the border color")
     func borderColorRestingFieldUsesTheBorderColor() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.inputBorderColor = .gray
 
         #expect(theme.borderColor(hasError: false) == .gray)
@@ -90,14 +90,14 @@ struct GopayCardFormThemeTests {
 
     @Test("borderColor: an invalid field uses the error color")
     func borderColorInvalidFieldUsesTheErrorColor() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.inputErrorBorderColor = .orange
 
         #expect(theme.borderColor(hasError: true) == .orange)
     }
 
     @Test func errorSpacingFallsBackToFieldSpacing() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.fieldSpacing = 6
 
         #expect(theme.resolvedErrorSpacing == 6)
@@ -109,7 +109,7 @@ struct GopayCardFormThemeTests {
     // MARK: - Resolved fonts
 
     @Test func inputFontFollowsTheThemedSizeAndWeight() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.inputFontSize = 14
         theme.inputFontWeight = 600
 
@@ -126,17 +126,17 @@ struct GopayCardFormThemeTests {
     private static let atLargeTextSize = UITraitCollection(preferredContentSizeCategory: .large)
 
     @Test func inputFontDefaultMatchesTheBodyTextStyle() {
-        #expect(GopayCardFormTheme().inputUIFont(for: .large).pointSize
+        #expect(PaymentCardFormTheme().inputUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .body, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
     @Test func labelFontDefaultMatchesTheCaptionTextStyle() {
-        #expect(GopayCardFormTheme().labelUIFont(for: .large).pointSize
+        #expect(PaymentCardFormTheme().labelUIFont(for: .large).pointSize
             == UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: Self.atLargeTextSize).pointSize)
     }
 
     @Test func fontFamilyPicksTheBoldFaceForHeavyWeightsAndTheRegularOneOtherwise() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.fontFamily = "Georgia"
 
         theme.labelFontWeight = 800
@@ -151,32 +151,32 @@ struct GopayCardFormThemeTests {
     }
 
     @Test func fontFamilyFallsBackToTheSystemFontWhenTheAppHasNotRegisteredIt() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.fontFamily = "NoSuchFontIsRegistered"
 
         #expect(theme.inputUIFont(for: .large).familyName == UIFont.systemFont(ofSize: 17).familyName)
     }
 
     @Test func fontFamilyUsesARegisteredFont() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.fontFamily = "Georgia"
 
         #expect(theme.inputUIFont(for: .large).familyName == "Georgia")
     }
 
     @Test func errorFontUsesTheThemedErrorSize() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.errorFontSize = 11
 
         #expect(theme.errorUIFont(for: .large).pointSize == 11)
     }
 
     @Test func scaledCaptionLengthIsTheIdentityAtTheDefaultCategory() {
-        #expect(GopayCardFormTheme().scaledCaptionLength(14, for: .large) == 14)
+        #expect(PaymentCardFormTheme().scaledCaptionLength(14, for: .large) == 14)
     }
 
     @Test func errorReserveHoldsAtLeastOneLineOfTheErrorFont() {
-        var theme = GopayCardFormTheme()
+        var theme = PaymentCardFormTheme()
         theme.errorFontSize = 20
         theme.errorMinHeight = 4
         // A whole rendered line, not the point size that names it, or the message still pushes

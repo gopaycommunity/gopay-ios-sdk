@@ -194,11 +194,11 @@ final class Telemetry: @unchecked Sendable {
     }
 
     /// The telemetry a configuration asks for: its environment's ingest, its `client_id`.
-    convenience init(config: GopaySDKConfig) {
+    convenience init(config: GopayConfig) {
         self.init(
             endpoint: config.environment.telemetryURL,
             clientId: config.clientId,
-            debugLogging: config.enableDebugLogging
+            debugLogging: config.debugLoggingEnabled
         )
     }
 
@@ -304,7 +304,7 @@ final class Telemetry: @unchecked Sendable {
     /// the browser SDK's encrypt-only flow.
     static let cardFormFlow = "return-payload"
 
-    /// A ``GopayCardForm`` appeared, timed from the SDK's initialization. Its first visit starts
+    /// A ``PaymentCardForm`` appeared, timed from the SDK's initialization. Its first visit starts
     /// here, untouched.
     func cardFormReady(owner: AnyObject) {
         let now = Self.now()
@@ -340,7 +340,7 @@ final class Telemetry: @unchecked Sendable {
         }
     }
 
-    /// A ``GopayCardForm`` disappeared, timed from its ready, with whether a charge was still
+    /// A ``PaymentCardForm`` disappeared, timed from its ready, with whether a charge was still
     /// running in the process when it went (see ``chargesInFlight``), and then the summary of the
     /// visit still open, if any: a form whose last visit ended with a JWE has none.
     func cardFormUnmounted(owner: AnyObject) {

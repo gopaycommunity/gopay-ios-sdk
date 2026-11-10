@@ -40,7 +40,7 @@ let stubBaseURL = "https://stub.test/"
 func stubbedClient() -> DefaultNetworkClient {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubURLProtocol.self]
-    return DefaultNetworkClient(baseURL: stubBaseURL, configuration: config)
+    return DefaultNetworkClient(baseUrl: stubBaseURL, configuration: config)
 }
 
 func tokenResponse() -> (Int, Data) {
@@ -287,7 +287,7 @@ final class Counter: @unchecked Sendable {
 /// ``release()``. It ignores cancellation, so the answer arrives whatever the session does
 /// meanwhile.
 final class HeldTokenClient: AsyncHTTPClient, @unchecked Sendable {
-    let baseURL = stubBaseURL
+    let baseUrl = stubBaseURL
     private let lock = NSLock()
     private let gate = DispatchSemaphore(value: 0)
     private var tokenCalls = 0
@@ -300,7 +300,7 @@ final class HeldTokenClient: AsyncHTTPClient, @unchecked Sendable {
 
     func release() { gate.signal() }
 
-    func makeURL(path: String) -> URL? { URL(string: baseURL + path) }
+    func makeURL(path: String) -> URL? { URL(string: baseUrl + path) }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let url = request.url!
@@ -983,8 +983,8 @@ struct SessionNetworkTests {
     // MARK: GopaySDK registry
 
     private func sdk(clientId: String? = nil, shareableKey: String? = nil) -> GopaySDK {
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: stubBaseURL),
+        let config = GopayConfig(
+            environment: .development(baseUrl: stubBaseURL),
             clientId: clientId,
             shareableKey: shareableKey
         )

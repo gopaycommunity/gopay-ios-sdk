@@ -2,7 +2,7 @@
 //  GopayCardFormErrorsTests.swift
 //  sdkTests
 //
-//  Tests for the inline validation-error display rules used by GopayCardForm.
+//  Tests for the inline validation-error display rules used by PaymentCardForm.
 //
 
 import Testing

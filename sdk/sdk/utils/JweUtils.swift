@@ -30,7 +30,7 @@ struct JweUtils {
     ///   - issuedAt: The payload's `iat`; `exp` follows 10 minutes later. The gateway's clock from
     ///     the public-key response, or the device clock when that response carried none.
     /// - Returns: A Result containing the JWE string or an error.
-    static func createJWE(cardData: GopayCardData, clientId: String, jwk: GopayJWK, issuedAt: Date) -> Result<String, Error> {
+    static func createJWE(cardData: CardData, clientId: String, jwk: GopayJWK, issuedAt: Date) -> Result<String, Error> {
         // Step 1: Create JWE header first (needed for AAD)
         let header: [String: String] = [
             "alg": jwk.alg,

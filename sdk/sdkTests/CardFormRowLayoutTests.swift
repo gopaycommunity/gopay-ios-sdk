@@ -17,12 +17,12 @@ struct CardFormRowLayoutTests {
 
     /// Lays the form out in a window and returns the text fields in the order they appear.
     private func hostedFields(
-        theme: GopayCardFormTheme = GopayCardFormTheme(),
+        theme: PaymentCardFormTheme = PaymentCardFormTheme(),
         sizeCategory: ContentSizeCategory = .large
     ) -> [UITextField] {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 400))
         window.rootViewController = UIHostingController(
-            rootView: GopayCardForm(theme: theme, locale: "en")
+            rootView: PaymentCardForm(theme: theme, locale: "en")
                 .environment(\.sizeCategory, sizeCategory)
         )
         window.isHidden = false
@@ -39,7 +39,7 @@ struct CardFormRowLayoutTests {
     ) -> [CGRect] {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 1200))
         window.rootViewController = UIHostingController(
-            rootView: GopayCardForm(locale: locale)
+            rootView: PaymentCardForm(locale: locale)
                 .environment(\.sizeCategory, sizeCategory)
                 .frame(width: 380)
         )
@@ -51,11 +51,11 @@ struct CardFormRowLayoutTests {
 
     /// How tall the whole form lays out, for checking what the padding around a field adds.
     private func hostedFormHeight(
-        theme: GopayCardFormTheme,
+        theme: PaymentCardFormTheme,
         sizeCategory: ContentSizeCategory = .large
     ) -> CGFloat {
         let host = UIHostingController(
-            rootView: GopayCardForm(theme: theme, locale: "en").environment(\.sizeCategory, sizeCategory)
+            rootView: PaymentCardForm(theme: theme, locale: "en").environment(\.sizeCategory, sizeCategory)
         )
         return host.sizeThatFits(in: CGSize(width: 380, height: CGFloat.greatestFiniteMagnitude)).height
     }
@@ -83,7 +83,7 @@ struct CardFormRowLayoutTests {
     }
 
     @Test func theRowStaysEvenWithATallerFontAndAtALargerTextSize() {
-        var large = GopayCardFormTheme()
+        var large = PaymentCardFormTheme()
         large.inputFontSize = 28
 
         for fields in [hostedFields(theme: large), hostedFields(sizeCategory: .accessibilityLarge)] {
@@ -95,7 +95,7 @@ struct CardFormRowLayoutTests {
     /// host that overrides the category gets both, not one of each.
     @Test func theInputFontFollowsTheEnvironmentsTextSize() {
         for category in [ContentSizeCategory.large, .accessibilityLarge] {
-            let expected = GopayCardFormTheme().inputUIFont(for: category).pointSize
+            let expected = PaymentCardFormTheme().inputUIFont(for: category).pointSize
             let rendered = hostedFields(sizeCategory: category).first?.font?.pointSize
 
             #expect(rendered == expected, "at \(category) the field should render at \(expected)pt")
@@ -104,12 +104,12 @@ struct CardFormRowLayoutTests {
 
     /// A theme can ask for a field of no height; it says nothing, so it is read as unset.
     @Test func aZeroOrNegativeMinimumHeightIsReadAsUnset() {
-        var zero = GopayCardFormTheme()
+        var zero = PaymentCardFormTheme()
         zero.inputHeight = 0
-        var negative = GopayCardFormTheme()
+        var negative = PaymentCardFormTheme()
         negative.inputHeight = -40
 
-        let natural = hostedFormHeight(theme: GopayCardFormTheme())
+        let natural = hostedFormHeight(theme: PaymentCardFormTheme())
         #expect(hostedFormHeight(theme: zero) == natural)
         #expect(hostedFormHeight(theme: negative) == natural)
     }
@@ -118,12 +118,12 @@ struct CardFormRowLayoutTests {
     /// rather than on top of it, which is how Android reads the same key. A minimum under what the
     /// field already needs changes nothing.
     @Test func aMinimumHeightRaisesTheFieldButNeverLowersIt() {
-        var tall = GopayCardFormTheme()
+        var tall = PaymentCardFormTheme()
         tall.inputHeight = 80
-        var short = GopayCardFormTheme()
+        var short = PaymentCardFormTheme()
         short.inputHeight = 1
 
-        let natural = hostedFormHeight(theme: GopayCardFormTheme())
+        let natural = hostedFormHeight(theme: PaymentCardFormTheme())
         #expect(hostedFormHeight(theme: short) == natural)
         // Two rows of fields, so each point of minimum above the natural height counts twice.
         #expect(hostedFormHeight(theme: tall) > natural)
@@ -135,7 +135,7 @@ struct CardFormRowLayoutTests {
     /// The padding lives inside the minimum rather than being added on top of it, so raising it
     /// under a minimum that already dominates does not make the form any taller.
     @Test func theVerticalPaddingSitsInsideAMinimumHeight() {
-        var tight = GopayCardFormTheme()
+        var tight = PaymentCardFormTheme()
         tight.inputHeight = 80
         tight.inputPaddingVertical = 0
         var padded = tight
@@ -144,7 +144,7 @@ struct CardFormRowLayoutTests {
         #expect(hostedFormHeight(theme: padded) == hostedFormHeight(theme: tight))
 
         // With no minimum to absorb it, the same padding does add to the form.
-        var noMinimum = GopayCardFormTheme()
+        var noMinimum = PaymentCardFormTheme()
         noMinimum.inputPaddingVertical = 0
         var noMinimumPadded = noMinimum
         noMinimumPadded.inputPaddingVertical = 12
@@ -153,10 +153,10 @@ struct CardFormRowLayoutTests {
 
     /// A negative padding is reachable from code and would pull the text out of its own field.
     @Test func aNegativePaddingIsReadAsNone() {
-        var negative = GopayCardFormTheme()
+        var negative = PaymentCardFormTheme()
         negative.inputPaddingVertical = -20
         negative.inputPaddingHorizontal = -20
-        var none = GopayCardFormTheme()
+        var none = PaymentCardFormTheme()
         none.inputPaddingVertical = 0
         none.inputPaddingHorizontal = 0
 
@@ -165,7 +165,7 @@ struct CardFormRowLayoutTests {
 
     /// The point of the change: a reader on a large text size gets a taller field, not a cropped one.
     @Test func aMinimumHeightStillGrowsWithTheTextSize() {
-        var tall = GopayCardFormTheme()
+        var tall = PaymentCardFormTheme()
         tall.inputHeight = 60
 
         let normal = hostedFormHeight(theme: tall)
@@ -176,7 +176,7 @@ struct CardFormRowLayoutTests {
 
     /// A width past the field would inset `strokeBorder` out of existence and lose the border.
     @Test func anAbsurdBorderWidthStillLeavesTheFieldStanding() {
-        var huge = GopayCardFormTheme()
+        var huge = PaymentCardFormTheme()
         huge.inputBorderWidth = 10_000
 
         let fields = hostedFields(theme: huge)
@@ -221,7 +221,7 @@ struct CardFormRowLayoutTests {
     @Test("a font size that is not a usable number falls back to the text style's own")
     func aFontSizeThatIsNotAUsableNumberFallsBackToTheTextStyles() {
         for bad in [CGFloat.nan, .infinity, -12, 0] {
-            var theme = GopayCardFormTheme()
+            var theme = PaymentCardFormTheme()
             theme.inputFontSize = bad
             theme.labelFontSize = bad
             theme.errorFontSize = bad
@@ -241,7 +241,7 @@ struct CardFormRowLayoutTests {
     @Test("a length that is not a usable number is read as no length")
     func aLengthThatIsNotAUsableNumberIsReadAsNoLength() {
         for bad in [CGFloat.nan, .infinity, -8] {
-            var theme = GopayCardFormTheme()
+            var theme = PaymentCardFormTheme()
             theme.inputHeight = bad
             theme.inputPaddingVertical = bad
             theme.inputPaddingHorizontal = bad
@@ -272,9 +272,9 @@ struct CardFormRowLayoutTests {
     /// same value as no spacing at all.
     @Test("a negative group spacing does not pull the rows over one another")
     func aNegativeGroupSpacingDoesNotPullTheRowsOverOneAnother() {
-        var negative = GopayCardFormTheme()
+        var negative = PaymentCardFormTheme()
         negative.groupSpacing = -40
 
-        #expect(hostedFormHeight(theme: negative) == hostedFormHeight(theme: GopayCardFormTheme(groupSpacing: 0)))
+        #expect(hostedFormHeight(theme: negative) == hostedFormHeight(theme: PaymentCardFormTheme(groupSpacing: 0)))
     }
 }

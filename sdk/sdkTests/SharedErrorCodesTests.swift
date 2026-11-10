@@ -44,7 +44,7 @@ struct NotInitializedTests {
 
     @Test func encryptCardDataThrowsNotInitialized() async {
         let sdk = GopaySDK()
-        let card = GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+        let card = CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
         do {
             _ = try await sdk.encryptCardData(card)
             Issue.record("expected failure")
@@ -104,7 +104,7 @@ extension SessionNetworkTests {
 
     private func validationSDK() -> GopaySDK {
         GopaySDK(
-            config: GopaySDKConfig(environment: .development(baseURL: stubBaseURL), clientId: "c", shareableKey: "k"),
+            config: GopayConfig(environment: .development(baseUrl: stubBaseURL), clientId: "c", shareableKey: "k"),
             networkClient: stubbedClient()
         ).waitingForInitSession()
     }
@@ -114,7 +114,7 @@ extension SessionNetworkTests {
     @Test(arguments: invalidCardCases)
     func encryptCardDataRefusesAnInvalidCard(_ testCase: InvalidCardCase) async {
         StubURLProtocol.reset { _ in (500, Data()) }
-        let card = GopayCardData(cardPan: testCase.pan, expMonth: testCase.month, expYear: testCase.year, cvv: testCase.cvv)
+        let card = CardData(cardPan: testCase.pan, expMonth: testCase.month, expYear: testCase.year, cvv: testCase.cvv)
         do {
             _ = try await validationSDK().encryptCardData(card)
             Issue.record("expected failure")
@@ -150,7 +150,7 @@ extension SessionNetworkTests {
         StubURLProtocol.reset { req in
             (req.url?.path.hasSuffix("cards/public-key") ?? false) ? (200, brokenKey) : (404, Data())
         }
-        let card = GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+        let card = CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
 
         do {
             _ = try await validationSDK().encryptCardData(card)

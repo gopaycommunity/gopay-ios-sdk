@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Sensitive — never persisted. Pass to ``GopaySDK/encryptCardData(_:)`` to obtain a JWE for
 /// server-side tokenization.
-public struct GopayCardData: Encodable, Sendable {
+public struct CardData: Encodable, Sendable {
     /// Card PAN (Primary Account Number).
     public let cardPan: String
     /// Expiration month (MM format).
@@ -34,9 +34,9 @@ public struct GopayCardData: Encodable, Sendable {
 /// PAN and CVV into any log or crash report. Same shape as the Android SDK's `CardData.toString()`.
 /// The mirror is masked the same way, so `dump(_:)` and anything else that reflects over the value
 /// see the masked fields too.
-extension GopayCardData: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+extension CardData: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
     public var description: String {
-        "GopayCardData(cardPan=\(Self.maskedPan(cardPan)), expMonth=\(expMonth), expYear=\(expYear), cvv=***)"
+        "CardData(cardPan=\(Self.maskedPan(cardPan)), expMonth=\(expMonth), expYear=\(expYear), cvv=***)"
     }
 
     public var debugDescription: String { description }

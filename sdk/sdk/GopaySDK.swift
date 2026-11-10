@@ -4,7 +4,7 @@ import PassKit
 /// Main entry point for the GoPay SDK.
 ///
 /// Usage:
-/// 1. `GopaySDK.shared.initialize(with: GopaySDKConfig(environment:, clientId:, shareableKey:))`
+/// 1. `GopaySDK.shared.initialize(with: GopayConfig(environment:, clientId:, shareableKey:))`
 ///    once on app start.
 /// 2. The merchant backend creates a payment and returns `payment_id` + `payment_secret` to the
 ///    device.
@@ -15,7 +15,7 @@ import PassKit
 /// 5. `await session.close()` when done; the `payment_secret` and JWT are wiped from memory.
 ///
 /// Card collection: ``encryptCardData(_:)`` (or ``submitCardForm(formId:)`` with a
-/// `GopayCardForm`) returns a JWE that the host app forwards to its backend; the merchant backend
+/// `PaymentCardForm`) returns a JWE that the host app forwards to its backend; the merchant backend
 /// calls `POST /cards/tokens`. The mobile SDK never touches that endpoint.
 ///
 /// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6. Every
@@ -40,24 +40,24 @@ public class GopaySDK: @unchecked Sendable {
 
     /// Fallback return URL for the 3DS verification.
     ///
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` watches for the
-    /// `returnURL` it is given, the address your backend created the payment with
+    /// ``PaymentSession/handle3dsVerification(redirectURL:returnUrl:presenting:)`` watches for the
+    /// `returnUrl` it is given, the address your backend created the payment with
     /// (`callback.return_url`). Only without a usable one does it wait for this address instead,
     /// and then the payment has to be created with it as `callback.return_url`. The 3DS WebView
     /// intercepts it and never actually loads it.
-    public static let chargeReturnURL = "https://gopay.com/sdk/charge-return"
+    public static let chargeReturnUrl = "https://gopay.com/sdk/charge-return"
 
     /// The current configuration for the SDK.
     ///
     /// Written by ``initialize(with:)`` on whatever thread the host calls it from and read by
     /// ``report(_:paymentId:)`` on whatever executor a failing call ends on, so both go through
     /// ``configLock``.
-    public var config: GopaySDKConfig? {
+    public var config: GopayConfig? {
         configLock.lock()
         defer { configLock.unlock() }
         return storedConfig
     }
-    private var storedConfig: GopaySDKConfig?
+    private var storedConfig: GopayConfig?
     private let configLock = NSLock()
 
     /// Where the SDK's operational data goes: the ingest of the configured environment from
@@ -72,7 +72,7 @@ public class GopaySDK: @unchecked Sendable {
 
     /// How ``initialize(with:)`` makes the telemetry for a configuration. Replaced in tests, which
     /// catch the uploads instead of sending them, like ``warnSink``; set before the SDK is used.
-    var makeTelemetry: (GopaySDKConfig) -> Telemetry = { Telemetry(config: $0) }
+    var makeTelemetry: (GopayConfig) -> Telemetry = { Telemetry(config: $0) }
 
     /// The device's languages, which the session start sends GoPay to set the payment's language
     /// from. Replaced in tests, like ``makeTelemetry``, so they need not touch the
@@ -102,7 +102,7 @@ public class GopaySDK: @unchecked Sendable {
 
     /// The configuration and the gateway made from it, read together under ``configLock``; `nil`
     /// before ``initialize(with:)``.
-    private var configured: (config: GopaySDKConfig, gateway: Gateway)? {
+    private var configured: (config: GopayConfig, gateway: Gateway)? {
         configLock.lock()
         defer { configLock.unlock() }
         guard let config = storedConfig, let gateway = storedGateway else { return nil }
@@ -135,7 +135,7 @@ public class GopaySDK: @unchecked Sendable {
     /// thread while ``submitCardForm(formId:)`` reads and clears from whatever executor resumes it.
     private let cardFormDataLock = NSLock()
 
-    /// What the SDK can tell a live ``GopayCardForm``, and which form it is.
+    /// What the SDK can tell a live ``PaymentCardForm``, and which form it is.
     struct CardFormHandlers {
         /// The form that registered, held weakly: the one object the form keeps for its whole
         /// life, so a second form under the same ID, as a navigation transition or a `key()`
@@ -165,9 +165,9 @@ public class GopaySDK: @unchecked Sendable {
     /// device and never in the way of a payment, to the ingest of the configured environment; a
     /// `.development` environment sends none. See "Operational data" in the README.
     /// - Parameter config: The configuration to use.
-    public func initialize(with config: GopaySDKConfig) {
+    public func initialize(with config: GopayConfig) {
         let telemetry = makeTelemetry(config)
-        let client = DefaultNetworkClient(baseURL: config.environment.baseURL)
+        let client = DefaultNetworkClient(baseUrl: config.environment.baseUrl)
         let gateway = Self.gateway(client: client, config: config, telemetry: telemetry)
         configLock.lock()
         storedConfig = config
@@ -177,10 +177,10 @@ public class GopaySDK: @unchecked Sendable {
         GopayLocales.registerAll(config.customLocales)
         GopayLocales.setDefaultLocale(config.locale)
         // Said once here, unconditionally, because the first symptom otherwise is a CONFIG_006 on
-        // an unrelated-looking call. Only `.development(baseURL:)` can be empty — `.sandbox` and
+        // an unrelated-looking call. Only `.development(baseUrl:)` can be empty — `.sandbox` and
         // `.production` carry their own hosts.
-        if config.environment.baseURL.isEmpty {
-            print("[GopaySDK] The selected environment has no base URL, so every request will fail with CONFIG_006. Pass an absolute https:// URL to .development(baseURL:).")
+        if config.environment.baseUrl.isEmpty {
+            print("[GopaySDK] The selected environment has no base URL, so every request will fail with CONFIG_006. Pass an absolute https:// URL to .development(baseUrl:).")
         }
         telemetry.initialized()
         // Resolve the real WebView User-Agent now, off the critical path, so the first charge's
@@ -190,7 +190,7 @@ public class GopaySDK: @unchecked Sendable {
 
     /// Resolves the ``GopayLocaleStrings`` the payment card form uses for its labels.
     ///
-    /// Resolution order: `preferred` (if given and known) -> the SDK-wide `GopaySDKConfig.locale`
+    /// Resolution order: `preferred` (if given and known) -> the SDK-wide `GopayConfig.locale`
     /// -> the device language -> Czech. Handy for reading the localized error / pay strings from
     /// host code (e.g. to display inline validation messages).
     public func currentLocaleStrings(preferred: String? = nil) -> GopayLocaleStrings {
@@ -200,20 +200,20 @@ public class GopaySDK: @unchecked Sendable {
     /// Internal/test initializer for dependency injection. Sends no telemetry unless a test
     /// passes its own.
     internal init(
-        config: GopaySDKConfig? = nil,
+        config: GopayConfig? = nil,
         networkClient: AsyncHTTPClient? = nil,
         telemetry: Telemetry = .disabled
     ) {
         self.storedConfig = config
         self.storedTelemetry = telemetry
         if let config = config {
-            let client = networkClient ?? DefaultNetworkClient(baseURL: config.environment.baseURL)
+            let client = networkClient ?? DefaultNetworkClient(baseUrl: config.environment.baseUrl)
             self.storedGateway = Self.gateway(client: client, config: config, telemetry: telemetry)
         }
     }
 
     /// The gateway objects for `config`, over `client`.
-    private static func gateway(client: AsyncHTTPClient, config: GopaySDKConfig, telemetry: Telemetry) -> Gateway {
+    private static func gateway(client: AsyncHTTPClient, config: GopayConfig, telemetry: Telemetry) -> Gateway {
         Gateway(
             client: client,
             authAPI: AuthAPI(client: client, telemetry: telemetry),
@@ -355,7 +355,7 @@ public class GopaySDK: @unchecked Sendable {
     /// `iat` / `exp` follow the gateway's clock from that response's `Date` header rather than the
     /// device's, so a device with a wrong clock still produces a JWE the gateway accepts. When the
     /// header is missing or unreadable the device clock is used instead, with a warning in the
-    /// debug log while `GopaySDKConfig.enableDebugLogging` is on.
+    /// debug log while `GopayConfig.debugLoggingEnabled` is on.
     ///
     /// A task cancelled while the key is on its way gets `CancellationError`, which is not reported
     /// through `errorCallback`, and no JWE is built.
@@ -366,13 +366,13 @@ public class GopaySDK: @unchecked Sendable {
     ///   fails validation, the public key fetch's own code when that fails, or
     ///   ``GopaySDKError/Code/unexpected`` when the encryption itself fails, with the step that
     ///   failed in the message and the system's error as `underlying`.
-    public func encryptCardData(_ cardData: GopayCardData) async throws -> String {
+    public func encryptCardData(_ cardData: CardData) async throws -> String {
         try await reported(paymentId: nil) { try await encrypt(cardData) }
     }
 
     /// ``encryptCardData(_:)`` without the reporting, the step ``submitCardForm(formId:)`` ends
     /// with.
-    private func encrypt(_ cardData: GopayCardData) async throws -> String {
+    private func encrypt(_ cardData: CardData) async throws -> String {
         // One read: the key and the client ID must come from the same configuration.
         guard let (config, gateway) = configured else { throw notInitializedError() }
         try validateCardData(cardData)
@@ -383,7 +383,7 @@ public class GopaySDK: @unchecked Sendable {
         // finishes anyway. Stopping here keeps a cancelled submitCardForm from wiping the form.
         try Task.checkCancellation()
         guard let clientId = config.clientId, !clientId.isEmpty else {
-            throw GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopaySDKConfig to encrypt card data")
+            throw GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopayConfig to encrypt card data")
         }
         let issuedAt: Date
         if let serverTime = served.serverTime {
@@ -395,7 +395,7 @@ public class GopaySDK: @unchecked Sendable {
         return try JweUtils.createJWE(cardData: cardData, clientId: clientId, jwk: served.jwk, issuedAt: issuedAt).get()
     }
 
-    /// Encrypts the card data currently held by a ``GopayCardForm`` into a JWE for server-side
+    /// Encrypts the card data currently held by a ``PaymentCardForm`` into a JWE for server-side
     /// tokenization. The sensitive PAN/CVV never leave the SDK — only the JWE is returned.
     ///
     /// On success the form returns to its pristine state: the SDK's copy of the card is dropped
@@ -449,7 +449,7 @@ public class GopaySDK: @unchecked Sendable {
         guard data.isValid else {
             throw GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.invalidCardFormData)
         }
-        let cardData = GopayCardData(
+        let cardData = CardData(
             cardPan: data.cardNumber,
             expMonth: data.expirationMonth,
             expYear: data.expirationYear,
@@ -507,7 +507,7 @@ public class GopaySDK: @unchecked Sendable {
         cardFormHandlers[formId]?.owner
     }
 
-    /// Registers the wipe a live ``GopayCardForm`` performs on its own fields, and what it does
+    /// Registers the wipe a live ``PaymentCardForm`` performs on its own fields, and what it does
     /// when a submit is attempted, on behalf of `owner`, the object the form keeps for its whole
     /// life. A later registration under the same form ID replaces an earlier one.
     internal func registerCardFormReset(
@@ -578,10 +578,10 @@ public class GopaySDK: @unchecked Sendable {
         }
     }
 
-    /// Removes card data held for a ``GopayCardForm`` from memory.
+    /// Removes card data held for a ``PaymentCardForm`` from memory.
     ///
     /// ``submitCardForm(formId:)`` calls this automatically after returning a JWE. A
-    /// ``GopayCardForm`` that leaves the screen drops its card without it, through its own
+    /// ``PaymentCardForm`` that leaves the screen drops its card without it, through its own
     /// unregistration, so this call is the host's: make it when the user abandons checkout while
     /// the form stays on screen, so the PAN/CVV don't linger in memory longer than needed
     /// (PCI DSS 4.0.1, req. 3.3.1).
@@ -618,7 +618,7 @@ public class GopaySDK: @unchecked Sendable {
         )
     }
 
-    private func validateCardData(_ cardData: GopayCardData) throws {
+    private func validateCardData(_ cardData: CardData) throws {
         func require(_ condition: Bool, _ message: String) throws {
             guard condition else { throw GopaySDKError(.validationInvalidInput, message: message) }
         }
@@ -647,18 +647,20 @@ public class GopaySDK: @unchecked Sendable {
         return networks
     }()
 
-    /// Indicates whether this device can present an Apple Pay sheet. Checks device capability only;
-    /// does NOT require a card to already be in the Wallet — the sheet will guide the user to add
-    /// one if needed. Safe to call synchronously (e.g. from a SwiftUI view body).
+    /// Indicates whether this device can present an Apple Pay sheet. Checks device capability only:
+    /// the cards saved in the Wallet are not checked, so the answer is `true` on a device that can
+    /// pay with Apple Pay and has no card yet, and the sheet then guides the user to add one.
+    /// Safe to call synchronously (e.g. from a SwiftUI view body), which the `async`
+    /// ``isWalletAvailable()`` is not; that is why this platform name stays without deprecation.
     public static func canUseApplePay() -> Bool {
         probeApplePay(caller: "canUseApplePay", onlyWhenChanged: true)
     }
 
     /// Whether the platform wallet can be used on this device, under the name both SDKs share: on
     /// iOS the same answer as ``canUseApplePay()``, which it returns, and on Android
-    /// `isWalletAvailable(activity, info)`, whose answer has to be asked of Play services, which
-    /// is why the shared name is `async` on both. A payment's own card networks are not checked
-    /// here; ``PaymentSession/chargeWithWallet(browserData:challengePreference:)`` throws
+    /// `isWalletAvailable()`, whose answer has to be asked of Play services, which is why the
+    /// shared name is `async` on both. The cards saved in the wallet are not checked, and neither
+    /// are a payment's own card networks; ``PaymentSession/chargeWithWallet(browserData:challengePreference:)`` throws
     /// ``GopaySDKError/Code/paymentMethodUnavailable`` when the payment allows none the sheet can
     /// offer.
     public static func isWalletAvailable() async -> Bool {
@@ -682,7 +684,7 @@ public class GopaySDK: @unchecked Sendable {
 
     // MARK: - Internals
 
-    /// Takes the card a ``GopayCardForm`` holds now (called automatically by the form), when
+    /// Takes the card a ``PaymentCardForm`` holds now (called automatically by the form), when
     /// `owner` is the form registered under `formId`. A form that another one under the same ID
     /// has replaced is dropped: its card would otherwise overwrite the registered form's, and stay
     /// in the SDK after it leaves, where the registered form's unregistration could not reach it.
@@ -726,7 +728,7 @@ public class GopaySDK: @unchecked Sendable {
 
     /// The `errorCallback` rule, in one place for the SDK and every session it made.
     ///
-    /// Every ``GopaySDKError`` a public call throws reaches ``GopaySDKConfig/errorCallback``
+    /// Every ``GopaySDKError`` a public call throws reaches ``GopayConfig/errorCallback``
     /// once, except ``GopaySDKError/Code/paymentTimeout`` and ``GopaySDKError/Code/paymentCancelled``,
     /// which are outcomes of a payment window rather than failures. Nothing else reaches it: not
     /// `CancellationError`, which is the host's own decision, and no error of another type. The
@@ -746,7 +748,7 @@ public class GopaySDK: @unchecked Sendable {
         guard let config = config else { return }
         telemetry.error(sdkError, paymentId: paymentId)
         config.errorCallback?(sdkError)
-        if config.enableDebugLogging {
+        if config.debugLoggingEnabled {
             print("[GopaySDK] Error: \(sdkError.errorDescription ?? sdkError.message)")
         }
     }
@@ -754,9 +756,9 @@ public class GopaySDK: @unchecked Sendable {
     /// Logs something the integrator should know about that is not an error, such as a response
     /// field the decoder had to substitute, a hand-off no app answered or a failure the SDK
     /// degraded to a cancellation. Printed with the same gate as ``report(_:paymentId:)``: only while
-    /// `GopaySDKConfig.enableDebugLogging` is on, and never through `errorCallback`.
+    /// `GopayConfig.debugLoggingEnabled` is on, and never through `errorCallback`.
     func logWarning(_ message: String) {
-        if config?.enableDebugLogging == true {
+        if config?.debugLoggingEnabled == true {
             warnSink(message)
         }
     }

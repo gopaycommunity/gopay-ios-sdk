@@ -5,7 +5,7 @@ import Foundation
 /// - Note: Each case represents a different backend environment.
 public enum GopayEnvironment: Equatable, Sendable {
     /// The development environment with a custom base URL.
-    case development(baseURL: String)
+    case development(baseUrl: String)
     /// The sandbox environment.
     case sandbox
     /// The production environment. Charges made through it are real.
@@ -19,7 +19,7 @@ public enum GopayEnvironment: Equatable, Sendable {
     /// The base URL for the selected environment. Public so host apps can display or route
     /// around it (e.g. a demo backend simulator deriving its own base URL from the live SDK
     /// config, so the two can never disagree about which gateway is active).
-    public var baseURL: String {
+    public var baseUrl: String {
         switch self {
         case .development(let url): return url
         case .sandbox: return Self.sandboxBaseURL
@@ -28,7 +28,7 @@ public enum GopayEnvironment: Equatable, Sendable {
     }
 
     /// The operational-data ingest that belongs to this gateway, or `nil` for a development
-    /// gateway, which has none. Not derived from ``baseURL``: a gateway URL pointed at a mock
+    /// gateway, which has none. Not derived from ``baseUrl``: a gateway URL pointed at a mock
     /// server must not move the telemetry with it.
     var telemetryURL: URL? {
         switch self {
@@ -42,7 +42,7 @@ public enum GopayEnvironment: Equatable, Sendable {
 /// Configuration for the Gopay SDK.
 ///
 /// Use this struct to configure the SDK before initialization.
-public struct GopaySDKConfig: Sendable {
+public struct GopayConfig: Sendable {
     /// The environment to use for the SDK.
     public let environment: GopayEnvironment
 
@@ -55,7 +55,7 @@ public struct GopaySDKConfig: Sendable {
     /// Merchant `shareable_key`. Required together with ``clientId`` for public-resource
     /// endpoints: encrypting a card, and every ``PaymentSession/charge(_:)`` whose ``BrowserData``
     /// does not already carry both `ip` and `acceptHeader`, since the charge then fetches them
-    /// from `GET /cards/browser-data` first. That includes ``PaymentSession/chargeWithApplePay(browserData:challengePreference:)``
+    /// from `GET /cards/browser-data` first. That includes ``PaymentSession/chargeWithWallet(browserData:challengePreference:)``
     /// with the device default. Without the key such a call throws
     /// ``GopaySDKError/Code/authShareableKeyMissing``. The key cannot authorize a charge by itself.
     public let shareableKey: String?
@@ -70,7 +70,7 @@ public struct GopaySDKConfig: Sendable {
     ///   always prints when the selected environment resolves to no base URL. That is a
     ///   misconfiguration nothing downstream can recover from, and staying silent about it would
     ///   surface later as a `CONFIG_006` on an unrelated-looking call.
-    public let enableDebugLogging: Bool
+    public let debugLoggingEnabled: Bool
 
     /// Called with every ``GopaySDKError`` a public call of the SDK or of one of its
     /// ``PaymentSession``s throws, once per error, for central logging and monitoring. Two codes
@@ -84,7 +84,7 @@ public struct GopaySDKConfig: Sendable {
 
     /// Preferred locale code (ISO 639-1, e.g. `"cs"`, `"de"`) for the payment card form labels.
     /// When `nil` (default) the SDK uses the device language, falling back to Czech. A
-    /// ``GopayCardForm`` `locale` parameter overrides this per form.
+    /// ``PaymentCardForm`` `locale` parameter overrides this per form.
     public let locale: String?
 
     /// Custom locale translations to register with the SDK, keyed by locale code. These are
@@ -97,7 +97,7 @@ public struct GopaySDKConfig: Sendable {
     ///   - environment: The environment to use.
     ///   - clientId: Merchant `client_id` for public-resource endpoints (default: `nil`).
     ///   - shareableKey: Merchant `shareable_key` for public-resource endpoints (default: `nil`).
-    ///   - enableDebugLogging: Enable debug logging (default: `false`).
+    ///   - debugLoggingEnabled: Enable debug logging (default: `false`).
     ///   - errorCallback: Callback for error handling (default: `nil`).
     ///   - locale: Preferred form locale code; `nil` follows the device language (default: `nil`).
     ///   - customLocales: Custom locale translations to register (default: empty).
@@ -105,7 +105,7 @@ public struct GopaySDKConfig: Sendable {
         environment: GopayEnvironment,
         clientId: String? = nil,
         shareableKey: String? = nil,
-        enableDebugLogging: Bool = false,
+        debugLoggingEnabled: Bool = false,
         errorCallback: (@Sendable (Error) -> Void)? = nil,
         locale: String? = nil,
         customLocales: [String: GopayLocaleStrings] = [:]
@@ -113,7 +113,7 @@ public struct GopaySDKConfig: Sendable {
         self.environment = environment
         self.clientId = clientId
         self.shareableKey = shareableKey
-        self.enableDebugLogging = enableDebugLogging
+        self.debugLoggingEnabled = debugLoggingEnabled
         self.errorCallback = errorCallback
         self.locale = locale
         self.customLocales = customLocales

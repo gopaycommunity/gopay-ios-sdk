@@ -87,8 +87,8 @@ enum GopaySDKErrors: Sendable {
     /// Card form data is invalid.
     static let invalidCardFormData = "Card form data is invalid. Please check all fields."
     
-    /// No card form data available. Please use GopayCardForm to enter card data.
-    static let noCardFormData = "No card form data available. Please use GopayCardForm to enter card data."
+    /// No card form data available. Please use PaymentCardForm to enter card data.
+    static let noCardFormData = "No card form data available. Please use PaymentCardForm to enter card data."
     
     /// Invalid URL for card token endpoint.
     static let invalidCardTokenURL = "Invalid URL for card token endpoint."

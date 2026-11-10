@@ -293,12 +293,14 @@ public actor PaymentSession {
     }
 
     /// `GET /payments/{payment_id}/apple-pay/app-info` — the BE-configured Apple Pay request for
-    /// this payment, used to build the native sheet.
+    /// this payment, used to build the native sheet. The platform name of ``getWalletInfo()``,
+    /// which does the same.
+    @available(*, deprecated, renamed: "getWalletInfo()")
     public func getApplePayInfo() async throws -> GopayApplePayAppInfoResponse {
         try await reported { try await fetchApplePayInfo() }
     }
 
-    /// ``getApplePayInfo()`` without the reporting, the first step of the Apple Pay charge.
+    /// ``getWalletInfo()`` without the reporting, the first step of the Apple Pay charge.
     func fetchApplePayInfo() async throws -> GopayApplePayAppInfoResponse {
         try ensureOpen()
         return try await api.getApplePayAppInfo(paymentId: paymentId)
@@ -310,7 +312,7 @@ public actor PaymentSession {
     /// registry. Idempotent. Every method of a closed session that would send a request throws
     /// ``GopaySDKError/Code/authPaymentSessionClosed`` before it sends anything, and a token that
     /// arrives after the close is not kept; the Android SDK does the same.
-    /// ``handle3dsVerification(redirectURL:returnURL:presenting:)`` alone still runs, since it
+    /// ``handle3dsVerification(redirectURL:returnUrl:presenting:)`` alone still runs, since it
     /// sends nothing on the session.
     public func close() async {
         await close(reportsLeave: true)

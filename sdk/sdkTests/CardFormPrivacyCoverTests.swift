@@ -97,7 +97,7 @@ struct CardFormPrivacyCoverHostedTests {
     /// process, and a form left on screen keeps hearing the notifications the next tests post.
     private func host(isEnabled: Bool, screen: FakeScreen) async throws -> (UIWindow, UITextField) {
         let window = try await hostedWindow(
-            GopayCardForm(locale: "en")
+            PaymentCardForm(locale: "en")
                 .environment(
                     \.gopayCardFormCaptureProtection,
                     CardFormCaptureProtection(isEnabled: isEnabled, screenIsCaptured: { screen.isCaptured })

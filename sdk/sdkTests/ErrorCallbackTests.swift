@@ -43,7 +43,7 @@ let oneRequestCalls: [OneRequestCall] = [
     OneRequestCall(name: "getStatus", pathSuffix: "payments/p1") { _ = try await $0.getStatus() },
     OneRequestCall(name: "getChargeState", pathSuffix: "/charge") { _ = try await $0.getChargeState() },
     OneRequestCall(name: "getQrPaymentInfo", pathSuffix: "qr-payment/info") { _ = try await $0.getQrPaymentInfo() },
-    OneRequestCall(name: "getApplePayInfo", pathSuffix: "apple-pay/app-info") { _ = try await $0.getApplePayInfo() },
+    OneRequestCall(name: "getWalletInfo", pathSuffix: "apple-pay/app-info") { _ = try await $0.getApplePayInfo() },
     OneRequestCall(name: "completeBrowserData", pathSuffix: "cards/browser-data") {
         _ = try await $0.completeBrowserData(BrowserData(language: "cs", timezone: -60, screenWidth: 1, screenHeight: 1, colorDepth: 24, userAgent: "ua"))
     },
@@ -55,8 +55,8 @@ extension SessionNetworkTests {
     /// An SDK whose callback collects into `reported`, over the shared stub.
     func reportingSDK(_ reported: ReportedErrors, clientId: String? = "c", shareableKey: String? = "k") -> GopaySDK {
         GopaySDK(
-            config: GopaySDKConfig(
-                environment: .development(baseURL: stubBaseURL),
+            config: GopayConfig(
+                environment: .development(baseUrl: stubBaseURL),
                 clientId: clientId, shareableKey: shareableKey,
                 errorCallback: { reported.append($0) }
             ),
@@ -299,7 +299,7 @@ extension SessionNetworkTests {
         defer { Task { await session.close() } }
 
         await #expect(throws: GopaySDKError.self) {
-            try await session.chargeWithApplePay(browserData: browserData)
+            try await session.chargeWithWallet(browserData: browserData)
         }
 
         #expect(reported.codes == [.networkClientError])
@@ -454,7 +454,7 @@ extension SessionNetworkTests {
         gateway()
         let reported = ReportedErrors()
         let sdk = reportingSDK(reported)
-        let card = GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+        let card = CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
 
         await #expect(throws: GopaySDKError.self) { try await sdk.encryptCardData(card) }
 
@@ -482,7 +482,7 @@ extension SessionNetworkTests {
         let sdk = reportingSDK(reported)
 
         await #expect(throws: GopaySDKError.self) {
-            try await sdk.encryptCardData(GopayCardData(cardPan: "1", expMonth: "12", expYear: "30", cvv: "123"))
+            try await sdk.encryptCardData(CardData(cardPan: "1", expMonth: "12", expYear: "30", cvv: "123"))
         }
         await #expect(throws: GopaySDKError.self) { try await sdk.submitCardForm(formId: "none") }
 
@@ -493,7 +493,7 @@ extension SessionNetworkTests {
         gateway()
         let reported = ReportedErrors()
         let sdk = reportingSDK(reported, shareableKey: nil)
-        let card = GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+        let card = CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
 
         await #expect(throws: GopaySDKError.self) { try await sdk.encryptCardData(card) }
 

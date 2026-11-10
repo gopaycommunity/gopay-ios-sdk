@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pure computation of which localized validation errors ``GopayCardForm`` should display.
+/// Pure computation of which localized validation errors ``PaymentCardForm`` should display.
 ///
 /// Extracted from the view so the display rules are unit-testable. The messages come from the
 /// resolved ``GopayLocaleStrings``; when and whether they appear is governed by ``Mode``.

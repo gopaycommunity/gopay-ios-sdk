@@ -49,8 +49,8 @@ struct TransportErrorMappingTests {
 extension SessionNetworkTests {
 
     private func sdk() -> GopaySDK {
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: stubBaseURL),
+        let config = GopayConfig(
+            environment: .development(baseUrl: stubBaseURL),
             clientId: "c",
             shareableKey: "k"
         )
@@ -167,7 +167,7 @@ extension SessionNetworkTests {
 
         do {
             _ = try await sdk().encryptCardData(
-                GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+                CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
             )
             Issue.record("expected failure")
         } catch let error as GopaySDKError {

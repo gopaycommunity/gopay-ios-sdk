@@ -2,7 +2,7 @@
 //  CardFormDataLifecycleTests.swift
 //  sdkTests
 //
-//  Verifies that card data held for GopayCardForm is removed from memory once it is no
+//  Verifies that card data held for PaymentCardForm is removed from memory once it is no
 //  longer needed (GPMOB-140; PCI DSS 4.0.1, req. 3.3.1).
 //
 
@@ -100,14 +100,14 @@ private let lifecycleStubBaseURL = "https://stub.test/"
 private func lifecycleStubbedClient() -> DefaultNetworkClient {
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubURLProtocol.self]
-    return DefaultNetworkClient(baseURL: lifecycleStubBaseURL, configuration: config)
+    return DefaultNetworkClient(baseUrl: lifecycleStubBaseURL, configuration: config)
 }
 
 extension SessionNetworkTests {
 
     private func lifecycleSDK() -> GopaySDK {
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: lifecycleStubBaseURL),
+        let config = GopayConfig(
+            environment: .development(baseUrl: lifecycleStubBaseURL),
             clientId: "c",
             shareableKey: "k"
         )
@@ -185,7 +185,7 @@ extension SessionNetworkTests {
 
     @Test func aSuccessfulSubmitRunsTheRegisteredWipe() async throws {
         // Only that the wipe is invoked; that it actually empties a live form's fields is covered
-        // by CardFormResetTests, which hosts a real GopayCardForm.
+        // by CardFormResetTests, which hosts a real PaymentCardForm.
         // Clearing the SDK's copy leaves the digits on screen, so the form registers a wipe and
         // the card does not outlive the JWE made from it (GPMOB-140; PCI DSS 4.0.1, req. 3.3.1).
         let jwkJSON = try TestEncryptionKey().publicJWKJSON
@@ -346,11 +346,11 @@ extension SessionNetworkTests {
     /// input goes nowhere, and again only after a form registers under the ID anew.
     @Test func aReplacedFormsSyncWarnsOncePerId() async {
         // The warning is printed only with debug logging on, like every other one.
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: lifecycleStubBaseURL),
+        let config = GopayConfig(
+            environment: .development(baseUrl: lifecycleStubBaseURL),
             clientId: "c",
             shareableKey: "k",
-            enableDebugLogging: true
+            debugLoggingEnabled: true
         )
         let sdk = GopaySDK(config: config, networkClient: lifecycleStubbedClient())
         let warnings = Locked<[String]>([])
@@ -439,7 +439,7 @@ extension SessionNetworkTests {
     @Test func submitCardFormTellsTheFormBeforeValidating() async {
         StubURLProtocol.reset { _ in (500, Data()) }
         let sdk = GopaySDK(
-            config: GopaySDKConfig(environment: .development(baseURL: stubBaseURL), clientId: "c", shareableKey: "k"),
+            config: GopayConfig(environment: .development(baseUrl: stubBaseURL), clientId: "c", shareableKey: "k"),
             networkClient: stubbedClient()
         )
         let events = Locked<[String]>([])

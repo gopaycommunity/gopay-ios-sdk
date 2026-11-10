@@ -53,7 +53,7 @@ extension CardFormResetTests {
     /// subclass that records its own calls would need the form to build its fields through a
     /// factory the tests can replace, which the SDK has no other use for.
     @Test func aTypedOutCardNumberHandsTheKeyboardOnInOneStep() async throws {
-        let (window, fields) = try await hostFocusForm(GopayCardForm(locale: "en"))
+        let (window, fields) = try await hostFocusForm(PaymentCardForm(locale: "en"))
         defer { window.isHidden = true }
         let (cardNumber, expiration) = (fields[0], fields[1])
         try await tap(cardNumber)
@@ -79,7 +79,7 @@ extension CardFormResetTests {
     /// A mistyped number, 16 digits that fail the Luhn check, keeps the focus where the user can
     /// fix it; an expiration typed out moves on to the CVV.
     @Test func aMistypedCardNumberKeepsTheFocusAndAnExpirationMovesOn() async throws {
-        let (window, fields) = try await hostFocusForm(GopayCardForm(locale: "en"))
+        let (window, fields) = try await hostFocusForm(PaymentCardForm(locale: "en"))
         defer { window.isHidden = true }
         let (cardNumber, expiration, cvv) = (fields[0], fields[1], fields[2])
         try await tap(cardNumber)
@@ -105,7 +105,7 @@ extension CardFormResetTests {
     @Test func aCaptureNeitherAdvancesTheFocusNorCountsAsLeavingAField() async throws {
         let screen = CapturedScreen()
         let (window, fields) = try await hostFocusForm(
-            GopayCardForm(locale: "en", validation: .live)
+            PaymentCardForm(locale: "en", validation: .live)
                 .environment(
                     \.gopayCardFormCaptureProtection,
                     CardFormCaptureProtection(isEnabled: true, screenIsCaptured: { screen.isCaptured })
@@ -153,7 +153,7 @@ extension CardFormResetTests {
     /// A field handing the focus to another one that cannot take it does not keep the keyboard:
     /// one turn later it lets go itself, as it would have without a hand-over.
     @Test func aHandOverNobodyTakesEndsTheInput() async throws {
-        let (window, fields) = try await hostFocusForm(GopayCardForm(locale: "en"))
+        let (window, fields) = try await hostFocusForm(PaymentCardForm(locale: "en"))
         defer { window.isHidden = true }
         let (cardNumber, expiration) = (fields[0], fields[1])
         try await tap(cardNumber)

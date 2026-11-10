@@ -189,8 +189,8 @@ struct TelemetryTests {
     @Test func goesToTheIngestOfTheEnvironmentAndNowhereForADevelopmentGateway() {
         #expect(GopayEnvironment.sandbox.telemetryURL?.absoluteString == "https://lx.sandbox.gopay.com/events")
         #expect(GopayEnvironment.production.telemetryURL?.absoluteString == "https://lx.gopay.com/events")
-        #expect(GopayEnvironment.development(baseURL: "https://mock.test/").telemetryURL == nil)
-        #expect(Telemetry(config: GopaySDKConfig(environment: .development(baseURL: "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"))).endpoint == nil)
+        #expect(GopayEnvironment.development(baseUrl: "https://mock.test/").telemetryURL == nil)
+        #expect(Telemetry(config: GopayConfig(environment: .development(baseUrl: "https://gw.sandbox.gopay.com/gp-gw/api/4.0/"))).endpoint == nil)
         #expect(Telemetry.disabled.endpoint == nil)
     }
 
@@ -203,11 +203,11 @@ struct TelemetryTests {
                 // A callback that listens is as much configuration as one that is absent.
             }
         }
-        let config = GopaySDKConfig(
+        let config = GopayConfig(
             environment: .production,
             clientId: quiet ? nil : "c",
             shareableKey: quiet ? nil : "k",
-            enableDebugLogging: !quiet,
+            debugLoggingEnabled: !quiet,
             errorCallback: callback,
             locale: quiet ? nil : "en"
         )
@@ -272,7 +272,7 @@ struct TelemetryTests {
     }
 
     @Test func sharesTheProcessCountersOutsideTests() {
-        let config = GopaySDKConfig(environment: .sandbox, clientId: "c")
+        let config = GopayConfig(environment: .sandbox, clientId: "c")
         #expect(Telemetry(config: config).counters === Telemetry.ProcessCounters.shared)
         #expect(Telemetry(config: config).counters === Telemetry(config: config).counters)
     }
@@ -791,7 +791,7 @@ extension SessionNetworkTests {
 
     private func sdk(telemetry: Telemetry) -> GopaySDK {
         GopaySDK(
-            config: GopaySDKConfig(environment: .development(baseURL: stubBaseURL), clientId: "client", shareableKey: "shareable"),
+            config: GopayConfig(environment: .development(baseUrl: stubBaseURL), clientId: "client", shareableKey: "shareable"),
             networkClient: stubbedClient(),
             telemetry: telemetry
         ).waitingForInitSession()
@@ -971,7 +971,7 @@ extension SessionNetworkTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
         let client = DefaultNetworkClient(
-            baseURL: "https://gw.sandbox.gopay.com/gp-gw/api/4.0/", configuration: configuration
+            baseUrl: "https://gw.sandbox.gopay.com/gp-gw/api/4.0/", configuration: configuration
         )
         let probe = TelemetryProbe()
         var request = URLRequest(url: try #require(client.makeURL(path: "payments/3273103424/charge")))
@@ -1205,14 +1205,14 @@ extension GopayLocalesTests {
         let sdk = GopaySDK()
         sdk.makeTelemetry = { _ in probes[made.increment() - 1].telemetry }
         // A host that does not resolve: every request ends without a response, and still reports.
-        let config = GopaySDKConfig(
-            environment: .development(baseURL: "https://telemetry-test.invalid/"), clientId: "c", shareableKey: "k"
+        let config = GopayConfig(
+            environment: .development(baseUrl: "https://telemetry-test.invalid/"), clientId: "c", shareableKey: "k"
         )
 
         sdk.initialize(with: config)
         _ = try? await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         _ = try? await sdk.encryptCardData(
-            GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
+            CardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
         )
         sdk.initialize(with: config)
 
