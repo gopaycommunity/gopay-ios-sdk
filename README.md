@@ -412,7 +412,7 @@ empty one the iOS Simulator returns, is `PAYMENT_003`. A charge that fails keeps
 
 `isWalletAvailable()` is `async` because its Android counterpart has to ask Play services; on iOS
 it answers what `canUseApplePay()` answers, a synchronous check you can keep using from a view
-body. Both say whether the device can pay with Apple Pay; the cards saved in the Wallet are not
+body. It never throws on either platform: where the SDK cannot tell, the answer is `false`. Both say whether the device can pay with Apple Pay; the cards saved in the Wallet are not
 checked, and the sheet guides a user without one to add it.
 
 #### Setting up Apple Pay
@@ -1351,6 +1351,22 @@ PaymentCardForm(validation: .onSubmit, submitAttempted: $attempted, isValid: $is
 
 A host that keeps `isValid` as `Bool?` still builds, with a deprecation warning: the form reads
 `nil` as `false`.
+
+One change the compiler does not report: `submitCardForm` on an empty card form throws
+`VALIDATION_008` where 2.x threw `VALIDATION_007`. Code that catches only `VALIDATION_007`
+around `submitCardForm` still builds, without a warning, and an empty form then falls through to
+whatever handles the other errors. Catch both codes where the form is submitted:
+
+```swift
+do {
+    let jwe = try await GopaySDK.shared.submitCardForm()
+    // charge with the JWE
+} catch let error as GopaySDKError where error.code == .validationCardFormEmpty {
+    // VALIDATION_008: no card was entered
+} catch let error as GopaySDKError where error.code == .validationInvalidInput {
+    // VALIDATION_007: the card is not valid, the form shows where
+}
+```
 
 Nothing changes for an app that does not set the new `requestTimeout`: the default is the 60
 seconds the SDK waited until now. A value the client cannot use, zero, negative or out of range,

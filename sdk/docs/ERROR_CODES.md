@@ -17,7 +17,8 @@ Every code the SDK throws also says whether **a charge may exist** on the gatewa
 **safe to retry**. A charge is created by `charge` and the `chargeWith*` calls; `awaitChargeState`,
 `handle3dsVerification` and the reads come after one. Where the answer is "read the charge state first", ask your
 backend or `getChargeState()` before charging again, because the gateway may have created the charge even though the
-answer never reached the device. 3.0 removed the codes the SDK never threw.
+answer never reached the device. 3.0 removed the codes the SDK never threw; `CONFIG_004` is listed
+because the Android SDK throws it, so that the number means the same on both platforms.
 
 ## The `errorCallback` rule
 
@@ -109,7 +110,7 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
   - Start a new session for the payment
 - **A charge may exist**: Not from this call: nothing goes out on a closed session. A charge made before `close()` may exist; read it through your backend or a new session's `getChargeState()`
 - **Safe to retry**: Yes, on a new session, after reading the charge state
-- **Note**: `handle3dsVerification` alone still runs on a closed session, since it sends nothing on the session. The same on Android
+- **Note**: `handle3dsVerification` alone still runs on a closed session, since it sends nothing on the session. The Android SDK throws it for the same causes and one more: a verification that waits for a screen to open its challenge from, which `close()` ends there. The iOS SDK does not wait for a screen
 
 ## Network Errors (NETWORK_XXX)
 
@@ -192,7 +193,13 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Initialize once on app start, before any other SDK call
 - **A charge may exist**: No
 - **Safe to retry**: Yes, after `initialize`
-- **Note**: the one code `errorCallback` cannot carry, since the callback arrives with the config. The Android `getInstance()` throws the same code
+- **Note**: the one code `errorCallback` cannot carry, since the callback arrives with the config. The Android `getInstance()` throws the same code. `GopaySDK.isWalletAvailable()` does not throw it on either platform: before `initialize` it answers `false`
+
+### CONFIG_004: Missing Context
+- **Description**: Android only. A call needed the application Context, and the SDK was not given one
+- **A charge may exist**: No: thrown before anything is opened or sent
+- **Safe to retry**: Yes, after `initialize(context, config)` or with an `activity`
+- **Note**: the iOS SDK needs no Context and never throws this code. On Android it is thrown from 3.0 on, before anything is opened or sent, when the SDK was initialized through the deprecated `GopaySDK.initialize(config)` and a call names no Activity
 
 ### CONFIG_006: Invalid Base URL
 - **Case**: `invalidBaseURL`
@@ -219,7 +226,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Test Apple Pay on a device with an Apple Pay sandbox tester account, not in the Simulator
 - **A charge may exist**: No: the wallet failed before the charge was sent
 - **Safe to retry**: Yes: the user can try the wallet again or pay another way
-- **Note**: a charge that fails after the token was read keeps the code of its own failure. On Android the same code covers a Google Pay error, empty payment data and a Google Pay token the SDK cannot parse, and also a Google Pay set up wrongly for the app, which on iOS is `PAYMENT_004` (see there)
+- **Note**: a charge that fails after the token was read keeps the code of its own failure. On Android the same code covers a Google Pay error, empty payment data and a Google Pay token the SDK cannot parse, and also a Google Pay set up wrongly for the app, which on iOS is `PAYMENT_004` (see there). On Android also when there is no screen in the foreground to open the Google Pay sheet from
 
 ### PAYMENT_004: Payment Method Unavailable
 - **Case**: `paymentMethodUnavailable`
@@ -360,7 +367,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
   - Validate before calling, and drive the submit button from `PaymentCardForm`'s `isValid` binding
 - **A charge may exist**: No: nothing is sent
 - **Safe to retry**: Yes, with valid input
-- **Note**: since 3.0 an empty card form has its own code, `VALIDATION_008`
+- **Note**: since 3.0 an empty card form has its own code, `VALIDATION_008`. The Android SDK no longer adds a cause of its own: there the `activity` is optional since 3.0, as `presenting` is here, so a card charge helper without `browserData` or `awaitChargeState()` in `ThreeDSMode.AUTOMATIC` called without one uses the screen in front, and without one and without the Context it is `CONFIG_004`
 
 ### VALIDATION_008: Card Form Empty
 - **Case**: `validationCardFormEmpty`

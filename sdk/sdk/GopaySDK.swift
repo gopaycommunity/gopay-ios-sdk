@@ -660,7 +660,9 @@ public class GopaySDK: @unchecked Sendable {
     /// Whether the platform wallet can be used on this device, under the name both SDKs share: on
     /// iOS the same answer as ``canUseApplePay()``, which it returns, and on Android
     /// `isWalletAvailable()`, whose answer has to be asked of Play services, which is why the
-    /// shared name is `async` on both. The cards saved in the wallet are not checked, and neither
+    /// shared name is `async` on both. It never throws on either platform: where the SDK cannot
+    /// tell, as on Android before `initialize` or without a Context, the answer is `false`; here
+    /// it needs neither. The cards saved in the wallet are not checked, and neither
     /// are a payment's own card networks; ``PaymentSession/chargeWithWallet(browserData:challengePreference:)`` throws
     /// ``GopaySDKError/Code/paymentMethodUnavailable`` when the payment allows none the sheet can
     /// offer.
