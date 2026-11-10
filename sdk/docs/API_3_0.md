@@ -12,7 +12,9 @@ is listed under "Breaking" at the end.
 
 ## Renamed
 
-The brand stays only in the entry point and in names that would be too general without it.
+The brand stays only in the entry point and in names that would be too general without it, and
+the QR models share the `Qr` of `QrPaymentDetails`, so a type of the SDK is not mistaken for one
+of the app.
 
 | | iOS 2.7 | Android 2.7 | 3.0 on both |
 |---|---|---|---|
@@ -26,14 +28,16 @@ The brand stays only in the entry point and in names that would be too general w
 | Card form | `GopayCardForm` | `PaymentCardForm` | `PaymentCardForm` |
 | Card form theme | `GopayCardFormTheme` | `PaymentCardFormTheme` | `PaymentCardFormTheme` |
 | Validation mode | `GopayCardFormValidationDisplay` | `CardFormValidationDisplay` | `PaymentCardFormValidationDisplay` |
-| Card data | `GopayCardData` | `CardData` | `CardData` |
+| Card data | `GopayCardData` | `CardData` | `GopayCardData` |
 | Return address | `returnURL`, `chargeReturnURL` | `returnUrl` | `returnUrl`, `chargeReturnUrl` |
+| 3DS redirect address | `redirectURL` | `redirectUrl` | `redirectUrl` |
 | Result of `getStatus()` | `PaymentDetails` | `PaymentCreateResponse` | `PaymentDetails` |
-| QR recipient | `QrRecipient` | `BankTransferRecipient` | `BankTransferRecipient` |
-| QR recipient account | `QrRecipientBankAccount` | `RecipientBankAccount` | `RecipientBankAccount` |
-| QR local account | `QrLocalBankAccount` | `BankAccountLocalDetails` | `BankAccountLocalDetails` |
-| QR international account | `QrInternationalBankAccount` | `BankAccountInternationalDetails` | `BankAccountInternationalDetails` |
-| QR recipient address | `QrRecipientAddress` | `RecipientAddress` | `RecipientAddress` |
+| Gateway address of a payment | `gatewayUrl` | `gwUrl` | `gatewayUrl` |
+| QR recipient | `QrRecipient` | `BankTransferRecipient` | `QrRecipient` |
+| QR recipient account | `QrRecipientBankAccount` | `RecipientBankAccount` | `QrRecipientBankAccount` |
+| QR local account | `QrLocalBankAccount` | `BankAccountLocalDetails` | `QrLocalBankAccount` |
+| QR international account | `QrInternationalBankAccount` | `BankAccountInternationalDetails` | `QrInternationalBankAccount` |
+| QR recipient address | `QrRecipientAddress` | `RecipientAddress` | `QrRecipientAddress` |
 | Hungarian QR code | `mnbQR` | `mnbQr` | `mnbQr` |
 | `GopayLocales.register` | `(strings, for: code)` | `(code, strings)` | the code first, then the strings |
 
@@ -55,14 +59,15 @@ iOS `GopaySDK.canUseApplePay()` stays as it is: a synchronous check a view can r
 
 ## One shape on both platforms
 
-- `isWalletAvailable`: a static call that takes no Activity, Context or environment. Android
-  keeps its optional `info`. The Android forms of 2.x, the instance method with an Activity and
+- `isWalletAvailable`: a static call that takes no Activity, Context or environment, and never
+  throws: where the SDK cannot tell, before `initialize` or without a Context, the answer is
+  `false`. Android keeps its optional `info`. The Android forms of 2.x, the instance method with an Activity and
   the static one with a Context and the environment, are deprecated.
 - Which fields are optional follows the API:
   - `PaymentDetails`: `orderNumber`, `gatewayUrl` and `customer` are always present. iOS gains
     `customer` and stops treating the other two as optional.
   - `QrPaymentDetails`: `recipient` and `qrCode` are always present, and so are the four fields
-    of `BankAccountLocalDetails`. iOS stops treating them as optional, Android `recipient`.
+    of `QrLocalBankAccount`. iOS stops treating them as optional, Android `recipient`.
   - `PaymentInstrumentData.details` is optional. iOS stops treating it as always present.
 - An empty card form has its own error code, `VALIDATION_008`. `VALIDATION_007` stays for a
   form whose data is not valid. In 2.x both threw `VALIDATION_007` and differed only in the
@@ -71,14 +76,23 @@ iOS `GopaySDK.canUseApplePay()` stays as it is: a synchronous check a view can r
   Android takes nothing. Both get the same shape, and the host can raise the flag on both.
 - iOS `PaymentCardForm.isValid` is a `Binding<Bool>`, no longer `Binding<Bool?>`.
 - The request timeout, which only Android had as `requestTimeoutMs`, is in the iOS config too,
-  as `requestTimeout` in seconds.
+  as `requestTimeout` in seconds. Each platform keeps the default it had, 60 seconds on iOS and
+  30 on Android. A value the client cannot use, zero, negative or out of range, falls back to
+  that default on both.
 
 ## Added
 
 - Android takes the Context in `GopaySDK.initialize(context, config)` and follows the current
-  Activity itself. `chargeWithWallet`, `chargeWithCardToken`, `chargeWithEncryptedCard`,
-  `handle3dsVerification` and `BrowserData.deviceDefault` get a form without an Activity; the
-  forms with one, and `initialize(config)`, are deprecated.
+  Activity itself. In `chargeWithWallet`, `chargeWithCardToken`, `chargeWithEncryptedCard`,
+  `handle3dsVerification`, `BrowserData.deviceDefault` and `AwaitChargeOptions` the Activity
+  becomes optional, as `presenting` is on iOS: a call may still name the screen to open from, and
+  the SDK uses the one in front when it does not. `initialize(config)` is deprecated; a call
+  that needs the Context it did not get fails with `CONFIG_004`.
+- A 3DS challenge waits for a screen to open from while the charge is still read, so a rotation
+  or a return from the background needs nothing from the app. Google Pay does not wait: without
+  a screen in front it fails with `PAYMENT_003` at once. A challenge screen that does not appear
+  within 30 seconds of being started ends the call with `PAYMENT_010`, a Google Pay sheet that
+  does not appear with `PAYMENT_003`, since nothing was charged.
 - `PaymentSessionApi`: a protocol on iOS and an interface on Android that `PaymentSession`
   implements, so an app can put its own implementation in its tests.
 - Public initializers for the response models on both platforms, `PaymentOutcome` included, so
@@ -112,7 +126,7 @@ Android:
 - `NetworkConfig` and `GopaySDK.sslSocketFactory` / `trustManager` / `certificatePinner`.
 - `JsonUtils`, `Base64Utils`, `JwtUtils`, `UrlUtils`, the validators and visual transformations of
   the card form, `HelperText`, `formatExpirationDate`, and the deprecated `GopayErrorCodes`
-  constants the SDK never throws.
+  constants the SDK never throws, except `CONFIG_004`, which it throws from 3.0 on.
 - `PaymentCreateRequest`, `PaymentCallback`, `AdditionalParam`, `CardFormUrl` and
   `InputFieldConfig.hasError`, which the SDK neither reads nor sends.
 - `ApplePayHeader` and `PaymentCardInput.applePay`.
@@ -121,7 +135,8 @@ Android:
 
 ## Fixed on the way
 
-- Android checks `requestTimeoutMs` and rejects a value it cannot use.
+- Android no longer passes on a `requestTimeoutMs` it cannot use, and a timeout under two
+  seconds no longer switches the connection timeout off.
 - Android rejects an API address that carries credentials, as iOS does.
 - Android telemetry knows the app's origin from `initialize` on.
 - The wallet availability docs say that saved cards are not checked.
@@ -129,8 +144,9 @@ Android:
 
 ## Unchanged
 
-The payment flow, every error code but the new `VALIDATION_008`, the manual wallet path
-(Android `GooglePayHelper`, the iOS `applePay` card input), `GopayLocales`, the units of
+The payment flow, every error code but the new `VALIDATION_008`, Android's `CONFIG_004` and
+the removed iOS `CONFIG_003`, the manual wallet path
+(Android `GooglePayHelper`, the iOS `applePay` card input), `GopayLocales` apart from the order of `register`, the units of
 `AwaitChargeOptions` (seconds on iOS, milliseconds in names ending `Ms` on Android), the
 redirect of `handle3dsVerification` (`URL` on iOS, `String` on Android), and the entry point
 (`GopaySDK.shared` on iOS, `GopaySDK.getInstance()` on Android).
@@ -142,7 +158,13 @@ theme keys, comes with the React Native SDK.
 
 What an integration written against 2.7 has to change before it builds:
 
-- Android `Environment` is `GopayEnvironment`; an alias cannot cover `Environment.SANDBOX`.
+- Android `Environment` is `GopayEnvironment`; an alias cannot cover `Environment.SANDBOX`,
+  `Environment.PRODUCTION` or `Environment.DEVELOPMENT(url)`.
+- Three more Android shapes an alias cannot cover: `GopayConfig.copy(debug = …)`, `debug` named
+  after more than one positional argument of the `GopayConfig` constructor, and
+  `DEVELOPMENT(customUrl = …)` with the argument named.
+- iOS `case .development(baseURL: let url)` in a `switch`; `case .development(let url)` keeps
+  working.
 - The fields under "One shape on both platforms" that changed between optional and always
   present.
 - iOS `isValid` as `Binding<Bool>`, and the shape of the "on submit" validation mode.
