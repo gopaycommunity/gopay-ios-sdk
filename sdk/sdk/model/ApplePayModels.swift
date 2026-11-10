@@ -10,6 +10,13 @@ public struct GopayApplePayAppInfoResponse: Codable, Sendable {
     public let applepayVersion: Int?
     public let merchantIdentifier: String
     public let applePayPaymentRequest: GopayApplePayRequest
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(applepayVersion: Int? = nil, merchantIdentifier: String, applePayPaymentRequest: GopayApplePayRequest) {
+        self.applepayVersion = applepayVersion
+        self.merchantIdentifier = merchantIdentifier
+        self.applePayPaymentRequest = applePayPaymentRequest
+    }
 }
 
 /// The `applePayPaymentRequest` sub-object mirroring the `PKPaymentRequest` shape the BE has
@@ -20,6 +27,21 @@ public struct GopayApplePayRequest: Codable, Sendable {
     public let countryCode: String
     public let currencyCode: String
     public let paymentSummaryItems: [GopayApplePayPaymentSummaryItem]
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        merchantCapabilities: [String],
+        supportedNetworks: [String],
+        countryCode: String,
+        currencyCode: String,
+        paymentSummaryItems: [GopayApplePayPaymentSummaryItem]
+    ) {
+        self.merchantCapabilities = merchantCapabilities
+        self.supportedNetworks = supportedNetworks
+        self.countryCode = countryCode
+        self.currencyCode = currencyCode
+        self.paymentSummaryItems = paymentSummaryItems
+    }
 }
 
 /// A single line on the Apple Pay sheet. `type` is either `"final"` or `"pending"`.
@@ -27,4 +49,11 @@ public struct GopayApplePayPaymentSummaryItem: Codable, Sendable {
     public let label: String
     public let amount: String
     public let type: String?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(label: String, amount: String, type: String? = nil) {
+        self.label = label
+        self.amount = amount
+        self.type = type
+    }
 }

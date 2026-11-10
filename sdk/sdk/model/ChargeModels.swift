@@ -426,6 +426,23 @@ public struct InstrumentDetails: Codable, Sendable {
     public let scheme: CardScheme?
     public let fingerprint: String?
 
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        inputType: String,
+        maskedPan: String? = nil,
+        expirationMonth: String? = nil,
+        expirationYear: String? = nil,
+        scheme: CardScheme? = nil,
+        fingerprint: String? = nil
+    ) {
+        self.inputType = inputType
+        self.maskedPan = maskedPan
+        self.expirationMonth = expirationMonth
+        self.expirationYear = expirationYear
+        self.scheme = scheme
+        self.fingerprint = fingerprint
+    }
+
     enum CodingKeys: String, CodingKey {
         case inputType = "input_type"
         case maskedPan = "masked_pan"
@@ -442,6 +459,15 @@ public struct PaymentInstrumentData: Codable, Sendable {
     public let paymentInstrument: String
     public let details: InstrumentDetails?
 
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        paymentInstrument: String = "PAYMENT_CARD",
+        details: InstrumentDetails? = nil
+    ) {
+        self.paymentInstrument = paymentInstrument
+        self.details = details
+    }
+
     enum CodingKeys: String, CodingKey {
         case paymentInstrument = "payment_instrument"
         case details
@@ -454,6 +480,17 @@ public struct ChargeAction: Codable, Sendable {
     public let actionType: ChargeActionType
     public let state: Emv3dsState?
     public let redirectUrl: String?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        actionType: ChargeActionType,
+        state: Emv3dsState? = nil,
+        redirectUrl: String? = nil
+    ) {
+        self.actionType = actionType
+        self.state = state
+        self.redirectUrl = redirectUrl
+    }
 
     enum CodingKeys: String, CodingKey {
         case actionType = "action_type"
@@ -476,6 +513,21 @@ public struct ChargePaymentResponse: Codable, Sendable {
     public let paymentInstrument: PaymentInstrumentData?
     public let action: ChargeAction?
     public let failReason: String?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        id: String,
+        state: ChargeState,
+        paymentInstrument: PaymentInstrumentData? = nil,
+        action: ChargeAction? = nil,
+        failReason: String? = nil
+    ) {
+        self.id = id
+        self.state = state
+        self.paymentInstrument = paymentInstrument
+        self.action = action
+        self.failReason = failReason
+    }
 
     enum CodingKeys: String, CodingKey {
         case id

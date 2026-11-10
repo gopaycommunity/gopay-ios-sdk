@@ -37,8 +37,18 @@ public struct PaymentOutcome: Sendable {
     /// `state`; read ``PaymentSession/getChargeState()`` for its `failReason`.
     public var charge: ChargePaymentResponse? { payment.charge }
 
+    /// The outcome the SDK reads from `payment`, by the rules of ``outcome(of:)``.
     init(payment: PaymentDetails) {
         self.outcome = Self.outcome(of: payment)
+        self.payment = payment
+    }
+
+    /// Creates an outcome, for a test that stands in for ``PaymentSessionApi/getPaymentOutcome()``.
+    /// ``charge`` is not an argument: it stays the charge in `payment`, so the two cannot
+    /// disagree. The SDK itself always derives `outcome` from the payment; here it is yours to
+    /// state, so a test can hand its code any of the four.
+    public init(outcome: Outcome, payment: PaymentDetails) {
+        self.outcome = outcome
         self.payment = payment
     }
 

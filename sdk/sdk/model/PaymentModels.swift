@@ -49,6 +49,29 @@ public struct PaymentCustomer: Codable, Sendable {
     public let countryCode: String?
     public let customerId: String?
 
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        email: String,
+        firstName: String? = nil,
+        lastName: String? = nil,
+        phoneNumber: String? = nil,
+        city: String? = nil,
+        street: String? = nil,
+        postalCode: String? = nil,
+        countryCode: String? = nil,
+        customerId: String? = nil
+    ) {
+        self.email = email
+        self.firstName = firstName
+        self.lastName = lastName
+        self.phoneNumber = phoneNumber
+        self.city = city
+        self.street = street
+        self.postalCode = postalCode
+        self.countryCode = countryCode
+        self.customerId = customerId
+    }
+
     enum CodingKeys: String, CodingKey {
         case email
         case firstName = "first_name"
@@ -81,6 +104,29 @@ public struct PaymentDetails: Codable, Sendable {
     public let customer: PaymentCustomer
     public let paymentSecret: String?
     public let charge: ChargePaymentResponse?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        id: String,
+        orderNumber: String,
+        state: PaymentState,
+        amount: Int,
+        currency: Currency,
+        gatewayUrl: String,
+        customer: PaymentCustomer,
+        paymentSecret: String? = nil,
+        charge: ChargePaymentResponse? = nil
+    ) {
+        self.id = id
+        self.orderNumber = orderNumber
+        self.state = state
+        self.amount = amount
+        self.currency = currency
+        self.gatewayUrl = gatewayUrl
+        self.customer = customer
+        self.paymentSecret = paymentSecret
+        self.charge = charge
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -138,6 +184,19 @@ public struct BankAccountLocalDetails: Codable, Sendable {
     public let bankCode: String
     public let variableSymbol: String
 
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        prefix: String,
+        accountNumber: String,
+        bankCode: String,
+        variableSymbol: String
+    ) {
+        self.prefix = prefix
+        self.accountNumber = accountNumber
+        self.bankCode = bankCode
+        self.variableSymbol = variableSymbol
+    }
+
     enum CodingKeys: String, CodingKey {
         case prefix
         case accountNumber = "account_number"
@@ -151,12 +210,25 @@ public struct BankAccountInternationalDetails: Codable, Sendable {
     public let bic: String?
     public let iban: String?
     public let reference: String?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(bic: String? = nil, iban: String? = nil, reference: String? = nil) {
+        self.bic = bic
+        self.iban = iban
+        self.reference = reference
+    }
 }
 
 /// Bank account details for a QR payment recipient.
 public struct RecipientBankAccount: Codable, Sendable {
     public let local: BankAccountLocalDetails?
     public let international: BankAccountInternationalDetails?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(local: BankAccountLocalDetails? = nil, international: BankAccountInternationalDetails? = nil) {
+        self.local = local
+        self.international = international
+    }
 }
 
 /// Postal address details for a QR payment recipient.
@@ -165,6 +237,19 @@ public struct RecipientAddress: Codable, Sendable {
     public let city: String?
     public let zipCode: String?
     public let country: String?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        street: String? = nil,
+        city: String? = nil,
+        zipCode: String? = nil,
+        country: String? = nil
+    ) {
+        self.street = street
+        self.city = city
+        self.zipCode = zipCode
+        self.country = country
+    }
 
     enum CodingKeys: String, CodingKey {
         case street
@@ -180,6 +265,17 @@ public struct BankTransferRecipient: Codable, Sendable {
     public let bankAccount: RecipientBankAccount?
     public let address: RecipientAddress?
 
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        name: String? = nil,
+        bankAccount: RecipientBankAccount? = nil,
+        address: RecipientAddress? = nil
+    ) {
+        self.name = name
+        self.bankAccount = bankAccount
+        self.address = address
+    }
+
     enum CodingKeys: String, CodingKey {
         case name
         case bankAccount = "bank_account"
@@ -193,6 +289,19 @@ public struct QrCodeList: Codable, Sendable {
     public let paybysquare: String?
     public let sepa: String?
     public let mnbQr: String?
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        spayd: String? = nil,
+        paybysquare: String? = nil,
+        sepa: String? = nil,
+        mnbQr: String? = nil
+    ) {
+        self.spayd = spayd
+        self.paybysquare = paybysquare
+        self.sepa = sepa
+        self.mnbQr = mnbQr
+    }
 
     enum CodingKeys: String, CodingKey {
         case spayd
@@ -209,6 +318,19 @@ public struct QrPaymentDetails: Codable, Sendable {
     public let currency: Currency
     public let recipient: BankTransferRecipient
     public let qrCode: QrCodeList
+
+    /// Creates the value, e.g. for a test that stands in for the gateway's answer.
+    public init(
+        amount: Int,
+        currency: Currency,
+        recipient: BankTransferRecipient,
+        qrCode: QrCodeList
+    ) {
+        self.amount = amount
+        self.currency = currency
+        self.recipient = recipient
+        self.qrCode = qrCode
+    }
 
     enum CodingKeys: String, CodingKey {
         case amount
