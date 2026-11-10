@@ -202,7 +202,8 @@ struct CheckoutView: View {
                 GopayCardForm(
                     theme: CheckoutTheme.cardForm,
                     locale: model.locale,
-                    validation: .onSubmit(attempted: $model.didAttemptSubmit),
+                    validation: .onSubmit,
+                    submitAttempted: $model.didAttemptSubmit,
                     isValid: $model.isCardFormValid
                 )
                 .id(model.locale ?? "system")

@@ -320,7 +320,7 @@ final class HeldTokenClient: AsyncHTTPClient, @unchecked Sendable {
             }
             return (tokenResponse().1, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
         }
-        let body = json(["id": "p1", "state": "CREATED", "amount": 1, "currency": "CZK"])
+        let body = json(["id": "p1", "state": "CREATED", "amount": 1, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]])
         return (body, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
     }
 }
@@ -882,7 +882,7 @@ struct SessionNetworkTests {
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") { return tokenResponse() }
             if path.contains("/payments/") {
-                return (200, json(["id": "p1", "state": "CREATED", "amount": 1000, "currency": "CZK"]))
+                return (200, json(["id": "p1", "state": "CREATED", "amount": 1000, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
             }
             return (404, Data())
         }
@@ -914,7 +914,7 @@ struct SessionNetworkTests {
                 statusCalls += 1
                 return statusCalls == 1
                     ? (401, Data("{}".utf8))
-                    : (200, json(["id": "p1", "state": "PAID", "amount": 1000, "currency": "CZK"]))
+                    : (200, json(["id": "p1", "state": "PAID", "amount": 1000, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
             }
             return (404, Data())
         }
@@ -947,7 +947,7 @@ struct SessionNetworkTests {
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") { return tokenResponse() }
             if path.contains("/payments/") {
-                return (200, json(["id": "p1", "state": "CREATED", "amount": 1, "currency": "CZK"]))
+                return (200, json(["id": "p1", "state": "CREATED", "amount": 1, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
             }
             return (404, Data())
         }

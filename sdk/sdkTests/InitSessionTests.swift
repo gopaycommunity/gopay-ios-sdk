@@ -58,7 +58,7 @@ extension SessionNetworkTests {
             if path.hasSuffix("oauth2/token") { return tokenResponse() }
             if path.hasSuffix("/init-session") { return (initSession.status, Data()) }
             let id = path.split(separator: "/").last.map(String.init) ?? ""
-            return (200, json(["id": id, "state": "CREATED", "amount": 1, "currency": "CZK"]))
+            return (200, json(["id": id, "state": "CREATED", "amount": 1, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
         }
     }
 

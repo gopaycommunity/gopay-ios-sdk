@@ -26,7 +26,7 @@ struct ContentView: View {
     @State private var cardToken: String = ""
     @State private var jwe: String = ""
     @State private var pending3ds: Pending3ds?
-    @State private var isFormValid: Bool?
+    @State private var isFormValid = false
     // Flipped true when the user taps submit, revealing the form's inline validation errors.
     @State private var didAttemptSubmit = false
     // nil follows the SDK/device default locale (which falls back to Czech).
@@ -204,7 +204,8 @@ struct ContentView: View {
             GopayCardForm(
                 theme: ThemeShowcase.shared.theme(named: themeName),
                 locale: selectedLocale,
-                validation: .onSubmit(attempted: $didAttemptSubmit),
+                validation: .onSubmit,
+                submitAttempted: $didAttemptSubmit,
                 isValid: $isFormValid
             )
                 .id(selectedLocale ?? "system")
@@ -215,7 +216,7 @@ struct ContentView: View {
             button("Encrypt card → JWE", system: "lock.fill") {
                 // Reveal inline validation errors; only encrypt once the form is valid.
                 await MainActor.run { didAttemptSubmit = true }
-                guard isFormValid != false else { return }
+                guard isFormValid else { return }
                 let encrypted = try await GopaySDK.shared.submitCardForm()
                 // The SDK empties the fields on success and sets didAttemptSubmit back to false.
                 await MainActor.run { jwe = encrypted }

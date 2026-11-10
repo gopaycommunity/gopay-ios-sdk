@@ -36,18 +36,18 @@ struct CardFormResetTests {
     }
 
     /// The whole chain: the SDK asks the form to wipe, the form empties itself and republishes
-    /// its validity. Without `resetFields` writing the binding this stays `nil`.
+    /// its validity. Without `resetFields` writing the binding this stays `true`.
     @Test func runningTheWipeReportsTheFormAsInvalid() async throws {
         GopaySDK.shared.clearCardFormData()
-        let validity = Box<Bool?>(nil)
+        let validity = Box(false)
         let window = try await host(
             PaymentCardForm(isValid: validity.binding, formId: "reset-binding")
         )
         defer { window.isHidden = true }
 
-        validity.value = nil
+        validity.value = true
         GopaySDK.shared.clearCardFormData(formId: "reset-binding")
-        await settle(until: validity.value != nil)
+        await settle(until: validity.value == false)
 
         #expect(validity.value == false)
     }
@@ -82,7 +82,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
         let window = try await host(
-            PaymentCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "reset-attempted")
+            PaymentCardForm(validation: .onSubmit, submitAttempted: attempted.binding, formId: "reset-attempted")
         )
         defer { window.isHidden = true }
 
@@ -104,7 +104,7 @@ struct CardFormResetTests {
     /// which does write the binding, shows the same steps are enough to see a write.
     @Test func onlyTheRegisteredFormWritesTheSharedBinding() async throws {
         GopaySDK.shared.clearCardFormData()
-        let validity = Box<Bool?>(nil)
+        let validity = Box(false)
         let older = try await host(PaymentCardForm(isValid: validity.binding, formId: "reset-shared"))
         let newer = try await host(PaymentCardForm(isValid: validity.binding, formId: "reset-shared"))
         defer {
@@ -128,6 +128,34 @@ struct CardFormResetTests {
         newer.rootViewController = nil
         await drainMainQueue(laidOut: newer)
         #expect(validity.value == false)
+    }
+
+    /// The host's `submitAttempted` binding is shared the same way: a replaced form that leaves
+    /// does not lower the flag of the form that stays, whose errors would vanish with it.
+    @Test func aReplacedFormLeavingKeepsTheSharedSubmitAttempted() async throws {
+        GopaySDK.shared.clearCardFormData()
+        let attempted = Box(false)
+        let older = try await host(
+            PaymentCardForm(validation: .onSubmit, submitAttempted: attempted.binding, formId: "attempted-shared")
+        )
+        let newer = try await host(
+            PaymentCardForm(validation: .onSubmit, submitAttempted: attempted.binding, formId: "attempted-shared")
+        )
+        defer {
+            older.isHidden = true
+            newer.isHidden = true
+        }
+
+        attempted.value = true
+        older.rootViewController = nil
+        older.isHidden = true
+        await drainMainQueue(laidOut: older)
+        #expect(attempted.value == true, "the replaced form's departure lowered the shared flag")
+
+        // The registered form leaving does lower it.
+        newer.rootViewController = nil
+        await settle(until: attempted.value == false)
+        #expect(attempted.value == false)
     }
 
     // MARK: A new ID while on screen
@@ -190,7 +218,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
         let window = try await host(
-            PaymentCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-attempted")
+            PaymentCardForm(validation: .onSubmit, submitAttempted: attempted.binding, formId: "submit-attempted")
         )
         defer { window.isHidden = true }
 
@@ -198,6 +226,37 @@ struct CardFormResetTests {
         await settle(until: attempted.value == true)
 
         #expect(attempted.value == true)
+    }
+
+    /// The `.live` mode reads the same flag, so a host that passed the binding sees the submit
+    /// there too, as on Android.
+    @Test func theSubmitTurnsAttemptedOnInLiveModeToo() async throws {
+        GopaySDK.shared.clearCardFormData()
+        let attempted = Box(false)
+        let window = try await host(
+            PaymentCardForm(validation: .live, submitAttempted: attempted.binding, formId: "submit-live")
+        )
+        defer { window.isHidden = true }
+
+        GopaySDK.shared.notifyCardFormSubmitAttempted(formId: "submit-live")
+        await settle(until: attempted.value == true)
+
+        #expect(attempted.value == true)
+    }
+
+    /// `.hidden` has nothing to reveal, so a submit leaves the host's flag alone, as in 2.x.
+    @Test func aSubmitLeavesTheFlagAloneInHiddenMode() async throws {
+        GopaySDK.shared.clearCardFormData()
+        let attempted = Box(false)
+        let window = try await host(
+            PaymentCardForm(validation: .hidden, submitAttempted: attempted.binding, formId: "submit-hidden")
+        )
+        defer { window.isHidden = true }
+
+        GopaySDK.shared.notifyCardFormSubmitAttempted(formId: "submit-hidden")
+        await drainMainQueue(laidOut: window)
+
+        #expect(attempted.value == false)
     }
 
     /// Only the form the submit was for is told: a submit for another ID, or for one no form is
@@ -210,7 +269,7 @@ struct CardFormResetTests {
         GopaySDK.shared.clearCardFormData()
         let attempted = Box(false)
         let window = try await host(
-            PaymentCardForm(validation: .onSubmit(attempted: attempted.binding), formId: "submit-bystander")
+            PaymentCardForm(validation: .onSubmit, submitAttempted: attempted.binding, formId: "submit-bystander")
         )
         defer { window.isHidden = true }
 

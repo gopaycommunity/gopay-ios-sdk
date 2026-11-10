@@ -57,6 +57,9 @@ struct ChargeResponseDecodingTests {
           "state": "PAID",
           "amount": 1000,
           "currency": "CZK",
+          "order_number": "o1",
+          "gw_url": "https://gw.example/p",
+          "customer": { "email": "a@b.c" },
           "charge": { "id": "51", "state": "SUCCEEDED", "href": "https://gate.gopay.com/x" }
         }
         """

@@ -63,15 +63,15 @@ struct UnknownGatewayValueTests {
         """)
 
         #expect(charge.state == .succeeded)
-        #expect(charge.paymentInstrument?.details.scheme == .unknown)
-        #expect(charge.paymentInstrument?.details.maskedPan == "675964******1234")
+        #expect(charge.paymentInstrument?.details?.scheme == .unknown)
+        #expect(charge.paymentInstrument?.details?.maskedPan == "675964******1234")
         #expect(reports.count == 1)
         #expect(reports.first?.contains("\"MAESTRO\"") == true)
     }
 
     @Test func aNewPaymentStateAndCurrencyKeepThePayment() throws {
         let (payment, reports) = try decode(PaymentDetails.self, """
-        { "id": "p1", "state": "ON_HOLD", "amount": 1000, "currency": "CHF",
+        { "id": "p1", "state": "ON_HOLD", "amount": 1000, "currency": "CHF", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": { "email": "a@b.c" },
           "charge": { "id": "54", "state": "SUCCEEDED" } }
         """)
 
@@ -86,11 +86,11 @@ struct UnknownGatewayValueTests {
 
     @Test func aNewCurrencyKeepsTheQrPayment() throws {
         let (qr, reports) = try decode(QrPaymentDetails.self, """
-        { "amount": 500, "currency": "SEK", "qr_code": { "spayd": "SPD*1.0" } }
+        { "amount": 500, "currency": "SEK", "recipient": { "name": "Shop" }, "qr_code": { "spayd": "SPD*1.0" } }
         """)
 
         #expect(qr.currency == .unknown)
-        #expect(qr.qrCode?.spayd == "SPD*1.0")
+        #expect(qr.qrCode.spayd == "SPD*1.0")
         #expect(reports.count == 1)
     }
 
@@ -103,13 +103,13 @@ struct UnknownGatewayValueTests {
             "details": { "input_type": "CARD_TOKEN", "scheme": "VISA" } } }
         """)
         let (payment, paymentReports) = try decode(PaymentDetails.self, """
-        { "id": "p1", "state": "PAID", "amount": 1, "currency": "EUR" }
+        { "id": "p1", "state": "PAID", "amount": 1, "currency": "EUR", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": { "email": "a@b.c" } }
         """)
 
         #expect(charge.state == .processing)
         #expect(charge.action?.actionType == .emv3ds)
         #expect(charge.action?.state == .challengeRequired)
-        #expect(charge.paymentInstrument?.details.scheme == .visa)
+        #expect(charge.paymentInstrument?.details?.scheme == .visa)
         #expect(payment.state == .paid)
         #expect(payment.currency == .eur)
         #expect(chargeReports.isEmpty)

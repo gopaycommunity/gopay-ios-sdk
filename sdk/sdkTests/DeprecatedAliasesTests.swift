@@ -102,6 +102,23 @@ struct DeprecatedAliasesTests {
         _ = GopayCardForm()
     }
 
+    /// A host of 2.x that kept the validity as `Bool?` still builds: the form reads `nil` as
+    /// `false` and writes `Bool`s. A `Bool` state picks the initializer of 3.0 by its type.
+    @Test func aFormStillTakesTheOptionalValidityOf2x() {
+        var optional: Bool? = nil
+        var plain = false
+        let old = Binding<Bool?>(get: { optional }, set: { optional = $0 })
+        let new = Binding<Bool>(get: { plain }, set: { plain = $0 })
+
+        let deprecated = GopayCardForm(locale: "cs", validation: .live, isValid: old, formId: "old-validity")
+        let current = PaymentCardForm(locale: "cs", validation: .onSubmit, isValid: new, formId: "new-validity")
+
+        #expect(deprecated.isValid == false)
+        deprecated.isValid = true
+        #expect(optional == true)
+        #expect(current.isValid == false)
+    }
+
     @Test func registeringALocaleTakesTheStringsFirstAsIn2x() {
         defer { GopayLocales.clearCustom() }
 

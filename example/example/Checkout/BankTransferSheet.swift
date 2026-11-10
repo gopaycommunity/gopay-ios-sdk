@@ -19,8 +19,8 @@ struct BankTransferSheet: View {
     @State private var copied: String?
     @State private var isSharePresented = false
 
-    private var local: QrLocalBankAccount? { details.recipient?.bankAccount?.local }
-    private var international: QrInternationalBankAccount? { details.recipient?.bankAccount?.international }
+    private var local: QrLocalBankAccount? { details.recipient.bankAccount?.local }
+    private var international: QrInternationalBankAccount? { details.recipient.bankAccount?.international }
 
     var body: some View {
         NavigationStack {
@@ -139,7 +139,7 @@ struct BankTransferSheet: View {
     /// `format: .png` is expected to return a base64-encoded image; if the gateway hands back the
     /// raw payment string instead, we render it locally so the code is always scannable.
     private var qrImage: UIImage? {
-        guard let payload = details.qrCode?.spayd ?? details.qrCode?.sepa ?? details.qrCode?.paybysquare else {
+        guard let payload = details.qrCode.spayd ?? details.qrCode.sepa ?? details.qrCode.paybysquare else {
             return nil
         }
         if let data = Data(base64Encoded: payload, options: .ignoreUnknownCharacters),
@@ -163,9 +163,8 @@ struct BankTransferSheet: View {
     // MARK: - Details
 
     private var accountNumber: String? {
-        guard let local, let number = local.accountNumber else { return nil }
-        if let prefix = local.prefix, !prefix.isEmpty { return "\(prefix)-\(number)" }
-        return number
+        guard let local else { return nil }
+        return local.prefix.isEmpty ? local.accountNumber : "\(local.prefix)-\(local.accountNumber)"
     }
 
     /// Text + image handed to the share sheet. `UIActivityViewController` accepts heterogeneous
@@ -184,7 +183,7 @@ struct BankTransferSheet: View {
 
     private var detailRows: [(label: String, value: String)] {
         [
-            ("Recipient", details.recipient?.name),
+            ("Recipient", details.recipient.name),
             ("Account", accountNumber),
             ("Bank code", local?.bankCode),
             ("Variable symbol", local?.variableSymbol),

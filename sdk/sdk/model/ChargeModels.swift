@@ -437,10 +437,10 @@ public struct InstrumentDetails: Codable, Sendable {
 }
 
 /// Payment instrument block in a charge response. `paymentInstrument` is always `PAYMENT_CARD` for
-/// the current Payments 4.0 schema.
+/// the current Payments 4.0 schema. `details` is optional, as the API does not require it.
 public struct PaymentInstrumentData: Codable, Sendable {
     public let paymentInstrument: String
-    public let details: InstrumentDetails
+    public let details: InstrumentDetails?
 
     enum CodingKeys: String, CodingKey {
         case paymentInstrument = "payment_instrument"

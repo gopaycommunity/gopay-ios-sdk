@@ -93,7 +93,7 @@ final class CheckoutViewModel {
     var selectedMethod: Method = .card
     /// `nil` follows the SDK/device default locale.
     var locale: String?
-    var isCardFormValid: Bool?
+    var isCardFormValid = false
     var didAttemptSubmit = false
 
     /// Non-nil while a network call or a presented SDK sheet is in flight; carries the status text.
@@ -214,7 +214,7 @@ final class CheckoutViewModel {
     func resumeShopping() {
         outcome = nil
         didAttemptSubmit = false
-        isCardFormValid = nil
+        isCardFormValid = false
     }
 
     /// Called when the checkout is dismissed for good.
@@ -244,23 +244,18 @@ final class CheckoutViewModel {
 
     // MARK: - Flows
 
-    // The two answers of `submitCardForm` to a form it cannot encrypt, told apart by the message
-    // until the empty form gets its own code.
-    private static let invalidCardFormMessage = "Card form data is invalid. Please check all fields."
-    private static let emptyCardFormMessage = "No card form data available. Please use GopayCardForm to enter card data."
-
     private func payWithNewCard() async throws {
         // The card first, before anything expensive: `submitCardForm` switches the form's
         // `.onSubmit` validation on itself, so an empty or invalid card shows its errors here
-        // without the view model touching the `attempted` binding, as on Android.
+        // without the view model touching the form's `submitAttempted` flag, as on Android.
         busyLabel = "Encrypting card…"
         let jwe: String
         do {
             jwe = try await GopaySDK.shared.submitCardForm()
-        } catch let error as GopaySDKError where error.message == Self.invalidCardFormMessage {
+        } catch let error as GopaySDKError where error.code == .validationInvalidInput {
             // The form is showing what is wrong; nothing more to say.
             return
-        } catch let error as GopaySDKError where error.message == Self.emptyCardFormMessage {
+        } catch let error as GopaySDKError where error.code == .validationCardFormEmpty {
             // Nothing typed yet, or the SDK wiped the card after the previous successful
             // encryption (GPMOB-140): the gateway accepts each JWE only once, so a retry needs the
             // card entered again. The form shows the required fields; the banner says why.

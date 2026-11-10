@@ -26,10 +26,22 @@ final class DefaultNetworkClient: @unchecked Sendable {
     let baseUrl: String
     private let session: URLSession
 
-    init(baseUrl: String, configuration: URLSessionConfiguration = .default) {
+    /// - Parameter requestTimeout: ``GopayConfig/requestTimeout``, which becomes the session's
+    ///   request timeout. A request that sets its own, as `init-session` does, keeps it.
+    init(
+        baseUrl: String,
+        configuration: URLSessionConfiguration = .default,
+        requestTimeout: TimeInterval = GopayConfig.defaultRequestTimeout
+    ) {
         self.baseUrl = baseUrl
+        // `.default` hands out a copy, and so does this for a configuration the caller keeps.
+        let configuration = (configuration.copy() as? URLSessionConfiguration) ?? configuration
+        configuration.timeoutIntervalForRequest = requestTimeout
         self.session = URLSession(configuration: configuration)
     }
+
+    /// The request timeout the session runs with, for tests.
+    var requestTimeout: TimeInterval { session.configuration.timeoutIntervalForRequest }
 
     /// Builds a request URL by concatenating `path` onto ``baseUrl``, or returns `nil` when the
     /// result is not an absolute `http(s)` URL with a host.

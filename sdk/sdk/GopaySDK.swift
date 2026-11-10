@@ -167,7 +167,7 @@ public class GopaySDK: @unchecked Sendable {
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopayConfig) {
         let telemetry = makeTelemetry(config)
-        let client = DefaultNetworkClient(baseUrl: config.environment.baseUrl)
+        let client = DefaultNetworkClient(baseUrl: config.environment.baseUrl, requestTimeout: config.requestTimeout)
         let gateway = Self.gateway(client: client, config: config, telemetry: telemetry)
         configLock.lock()
         storedConfig = config
@@ -207,7 +207,7 @@ public class GopaySDK: @unchecked Sendable {
         self.storedConfig = config
         self.storedTelemetry = telemetry
         if let config = config {
-            let client = networkClient ?? DefaultNetworkClient(baseUrl: config.environment.baseUrl)
+            let client = networkClient ?? DefaultNetworkClient(baseUrl: config.environment.baseUrl, requestTimeout: config.requestTimeout)
             self.storedGateway = Self.gateway(client: client, config: config, telemetry: telemetry)
         }
     }
@@ -403,10 +403,10 @@ public class GopaySDK: @unchecked Sendable {
     /// should move on rather than wait for further input. A failed encryption leaves everything as
     /// the user typed it, since nothing has been authorized yet.
     ///
-    /// A second call for the same form therefore fails with `GopaySDKErrors.noCardFormData`
-    /// until a new card is typed: an emptied form, whether it has re-synced its empty fields or
-    /// not, is a form without a card, as on Android. A card that is typed but invalid is
-    /// `GopaySDKErrors.invalidCardFormData`.
+    /// A second call for the same form therefore fails with
+    /// ``GopaySDKError/Code/validationCardFormEmpty`` until a new card is typed: an emptied form,
+    /// whether it has re-synced its empty fields or not, is a form without a card, as on Android.
+    /// A card that is typed but invalid is ``GopaySDKError/Code/validationInvalidInput``.
     ///
     /// Like ``encryptCardData(_:)``, every call fetches the public key afresh and dates the
     /// payload by the gateway's clock. A task cancelled while the key is on its way gets
@@ -419,8 +419,9 @@ public class GopaySDK: @unchecked Sendable {
     /// - Parameter formId: The form to read. When `nil`, uses the form on screen that synced last,
     ///   as the Android SDK does.
     /// - Throws: ``GopaySDKError`` with ``GopaySDKError/Code/sdkNotInitialized`` before
-    ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` when no card is
-    ///   held or the held one is invalid, and otherwise what ``encryptCardData(_:)`` throws.
+    ///   ``initialize(with:)``, ``GopaySDKError/Code/validationCardFormEmpty`` when no card is
+    ///   held, ``GopaySDKError/Code/validationInvalidInput`` when the held one is invalid, and
+    ///   otherwise what ``encryptCardData(_:)`` throws.
     public func submitCardForm(formId: String? = nil) async throws -> String {
         try await reported(paymentId: nil) { try await submitStoredCard(formId: formId) }
     }
@@ -441,10 +442,10 @@ public class GopaySDK: @unchecked Sendable {
             telemetry.cardFormSubmitRequested(owner: owner)
         }
         // A form whose fields are all empty holds no card, the same answer as no form at all:
-        // hosts key their "enter the card again" path on this message, and the Android SDK
+        // hosts key their "enter the card again" path on this code, and the Android SDK
         // answers an empty form with it too.
         guard let id = resolvedId, let data = stored, !data.isEmpty else {
-            throw GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.noCardFormData)
+            throw GopaySDKError(.validationCardFormEmpty, message: GopaySDKErrors.noCardFormData)
         }
         guard data.isValid else {
             throw GopaySDKError(.validationInvalidInput, message: GopaySDKErrors.invalidCardFormData)

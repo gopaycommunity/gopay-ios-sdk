@@ -872,7 +872,7 @@ extension SessionNetworkTests {
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") { return tokenResponse() }
             if path.hasSuffix("/payments/1") {
-                return (200, json(["id": "1", "state": "PAID", "amount": 100, "currency": "CZK"]))
+                return (200, json(["id": "1", "state": "PAID", "amount": 100, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
             }
             return (404, Data())
         }

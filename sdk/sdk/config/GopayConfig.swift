@@ -92,6 +92,18 @@ public struct GopayConfig: Sendable {
     /// built-in of the same code. See ``GopayLocaleStrings``.
     public let customLocales: [String: GopayLocaleStrings]
 
+    /// How long a request to the gateway waits for the next data before it fails with
+    /// ``GopaySDKError/Code/networkTimeout``, in seconds. Defaults to 60, what the SDK waited
+    /// until 3.0. A value that is not a positive, finite number is replaced by the default.
+    ///
+    /// The Android SDK has the same setting as `requestTimeoutMs`, in milliseconds, with a
+    /// default of 30 seconds, and there it limits the whole call; here it is `URLSession`'s
+    /// request timeout, which starts again with every piece of data that arrives.
+    public let requestTimeout: TimeInterval
+
+    /// The ``requestTimeout`` the SDK uses when none is given.
+    public static let defaultRequestTimeout: TimeInterval = 60
+
     /// Creates a new configuration for the Gopay SDK.
     /// - Parameters:
     ///   - environment: The environment to use.
@@ -101,6 +113,7 @@ public struct GopayConfig: Sendable {
     ///   - errorCallback: Callback for error handling (default: `nil`).
     ///   - locale: Preferred form locale code; `nil` follows the device language (default: `nil`).
     ///   - customLocales: Custom locale translations to register (default: empty).
+    ///   - requestTimeout: How long a request waits for the next data, in seconds (default: 60).
     public init(
         environment: GopayEnvironment,
         clientId: String? = nil,
@@ -108,7 +121,8 @@ public struct GopayConfig: Sendable {
         debugLoggingEnabled: Bool = false,
         errorCallback: (@Sendable (Error) -> Void)? = nil,
         locale: String? = nil,
-        customLocales: [String: GopayLocaleStrings] = [:]
+        customLocales: [String: GopayLocaleStrings] = [:],
+        requestTimeout: TimeInterval = GopayConfig.defaultRequestTimeout
     ) {
         self.environment = environment
         self.clientId = clientId
@@ -117,5 +131,8 @@ public struct GopayConfig: Sendable {
         self.errorCallback = errorCallback
         self.locale = locale
         self.customLocales = customLocales
+        self.requestTimeout = requestTimeout.isFinite && requestTimeout > 0
+            ? requestTimeout
+            : GopayConfig.defaultRequestTimeout
     }
 }

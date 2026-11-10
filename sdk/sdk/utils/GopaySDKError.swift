@@ -96,6 +96,11 @@ public struct GopaySDKError: LocalizedError, Sendable {
         // Validation (VALIDATION_XXX)
         /// Invalid input data provided.
         case validationInvalidInput = "VALIDATION_007"
+        /// ``GopaySDK/submitCardForm(formId:)`` was called while no ``PaymentCardForm`` holds a
+        /// card: none is on screen under that ID, or all its fields are empty. A card that is
+        /// typed but not valid stays ``validationInvalidInput``. The Android SDK throws the same
+        /// code.
+        case validationCardFormEmpty = "VALIDATION_008"
 
         // Internal (INTERNAL_XXX)
         /// Unexpected internal error.

@@ -36,18 +36,49 @@ public enum PaymentState: String, Codable, GatewayEnum, Sendable {
     }
 }
 
+/// The customer of a payment, as the merchant's backend created it. Maps to `Customer`; only
+/// `email` is always present.
+public struct PaymentCustomer: Codable, Sendable {
+    public let email: String
+    public let firstName: String?
+    public let lastName: String?
+    public let phoneNumber: String?
+    public let city: String?
+    public let street: String?
+    public let postalCode: String?
+    public let countryCode: String?
+    public let customerId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case email
+        case firstName = "first_name"
+        case lastName = "last_name"
+        case phoneNumber = "phone_number"
+        case city
+        case street
+        case postalCode = "postal_code"
+        case countryCode = "country_code"
+        case customerId = "customer_id"
+    }
+}
+
 /// Payment details returned by `GET /payments/{payment_id}`. Maps to `Payment-Details`.
+///
+/// `orderNumber`, `gatewayUrl` and `customer` are always present, as the API requires them and
+/// as the Android SDK reads them; a payment without one of them fails to decode with
+/// ``GopaySDKError/Code/decodingError``.
 ///
 /// Includes the latest `charge` summary when one exists. `payment_secret` is echoed by the API but
 /// the app already holds it from ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` —
 /// never log it or embed it in URLs.
 public struct PaymentDetails: Codable, Sendable {
     public let id: String
-    public let orderNumber: String?
+    public let orderNumber: String
     public let state: PaymentState
     public let amount: Int
     public let currency: Currency
-    public let gatewayUrl: String?
+    public let gatewayUrl: String
+    public let customer: PaymentCustomer
     public let paymentSecret: String?
     public let charge: ChargePaymentResponse?
 
@@ -58,6 +89,7 @@ public struct PaymentDetails: Codable, Sendable {
         case amount
         case currency
         case gatewayUrl = "gw_url"
+        case customer
         case paymentSecret = "payment_secret"
         case charge
     }
@@ -70,11 +102,12 @@ extension PaymentDetails {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
-        orderNumber = try container.decodeIfPresent(String.self, forKey: .orderNumber)
+        orderNumber = try container.decode(String.self, forKey: .orderNumber)
         state = try container.decode(PaymentState.self, forKey: .state)
         amount = try container.decode(Int.self, forKey: .amount)
         currency = try container.decode(Currency.self, forKey: .currency)
-        gatewayUrl = try container.decodeIfPresent(String.self, forKey: .gatewayUrl)
+        gatewayUrl = try container.decode(String.self, forKey: .gatewayUrl)
+        customer = try container.decode(PaymentCustomer.self, forKey: .customer)
         paymentSecret = try container.decodeIfPresent(String.self, forKey: .paymentSecret)
         charge = try container.decodeIfPresent(NestedCharge.self, forKey: .charge)?.charge
     }
@@ -97,12 +130,13 @@ public enum QrCodeFormat: String, Codable, Sendable {
     case svg
 }
 
-/// Local bank account details for a QR payment recipient.
+/// Local bank account details for a QR payment recipient. All four fields are always present,
+/// as the API requires them; `prefix` may be an empty string.
 public struct BankAccountLocalDetails: Codable, Sendable {
-    public let prefix: String?
-    public let accountNumber: String?
-    public let bankCode: String?
-    public let variableSymbol: String?
+    public let prefix: String
+    public let accountNumber: String
+    public let bankCode: String
+    public let variableSymbol: String
 
     enum CodingKeys: String, CodingKey {
         case prefix
@@ -169,11 +203,12 @@ public struct QrCodeList: Codable, Sendable {
 }
 
 /// Response from `GET /payments/{payment_id}/qr-payment/info`. Maps to `QR-Payment-Details`.
+/// `recipient` and `qrCode` are always present; which formats `qrCode` carries depends on the payment.
 public struct QrPaymentDetails: Codable, Sendable {
     public let amount: Int
     public let currency: Currency
-    public let recipient: BankTransferRecipient?
-    public let qrCode: QrCodeList?
+    public let recipient: BankTransferRecipient
+    public let qrCode: QrCodeList
 
     enum CodingKeys: String, CodingKey {
         case amount

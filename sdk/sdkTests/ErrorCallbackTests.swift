@@ -94,7 +94,7 @@ extension SessionNetworkTests {
             }
             if path.hasSuffix("apple-pay/app-info") { return (applePayStatus, json(applePayAppInfoJSON())) }
             if path.hasSuffix("qr-payment/info") { return (qrStatus, json(["amount": 100])) }
-            if path.hasSuffix("payments/p1") { return (statusStatus, json(["id": "p1", "state": "CREATED", "amount": 100, "currency": "CZK"])) }
+            if path.hasSuffix("payments/p1") { return (statusStatus, json(["id": "p1", "state": "CREATED", "amount": 100, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]])) }
             if path.hasSuffix("cards/public-key") { return (500, Data()) }
             return (404, Data())
         }
@@ -486,7 +486,7 @@ extension SessionNetworkTests {
         }
         await #expect(throws: GopaySDKError.self) { try await sdk.submitCardForm(formId: "none") }
 
-        #expect(reported.codes == [.validationInvalidInput, .validationInvalidInput])
+        #expect(reported.codes == [.validationInvalidInput, .validationCardFormEmpty])
     }
 
     @Test func aMissingShareableKeyIsReportedOnce() async {

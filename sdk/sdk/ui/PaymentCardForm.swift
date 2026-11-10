@@ -123,16 +123,21 @@ public enum PaymentCardFormValidationDisplay: Sendable {
     /// holds as many digits as it takes and still fails (a mistyped card number, a past date),
     /// when the user leaves it with something in it, or once ``GopaySDK/submitCardForm(formId:)``
     /// has been called for the form. An empty field is never flagged in this mode; the
-    /// "required" message is ``onSubmit(attempted:)``'s. The Android form follows the same rule.
+    /// "required" message is ``onSubmit``'s. The Android form follows the same rule.
     case live
-    /// Show errors only while `attempted` is `true`. The SDK sets it to `true` itself when
-    /// ``GopaySDK/submitCardForm(formId:)`` is called for this form, before the card is judged,
-    /// so an empty or invalid card shows its errors on the submit without the host doing
-    /// anything, as the Android form does; you can also set it yourself, e.g. when your submit
-    /// button is tapped before you call the SDK, and set it back to `false` to hide the errors
-    /// again. The form sets it back to `false` itself whenever it empties its fields, e.g. after a
-    /// successful submit.
-    case onSubmit(attempted: Binding<Bool>)
+    /// Show errors only while the form's `submitAttempted` flag is `true`. The SDK raises it
+    /// itself when ``GopaySDK/submitCardForm(formId:)`` is called for this form, before the card
+    /// is judged, so an empty or invalid card shows its errors on the submit without the host
+    /// doing anything, and the form lowers it whenever it empties its fields, e.g. after a
+    /// successful submit. Pass ``PaymentCardForm``'s `submitAttempted` binding to raise or lower
+    /// it yourself, e.g. when your submit button is tapped before you call the SDK. The Android
+    /// form has the same mode, `ON_SUBMIT`, and the same flag.
+    case onSubmit
+
+    /// The shape of 2.x, where the mode carried the flag. The flag is the form's own parameter
+    /// now, the same on both platforms.
+    @available(*, unavailable, message: "Use .onSubmit and pass the binding to PaymentCardForm as submitAttempted")
+    public static func onSubmit(attempted: Binding<Bool>) -> PaymentCardFormValidationDisplay { .onSubmit }
 }
 
 /// The identity a ``PaymentCardForm`` registers its handlers under: an object with no state of its
@@ -160,12 +165,14 @@ public struct PaymentCardForm: View {
 
     /// Binding the form writes its current validity into, for driving a submit button.
     ///
-    /// The form fills it on appear and on every edit, so from the first render onwards it always
-    /// holds `true` or `false` and never `nil`. `nil` is only the value a host starts it at before
-    /// the form has rendered; treat it as "not known yet", not as a state the form produces. The
-    /// optionality is here for that starting point alone and goes away with the next major, when
-    /// this becomes `Binding<Bool>`.
-    @Binding public var isValid: Bool?
+    /// The form fills it on appear and on every edit, and sets it to `false` when it leaves the
+    /// screen. Start it at `false`: a form nobody has typed into is not valid.
+    @Binding public var isValid: Bool
+
+    /// The host's flag for the ``PaymentCardFormValidationDisplay/onSubmit`` and
+    /// ``PaymentCardFormValidationDisplay/live`` modes, when it passed one: whether a submit was
+    /// attempted since the fields were last emptied. `nil` leaves the flag to the form.
+    private let hostSubmitAttempted: Binding<Bool>?
     
     /// Unique identifier for this form instance.
     /// Use this ID to submit a specific form when multiple forms are present.
@@ -225,9 +232,23 @@ public struct PaymentCardForm: View {
     @State private var expirationWasLeft: Bool = false
     @State private var cvvWasLeft: Bool = false
 
-    /// Whether a submit ran for this form since its fields were last emptied, for the `.live`
-    /// mode, which flags every edited field from then on. The `.onSubmit` mode has its binding.
-    @State private var liveSubmitAttempted: Bool = false
+    /// Whether a submit ran for this form since its fields were last emptied, kept here when the
+    /// host passed no `submitAttempted` binding. See ``submitAttempted``.
+    @State private var ownSubmitAttempted: Bool = false
+
+    /// Whether a submit was attempted since the fields were last emptied: the host's binding when
+    /// it passed one, the form's own state otherwise. `.onSubmit` shows every invalid field while
+    /// it is `true`, `.live` flags every edited field.
+    private var submitAttempted: Bool {
+        get { hostSubmitAttempted?.wrappedValue ?? ownSubmitAttempted }
+        nonmutating set {
+            if let hostSubmitAttempted {
+                if hostSubmitAttempted.wrappedValue != newValue { hostSubmitAttempted.wrappedValue = newValue }
+            } else {
+                ownSubmitAttempted = newValue
+            }
+        }
+    }
 
     /// Creates a payment card form.
     ///
@@ -241,6 +262,12 @@ public struct PaymentCardForm: View {
     ///   - localeStrings: Explicit locale strings to use, bypassing `locale` resolution.
     ///   - validation: When/whether to render localized inline validation errors
     ///                 (default: ``PaymentCardFormValidationDisplay/hidden``).
+    ///   - submitAttempted: The flag of the `.onSubmit` and `.live` modes: whether a submit was
+    ///              attempted since the fields were last emptied. The SDK raises it on
+    ///              ``GopaySDK/submitCardForm(formId:)`` and the form lowers it when it empties
+    ///              its fields; pass a binding to raise or lower it yourself as well. `nil`
+    ///              (default) leaves the flag to the form. The Android form takes the same flag
+    ///              as `submitAttempted` and `onSubmitAttemptedChange`.
     ///   - isValid: Binding the form writes its validity into, filled from the first render
     ///              onwards. Omit it if you do not need the state; the default binding discards
     ///              the writes.
@@ -252,13 +279,15 @@ public struct PaymentCardForm: View {
         locale: String? = nil,
         localeStrings: GopayLocaleStrings? = nil,
         validation: PaymentCardFormValidationDisplay = .hidden,
-        isValid: Binding<Bool?> = .constant(nil),
+        submitAttempted: Binding<Bool>? = nil,
+        isValid: Binding<Bool> = .constant(false),
         formId: String? = nil,
         allowsAutofill: Bool = false
     ) {
         self.theme = theme
         self.localeStrings = localeStrings ?? GopayLocales.resolve(locale)
         self.validation = validation
+        self.hostSubmitAttempted = submitAttempted
         self._isValid = isValid
         self.explicitFormId = formId
         self.allowsAutofill = allowsAutofill
@@ -288,8 +317,8 @@ public struct PaymentCardForm: View {
         let mode: GopayCardFormErrors.Mode
         switch validation {
         case .hidden: mode = .hidden
-        case .live: mode = .live(submitAttempted: liveSubmitAttempted)
-        case .onSubmit(let attempted): mode = .onSubmit(attempted: attempted.wrappedValue)
+        case .live: mode = .live(submitAttempted: submitAttempted)
+        case .onSubmit: mode = .onSubmit(attempted: submitAttempted)
         }
         return GopayCardFormErrors(
             data: data,
@@ -662,12 +691,13 @@ public struct PaymentCardForm: View {
             // The ID the form is registered under, which is `formId` unless a new one arrived and
             // the form left before it moved over.
             let leavingId = registeredFormId ?? formId
-            // Read before the unregistration: the form that was registered leaves the binding
-            // invalid behind it; one that was replaced leaves it to the other form.
+            // Read before the unregistration: the form that was registered leaves the bindings
+            // behind it invalid and with no submit attempted; one that was replaced leaves both
+            // to the other form, which shares them.
             let wasRegistered = GopaySDK.shared.owner(of: leavingId) === owner
             GopaySDK.shared.unregisterCardFormReset(formId: leavingId, owner: owner)
             registeredFormId = nil
-            resetFields()
+            resetFields(keepsHostSubmitAttempted: !wasRegistered)
             if wasRegistered {
                 isValid = false
             }
@@ -717,7 +747,7 @@ public struct PaymentCardForm: View {
     /// fields once it has turned them into a JWE, and tells the form when a submit is asked for.
     private func register(under id: String) {
         GopaySDK.shared.registerCardFormReset(
-            resetFields, submitAttempted: markSubmitAttempted, formId: id, owner: owner
+            { resetFields() }, submitAttempted: markSubmitAttempted, formId: id, owner: owner
         )
         registeredFormId = id
         GopaySDK.shared.updateCardFormData(data, formId: id, owner: owner)
@@ -771,15 +801,22 @@ public struct PaymentCardForm: View {
     ///
     /// The edited flags go with the digits, so the emptied fields come back pristine instead of
     /// lit up with validation errors, and so do the focus flags, which closes the keyboard if the
-    /// user was still typing. For the same reason an ``PaymentCardFormValidationDisplay/onSubmit(attempted:)``
-    /// binding is set back to `false`: left at `true`, every emptied field would show the
-    /// "required" message, also while the 3DS challenge runs.
+    /// user was still typing. For the same reason the `submitAttempted` flag, the host's binding
+    /// included, is set back to `false`: left at `true`, every emptied field would show the
+    /// "required" message in the ``PaymentCardFormValidationDisplay/onSubmit`` mode, also while
+    /// the 3DS challenge runs.
     ///
     /// The SDK's own copy is already gone by this point and this does not re-sync an empty one,
-    /// so a second submit fails with `noCardFormData` until a new card is typed; the next
+    /// so a second submit fails with ``GopaySDKError/Code/validationCardFormEmpty`` until a new
+    /// card is typed; the next
     /// `onAppear` or keystroke syncs the emptied fields back in, and an empty form is a form
     /// without a card, so the answer stays the same.
-    private func resetFields() {
+    ///
+    /// - Parameter keepsHostSubmitAttempted: `true` only for a form leaving the screen after
+    ///   another one under the same ID replaced it. Two forms under one ID share the host's
+    ///   `submitAttempted` binding, and the one leaving would otherwise hide the errors of the
+    ///   one that stays; it lowers its own flag and leaves the host's alone.
+    private func resetFields(keepsHostSubmitAttempted: Bool = false) {
         data = GopayCardFormData()
         cardNumberEdited = false
         expirationEdited = false
@@ -787,11 +824,12 @@ public struct PaymentCardForm: View {
         cardNumberWasLeft = false
         expirationWasLeft = false
         cvvWasLeft = false
-        liveSubmitAttempted = false
-        focusedField = nil
-        if case .onSubmit(let attempted) = validation {
-            attempted.wrappedValue = false
+        if keepsHostSubmitAttempted {
+            ownSubmitAttempted = false
+        } else {
+            submitAttempted = false
         }
+        focusedField = nil
         updateValidationBinding()
         GopaySDK.shared.telemetry.cardFormCleared(owner: owner)
     }
@@ -819,10 +857,8 @@ public struct PaymentCardForm: View {
     /// again; `.live` still leaves an empty field alone. `.hidden` has nothing to reveal.
     private func markSubmitAttempted() {
         switch validation {
-        case .onSubmit(let attempted):
-            if !attempted.wrappedValue { attempted.wrappedValue = true }
-        case .live:
-            liveSubmitAttempted = true
+        case .onSubmit, .live:
+            submitAttempted = true
         case .hidden:
             break
         }
@@ -831,10 +867,8 @@ public struct PaymentCardForm: View {
     /// Publishes the current validity to the host's binding, while this form is the one
     /// registered under its ID.
     ///
-    /// The write does not depend on what the binding holds. Guarding it on the binding already
-    /// holding a value meant a host that started from `nil`, which is the documented starting
-    /// point, never received the first one and saw the form as permanently invalid. When no
-    /// binding was passed, the default is `.constant(nil)` and the write is a no-op.
+    /// The write does not depend on what the binding holds. When no binding was passed, the
+    /// default is `.constant(false)` and the write is a no-op.
     ///
     /// A form another one under the same ID has replaced does not write: two forms under one ID
     /// share the host's binding, and the one leaving would otherwise overwrite the validity of
@@ -848,7 +882,7 @@ public struct PaymentCardForm: View {
 // MARK: - Preview
 
 #if DEBUG
-struct GopayCardForm_Previews: PreviewProvider {
+struct PaymentCardForm_Previews: PreviewProvider {
     static var previews: some View {
         VStack(spacing: 20) {
             PaymentCardForm()

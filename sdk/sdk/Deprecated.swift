@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import UIKit
 
 // The names 2.x documented and 3.0 renamed, kept as deprecated aliases so an integration written
@@ -75,6 +76,34 @@ public extension GopayEnvironment {
 
     @available(*, deprecated, renamed: "baseUrl")
     var baseURL: String { baseUrl }
+}
+
+// MARK: - Card form
+
+public extension PaymentCardForm {
+    /// The initializer of 2.x for a host that keeps the validity as `Bool?`: `nil` was only the
+    /// value the host started at, so it reads as `false` here. `isValid` has no default, so a
+    /// form created without it resolves to the initializer of 3.0.
+    @available(*, deprecated, message: "isValid is a Binding<Bool> in 3.0; keep the validity as Bool, starting at false")
+    init(
+        theme: PaymentCardFormTheme = PaymentCardFormTheme(),
+        locale: String? = nil,
+        localeStrings: GopayLocaleStrings? = nil,
+        validation: PaymentCardFormValidationDisplay = .hidden,
+        isValid: Binding<Bool?>,
+        formId: String? = nil,
+        allowsAutofill: Bool = false
+    ) {
+        self.init(
+            theme: theme,
+            locale: locale,
+            localeStrings: localeStrings,
+            validation: validation,
+            isValid: Binding<Bool>(get: { isValid.wrappedValue ?? false }, set: { isValid.wrappedValue = $0 }),
+            formId: formId,
+            allowsAutofill: allowsAutofill
+        )
+    }
 }
 
 // MARK: - Return address

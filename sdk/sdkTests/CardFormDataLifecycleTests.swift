@@ -136,7 +136,7 @@ extension SessionNetworkTests {
             _ = try await sdk.submitCardForm()
             Issue.record("expected noCardFormData")
         } catch let error as GopaySDKError {
-            #expect(error.code == .validationInvalidInput)
+            #expect(error.code == .validationCardFormEmpty)
             #expect(error.message == GopaySDKErrors.noCardFormData)
         }
 
@@ -147,12 +147,13 @@ extension SessionNetworkTests {
             _ = try await sdk.submitCardForm(formId: "f1")
             Issue.record("expected noCardFormData")
         } catch let error as GopaySDKError {
+            #expect(error.code == .validationCardFormEmpty)
             #expect(error.message == GopaySDKErrors.noCardFormData)
         }
     }
 
     /// A form on screen that nobody has typed into has synced empty fields: no card, not an
-    /// invalid one. Hosts key their "enter the card" path on this message.
+    /// invalid one. Hosts key their "enter the card" path on this code, `VALIDATION_008`.
     @Test func submitCardForm_emptyForm_throwsNoCardFormData() async throws {
         StubURLProtocol.reset { _ in (500, Data()) }
         let sdk = lifecycleSDK()
@@ -162,7 +163,7 @@ extension SessionNetworkTests {
             _ = try await sdk.submitCardForm(formId: "f1")
             Issue.record("expected noCardFormData")
         } catch let error as GopaySDKError {
-            #expect(error.code == .validationInvalidInput)
+            #expect(error.code == .validationCardFormEmpty)
             #expect(error.message == GopaySDKErrors.noCardFormData)
         }
         #expect(StubURLProtocol.paths.isEmpty)
@@ -179,8 +180,17 @@ extension SessionNetworkTests {
             _ = try await sdk.submitCardForm(formId: "f1")
             Issue.record("expected invalidCardFormData")
         } catch let error as GopaySDKError {
+            #expect(error.code == .validationInvalidInput)
             #expect(error.message == GopaySDKErrors.invalidCardFormData)
         }
+    }
+
+    /// The message of the empty form names the form as 3.0 calls it; the Android SDK throws the
+    /// same text.
+    @Test func theEmptyFormMessageNamesTheFormOf3() {
+        #expect(GopaySDKErrors.noCardFormData == "No card form data available. Please use PaymentCardForm to enter card data.")
+        #expect(GopaySDKErrors.invalidCardFormData == "Card form data is invalid. Please check all fields.")
+        #expect(GopaySDKError.Code.validationCardFormEmpty.rawValue == "VALIDATION_008")
     }
 
     @Test func aSuccessfulSubmitRunsTheRegisteredWipe() async throws {
