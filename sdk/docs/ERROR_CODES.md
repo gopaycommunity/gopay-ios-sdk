@@ -30,8 +30,7 @@ catching the error at the call. The rule is the same on both platforms:
   again, reports the one error it ends with, not each step on the way. An error wrapped into
   another on the way out, the gateway's 401 behind `AUTH_010` or the browser-data fetch behind a
   charge error, is reported as the one you catch; the inner one is its `underlying`.
-- `reauthenticate()` on a session is a public call like any other, so a refresh it fails is
-  reported once by it; a refresh that fails inside another call is reported by that call.
+- A token refresh that fails inside a call is reported by that call.
 - Two codes never reach it, because they are outcomes of a payment window rather than failures:
   `PAYMENT_007` (the charge is still undecided) and `PAYMENT_011` (the sheet or the 3DS screen
   closed early).
@@ -194,13 +193,6 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **A charge may exist**: No
 - **Safe to retry**: Yes, after `initialize`
 - **Note**: the one code `errorCallback` cannot carry, since the callback arrives with the config. The Android `getInstance()` throws the same code
-
-### CONFIG_003: Missing Required Parameter
-- **Case**: `configMissingParameter`
-- **Description**: A required configuration parameter is missing
-- **Developer Action**:
-  - Check the values passed into `GopaySDKConfig`
-- **Note**: the SDK does not throw this code. The case is deprecated and will be removed in 3.0
 
 ### CONFIG_006: Invalid Base URL
 - **Case**: `invalidBaseURL`

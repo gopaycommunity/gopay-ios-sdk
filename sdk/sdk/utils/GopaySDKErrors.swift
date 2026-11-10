@@ -1,195 +1,173 @@
 import Foundation
 
-/// Centralized error definitions for the Gopay SDK.
-///
-/// Provides consistent error domains, codes, and messages across the SDK.
-public enum GopaySDKErrors: Sendable {
+/// The SDK's own error domains and message texts. Internal since 3.0: the SDK throws
+/// ``GopaySDKError`` with a code, and a host compares the code, never a message.
+enum GopaySDKErrors: Sendable {
     // MARK: - Error Domains
     
     /// Error domain for SDK-level errors.
-    public static let sdkDomain = "GopaySDK"
+    static let sdkDomain = "GopaySDK"
     
     /// Error domain for encryption service errors.
-    public static let encryptionServiceDomain = "GopayEncryptionService"
+    static let encryptionServiceDomain = "GopayEncryptionService"
     
     /// Error domain for authentication service errors.
-    public static let authServiceDomain = "GopayAuthService"
+    static let authServiceDomain = "GopayAuthService"
     
     /// Error domain for network-related errors.
-    public static let networkDomain = "GopayNetwork"
+    static let networkDomain = "GopayNetwork"
     
     /// Error domain for invalid URL errors.
-    public static let invalidURLDomain = "GopayInvalidURL"
+    static let invalidURLDomain = "GopayInvalidURL"
     
     /// Error domain for encoding errors.
-    public static let encodingDomain = "GopayEncoding"
+    static let encodingDomain = "GopayEncoding"
     
     /// Error domain for card token service errors.
-    public static let cardTokenServiceDomain = "GopayCardTokenService"
+    static let cardTokenServiceDomain = "GopayCardTokenService"
 
     /// Error domain for payment service errors.
-    public static let paymentServiceDomain = "GopayPaymentService"
+    static let paymentServiceDomain = "GopayPaymentService"
     
     /// Error domain for JWE encryption errors.
-    public static let jweDomain = "GopayJWE"
+    static let jweDomain = "GopayJWE"
     
     // MARK: - Error Codes
     
     /// Generic error code.
-    public static let genericErrorCode = -1
+    static let genericErrorCode = -1
     
     /// Error code for invalid URL.
-    public static let invalidURLErrorCode = -2
+    static let invalidURLErrorCode = -2
     
     /// Error code for encoding failures.
-    public static let encodingErrorCode = -3
+    static let encodingErrorCode = -3
     
     /// Error code for network failures.
-    public static let networkErrorCode = -4
+    static let networkErrorCode = -4
     
     // MARK: - Error Messages
     
     /// No access token found. Please authenticate first.
-    public static let noAccessToken = "No access token found. Please authenticate first."
+    static let noAccessToken = "No access token found. Please authenticate first."
     
     /// Access token is expired. Please authenticate again.
-    public static let accessTokenExpired = "Access token is expired. Please authenticate again."
+    static let accessTokenExpired = "Access token is expired. Please authenticate again."
     
     /// Access token is expired (short version).
-    public static let accessTokenExpiredShort = "Access token is expired."
+    static let accessTokenExpiredShort = "Access token is expired."
     
     /// SDK not initialized or authService unavailable.
-    public static let sdkNotInitializedAuthService = "SDK not initialized or authService unavailable."
+    static let sdkNotInitializedAuthService = "SDK not initialized or authService unavailable."
     
     /// SDK not initialized or encryptionService unavailable.
-    public static let sdkNotInitializedEncryptionService = "SDK not initialized or encryptionService unavailable."
+    static let sdkNotInitializedEncryptionService = "SDK not initialized or encryptionService unavailable."
     
-    /// Invalid URL for public key endpoint.
-    public static let invalidPublicKeyURL = "Invalid URL for public key endpoint."
+    /// Invalid URL for key endpoint.
+    static let invalidPublicKeyURL = "Invalid URL for key endpoint."
     
     /// Invalid URL.
-    public static let invalidURL = "Invalid URL."
+    static let invalidURL = "Invalid URL."
     
     /// Encoding error message.
-    public static let encodingErrorMessage = "Encoding error."
+    static let encodingErrorMessage = "Encoding error."
     
     /// Unknown error message.
-    public static let unknownErrorMessage = "Unknown error."
+    static let unknownErrorMessage = "Unknown error."
     
     /// SDK not initialized or cardTokenService unavailable.
-    public static let sdkNotInitializedCardTokenService = "SDK not initialized or cardTokenService unavailable."
+    static let sdkNotInitializedCardTokenService = "SDK not initialized or cardTokenService unavailable."
 
     /// SDK not initialized or paymentService unavailable.
-    public static let sdkNotInitializedPaymentService = "SDK not initialized or paymentService unavailable."
+    static let sdkNotInitializedPaymentService = "SDK not initialized or paymentService unavailable."
     
     /// Card token creation failed.
-    public static let cardTokenCreationFailed = "Card token creation failed."
+    static let cardTokenCreationFailed = "Card token creation failed."
     
     /// Card form data is invalid.
-    public static let invalidCardFormData = "Card form data is invalid. Please check all fields."
+    static let invalidCardFormData = "Card form data is invalid. Please check all fields."
     
     /// No card form data available. Please use GopayCardForm to enter card data.
-    public static let noCardFormData = "No card form data available. Please use GopayCardForm to enter card data."
+    static let noCardFormData = "No card form data available. Please use GopayCardForm to enter card data."
     
     /// Invalid URL for card token endpoint.
-    public static let invalidCardTokenURL = "Invalid URL for card token endpoint."
+    static let invalidCardTokenURL = "Invalid URL for card token endpoint."
 
     /// Invalid URL for payment endpoint.
-    public static let invalidPaymentURL = "Invalid URL for payment endpoint."
+    static let invalidPaymentURL = "Invalid URL for payment endpoint."
 
     /// Invalid URL for charge endpoint.
-    public static let invalidChargeURL = "Invalid URL for charge endpoint."
+    static let invalidChargeURL = "Invalid URL for charge endpoint."
 
     /// Invalid URL for QR payment info endpoint.
-    public static let invalidQRPaymentInfoURL = "Invalid URL for QR payment info endpoint."
+    static let invalidQRPaymentInfoURL = "Invalid URL for QR payment info endpoint."
 
     /// Invalid URL for Apple Pay app-info endpoint.
-    public static let invalidApplePayAppInfoURL = "Invalid URL for Apple Pay app-info endpoint."
+    static let invalidApplePayAppInfoURL = "Invalid URL for Apple Pay app-info endpoint."
 
-    /// Apple Pay is not available on this device (no provisioned cards or unsupported networks).
-    @available(*, deprecated, message: "The SDK no longer uses it: an unusable Apple Pay throws GopaySDKError with paymentMethodUnavailable (PAYMENT_004)")
-    public static let applePayUnavailable = "Apple Pay is not available on this device."
 
     /// Apple Pay is not configured for this merchant.
-    public static let applePayNotConfigured = "Apple Pay is not configured for this merchant."
+    static let applePayNotConfigured = "Apple Pay is not configured for this merchant."
 
-    /// Apple Pay payment was cancelled by the user.
-    @available(*, deprecated, message: "The SDK no longer uses it: a closed Apple Pay sheet throws GopaySDKError with paymentCancelled (PAYMENT_011)")
-    public static let applePayCancelled = "Apple Pay payment was cancelled by the user."
 
-    /// Apple Pay authorization failed.
-    @available(*, deprecated, message: "The SDK no longer uses it: an unusable Apple Pay token throws GopaySDKError with paymentProcessingFailed (PAYMENT_003)")
-    public static let applePayAuthorizationFailed = "Apple Pay authorization failed."
 
     /// Apple Pay response from the backend is missing a payment request.
-    public static let applePayMissingRequest = "Apple Pay response is missing the payment request."
+    static let applePayMissingRequest = "Apple Pay response is missing the payment request."
 
     /// Payment verification was cancelled by the user.
-    public static let chargeVerificationCancelled = "Payment verification was cancelled by the user."
+    static let chargeVerificationCancelled = "Payment verification was cancelled by the user."
 
     /// Payment verification failed.
-    public static let chargeVerificationFailed = "Payment verification failed."
+    static let chargeVerificationFailed = "Payment verification failed."
 
     /// Could not find a view controller to present verification.
-    public static let noPresentingViewController = "Could not find a view controller to present verification."
+    static let noPresentingViewController = "Could not find a view controller to present verification."
     
     /// JWE encryption failed.
-    public static let jweEncryptionFailed = "JWE encryption failed."
+    static let jweEncryptionFailed = "JWE encryption failed."
     
     /// JWE key generation failed.
-    public static let jweKeyGenerationFailed = "Failed to generate encryption key."
+    static let jweKeyGenerationFailed = "Failed to generate encryption key."
     
     /// JWE IV generation failed.
-    public static let jweIVGenerationFailed = "Failed to generate initialization vector."
+    static let jweIVGenerationFailed = "Failed to generate initialization vector."
     
     /// JWE card data encoding failed.
-    public static let jweCardDataEncodingFailed = "Failed to encode card data."
+    static let jweCardDataEncodingFailed = "Failed to encode card data."
     
     /// JWE header encoding failed.
-    public static let jweHeaderEncodingFailed = "Failed to encode JWE header."
-    
-    /// JWE public key creation failed.
-    public static let jwePublicKeyCreationFailed = "Failed to create public key from JWK."
-    
-    /// JWE CEK encryption failed.
-    public static let jweCEKEncryptionFailed = "Failed to encrypt content encryption key."
-    
-    /// JWE AES encryption failed.
-    public static let jweAESEncryptionFailed = "AES encryption failed."
-    
-    /// JWE AES-GCM not available.
-    public static let jweAESGCMNotAvailable = "AES-GCM encryption requires iOS 13.0 or later."
+    static let jweHeaderEncodingFailed = "Failed to encode JWE header."
     
     /// JWE key creation failed.
-    public static let jweKeyCreationFailed = "Failed to create symmetric key."
+    static let jwePublicKeyCreationFailed = "Failed to create key from JWK."
+    
+    /// JWE CEK encryption failed.
+    static let jweCEKEncryptionFailed = "Failed to encrypt content encryption key."
+    
+    /// JWE AES encryption failed.
+    static let jweAESEncryptionFailed = "AES encryption failed."
+    
+    /// JWE AES-GCM not available.
+    static let jweAESGCMNotAvailable = "AES-GCM encryption requires iOS 13.0 or later."
+    
+    /// JWE key creation failed.
+    static let jweKeyCreationFailed = "Failed to create symmetric key."
     
     /// JWE nonce creation failed.
-    public static let jweNonceCreationFailed = "Failed to create nonce."
+    static let jweNonceCreationFailed = "Failed to create nonce."
     
     /// JWE invalid key size.
-    public static let jweInvalidKeySize = "Invalid key size for AES-256-GCM (must be 32 bytes)."
+    static let jweInvalidKeySize = "Invalid key size for AES-256-GCM (must be 32 bytes)."
     
     /// JWE invalid IV size.
-    public static let jweInvalidIVSize = "Invalid IV size for AES-GCM (must be 12 bytes)."
+    static let jweInvalidIVSize = "Invalid IV size for AES-GCM (must be 12 bytes)."
     
     // MARK: - Error Creation Helpers
-    
-    /// Creates an SDK error with the given message.
-    /// - Parameter message: The error message.
-    /// - Returns: An NSError with the SDK domain and generic error code.
-    @available(*, deprecated, message: "The SDK no longer throws it: Apple Pay failures are GopaySDKError with PAYMENT_003, PAYMENT_004 or PAYMENT_011")
-    public static func sdkError(_ message: String) -> NSError {
-        return NSError(
-            domain: sdkDomain,
-            code: genericErrorCode,
-            userInfo: [NSLocalizedDescriptionKey: message]
-        )
-    }
     
     /// Creates an encryption service error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the encryption service domain and generic error code.
-    public static func encryptionServiceError(_ message: String) -> NSError {
+    static func encryptionServiceError(_ message: String) -> NSError {
         return NSError(
             domain: encryptionServiceDomain,
             code: genericErrorCode,
@@ -200,7 +178,7 @@ public enum GopaySDKErrors: Sendable {
     /// Creates an authentication service error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the auth service domain and generic error code.
-    public static func authServiceError(_ message: String) -> NSError {
+    static func authServiceError(_ message: String) -> NSError {
         return NSError(
             domain: authServiceDomain,
             code: genericErrorCode,
@@ -211,7 +189,7 @@ public enum GopaySDKErrors: Sendable {
     /// Creates a network error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the network domain and network error code.
-    public static func networkError(_ message: String) -> NSError {
+    static func networkError(_ message: String) -> NSError {
         return NSError(
             domain: networkDomain,
             code: networkErrorCode,
@@ -221,7 +199,7 @@ public enum GopaySDKErrors: Sendable {
     
     /// Creates an unknown error.
     /// - Returns: An NSError with the network domain and network error code.
-    public static func unknownError() -> NSError {
+    static func unknownError() -> NSError {
         return NSError(
             domain: networkDomain,
             code: networkErrorCode,
@@ -231,7 +209,7 @@ public enum GopaySDKErrors: Sendable {
     
     /// Creates an invalid URL error.
     /// - Returns: An NSError with the invalid URL domain and invalid URL error code.
-    public static func invalidURLError() -> NSError {
+    static func invalidURLError() -> NSError {
         return NSError(
             domain: invalidURLDomain,
             code: invalidURLErrorCode,
@@ -241,7 +219,7 @@ public enum GopaySDKErrors: Sendable {
     
     /// Creates an encoding error.
     /// - Returns: An NSError with the encoding domain and encoding error code.
-    public static func encodingError() -> NSError {
+    static func encodingError() -> NSError {
         return NSError(
             domain: encodingDomain,
             code: encodingErrorCode,
@@ -252,7 +230,7 @@ public enum GopaySDKErrors: Sendable {
     /// Creates a card token service error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the card token service domain and generic error code.
-    public static func cardTokenServiceError(_ message: String) -> NSError {
+    static func cardTokenServiceError(_ message: String) -> NSError {
         return NSError(
             domain: cardTokenServiceDomain,
             code: genericErrorCode,
@@ -263,7 +241,7 @@ public enum GopaySDKErrors: Sendable {
     /// Creates a payment service error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the payment service domain and generic error code.
-    public static func paymentServiceError(_ message: String) -> NSError {
+    static func paymentServiceError(_ message: String) -> NSError {
         return NSError(
             domain: paymentServiceDomain,
             code: genericErrorCode,
@@ -274,7 +252,7 @@ public enum GopaySDKErrors: Sendable {
     /// Creates a JWE error with the given message.
     /// - Parameter message: The error message.
     /// - Returns: An NSError with the JWE domain and generic error code.
-    public static func jweError(_ message: String) -> NSError {
+    static func jweError(_ message: String) -> NSError {
         return NSError(
             domain: jweDomain,
             code: genericErrorCode,

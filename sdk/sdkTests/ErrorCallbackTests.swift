@@ -323,20 +323,6 @@ extension SessionNetworkTests {
         #expect(StubURLProtocol.requestCount(forPathSuffix: "oauth2/token") == 1)
     }
 
-    /// `reauthenticate()` is public, so a host that calls it directly gets its failure reported
-    /// like that of every other public call.
-    @Test func aDirectReauthenticateOnAClosedSessionIsReportedOnce() async throws {
-        gateway()
-        let reported = ReportedErrors()
-        let sdk = reportingSDK(reported)
-        let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
-        await session.close()
-
-        await #expect(throws: GopaySDKError.self) { _ = try await session.reauthenticate() }
-
-        #expect(reported.codes == [.authPaymentSessionClosed])
-    }
-
     // MARK: The polling
 
     @Test func aDeclinedChargeIsReportedOnceByAwaitChargeState() async throws {

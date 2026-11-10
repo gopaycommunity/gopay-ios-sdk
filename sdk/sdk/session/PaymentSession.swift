@@ -109,8 +109,7 @@ public actor PaymentSession {
 
     /// Runs one public call and reports what it throws, once, before rethrowing it.
     ///
-    /// Every public method of the session, the token provider's ``reauthenticate()`` included,
-    /// is one `reported` block around an unreported implementation, and the implementations
+    /// Every public method of the session is one `reported` block around an unreported implementation, and the implementations
     /// call each other, never the public methods: a charge that fails while
     /// ``chargeWithWallet(browserData:challengePreference:)`` runs it is reported by that call
     /// alone, a read that fails inside ``awaitChargeState(_:)`` by that one, and a token refresh
@@ -497,31 +496,24 @@ struct SessionCallbacks: Sendable {
     }
 }
 
-/// The token provider ``PaymentAPI`` reads. Public only because an earlier protocol needed it, and
-/// listed for removal in 3.0. ``PaymentAPI`` and the eager authentication use the unreported
-/// ``authenticate()``, so a refresh that fails inside a call is reported by that call; the public
-/// ``reauthenticate()`` is reported like every other public call, for a host that calls it
-/// directly.
+/// The token provider ``PaymentAPI`` reads. Internal since 3.0: the session authenticates on its
+/// own, and a host has nothing to do with its token. ``authenticate()`` is unreported, so a
+/// refresh that fails inside a call is reported by that call.
 extension PaymentSession: SessionTokenProviding {
     /// Returns the cached JWT if it's still valid, otherwise `nil`. Lets ``PaymentAPI`` avoid
     /// re-parsing the JWT on every request — expiry is captured once at re-auth time.
-    public func currentToken() -> String? {
+    func currentToken() -> String? {
         guard let token = token else { return nil }
         if tokenExpiresAt != 0, Date().timeIntervalSince1970 >= tokenExpiresAt { return nil }
         return token
     }
 
-    public func invalidateToken() {
+    func invalidateToken() {
         token = nil
         tokenExpiresAt = 0
     }
 
-    public func reauthenticate() async throws -> String {
-        try await reported { try await authenticate() }
-    }
-
-    /// ``reauthenticate()`` without the reporting: the single-flighted token refresh every
-    /// request on this session falls back to.
+    /// The single-flighted token refresh every request on this session falls back to.
     func authenticate() async throws -> String {
         if let token = currentToken() { return token }
         if let authTask = authTask { return try await authTask.value }

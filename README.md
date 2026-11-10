@@ -504,8 +504,8 @@ _ = try await session.charge(request)
 `handle3dsVerification(redirectURL:returnURL:presenting:)` opens the challenge in an SDK-managed
 WebView and suspends. Pass it the address your backend created the payment with
 (`callback.return_url`), which the app gets from its backend together with `payment_id` and
-`payment_secret`; the ACS comes back to it when the challenge is done. GoPay is removing it from the
-charge response, so do not rely on `ChargePaymentResponse.returnUrl`, which is deprecated. Without a
+`payment_secret`; the ACS comes back to it when the challenge is done. The charge response does not
+carry it: `ChargePaymentResponse.returnUrl` of 2.x is gone in 3.0. Without a
 usable one (`nil`, blank, or not an `http(s)` address with a host) the SDK waits for
 `GopaySDK.chargeReturnURL` instead, and then the payment has to be created with that address,
 otherwise the screen never closes on its own. The return URL should carry no fragment (`#…`): what
@@ -1044,7 +1044,6 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `NETWORK_005` | No HTTP response: a certificate failed (any other TLS failure is `NETWORK_007`) |
 | `NETWORK_007` | No HTTP response for any other reason, e.g. the connection dropped |
 | `CONFIG_001` | `startPaymentSession`, `encryptCardData` or `submitCardForm` called before `initialize(with:)` |
-| `CONFIG_003` | Not thrown by the SDK; deprecated, removed in 3.0 |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |
 | `VALIDATION_007` | Invalid input — empty ids, a card that fails the PAN / month / year / CVV rules, a form with no card or an invalid one, or `awaitChargeState` options that are not positive |
 | `INTERNAL_001` | Unexpected internal error, including a card encryption that failed after the key was fetched |
@@ -1238,10 +1237,10 @@ the response enums and the card form theme.
 | A transport failure (offline, timeout, TLS) reached you bare (`URLError`) | `GopaySDKError` with `NETWORK_001`, `NETWORK_004`, `NETWORK_005` or `NETWORK_007`; the original error is the `underlying` |
 | A 4xx or a transport failure of the token request in `startPaymentSession` was `AUTH_010` | `AUTH_010` only when the gateway turns the pair down (HTTP 400, 401 or 403); anything else keeps its `NETWORK_*` code |
 | An Apple Pay failure was a `GopaySDK` `NSError` | Apple Pay unavailable or its sheet not shown: `PAYMENT_004`; a token the SDK cannot use: `PAYMENT_003` |
-| `GopaySDKErrors.applePayUnavailable`, `applePayCancelled`, `applePayAuthorizationFailed`, `sdkError(_:)` | Deprecated, the SDK no longer uses them: match `GopaySDKError.code` against `PAYMENT_004`, `PAYMENT_011` and `PAYMENT_003` instead |
+| `GopaySDKErrors.applePayUnavailable`, `applePayCancelled`, `applePayAuthorizationFailed`, `sdkError(_:)` | Deprecated in 2.0 and removed in 3.0 with the rest of `GopaySDKErrors`: match `GopaySDKError.code` against `PAYMENT_004`, `PAYMENT_011` and `PAYMENT_003` instead |
 | Closing the Apple Pay sheet threw a `GopaySDK` `NSError`, closing the 3DS screen threw `CancellationError` | `paymentCancelled` (`PAYMENT_011`); a `CancellationError` now comes only from cancelling your own task, which also closes the 3DS screen |
-| `charge.returnUrl` was the address to pass `handle3dsVerification` | Deprecated: GoPay is removing `return_url` from the charge response. Pass the `callback.return_url` your backend created the payment with |
-| `configMissingParameter` (`CONFIG_003`) | Deprecated: the SDK never throws it, and 3.0 removes it |
+| `charge.returnUrl` was the address to pass `handle3dsVerification` | Deprecated in 2.0 and removed in 3.0: GoPay is removing `return_url` from the charge response. Pass the `callback.return_url` your backend created the payment with |
+| `configMissingParameter` (`CONFIG_003`) | Deprecated in 2.0 and removed in 3.0: the SDK never threw it |
 
 ### Card encryption
 

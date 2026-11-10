@@ -809,7 +809,6 @@ struct SessionNetworkTests {
             ("getWalletInfo", { _ = try await session.getWalletInfo() }),
             ("chargeWithApplePay", { _ = try await session.chargeWithApplePay(browserData: Self.deviceBrowserData) }),
             ("chargeWithWallet", { _ = try await session.chargeWithWallet(browserData: Self.deviceBrowserData) }),
-            ("reauthenticate", { _ = try await session.reauthenticate() }),
         ]
         for (name, call) in calls {
             do {
@@ -974,7 +973,7 @@ struct SessionNetworkTests {
         await session.close()
         await session.invalidateToken()
         do {
-            _ = try await session.reauthenticate()
+            _ = try await session.authenticate()
             Issue.record("expected failure")
         } catch let error as GopaySDKError {
             #expect(error.code == .authPaymentSessionClosed)

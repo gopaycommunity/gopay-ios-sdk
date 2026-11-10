@@ -22,14 +22,13 @@ extension AsyncHTTPClient {
 
 /// URLSession-backed HTTP client. The single low-level networking primitive for the SDK.
 /// `@unchecked Sendable`: its two properties are set once and `URLSession` is thread-safe.
-public class DefaultNetworkClient: NSObject, URLSessionDelegate, @unchecked Sendable {
-    public let baseURL: String
+final class DefaultNetworkClient: @unchecked Sendable {
+    let baseURL: String
     private let session: URLSession
 
-    public init(baseURL: String, configuration: URLSessionConfiguration = .default) {
+    init(baseURL: String, configuration: URLSessionConfiguration = .default) {
         self.baseURL = baseURL
-        self.session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
-        super.init()
+        self.session = URLSession(configuration: configuration)
     }
 
     /// Builds a request URL by concatenating `path` onto ``baseURL``, or returns `nil` when the
@@ -41,7 +40,7 @@ public class DefaultNetworkClient: NSObject, URLSessionDelegate, @unchecked Send
     /// far from the configuration that caused it. Callers map `nil` to
     /// ``GopaySDKError/Code/invalidBaseURL`` (`CONFIG_006`) instead, which names the real problem.
     /// OkHttp's `HttpUrl` on Android refuses the same inputs, so this keeps the two SDKs aligned.
-    public func makeURL(path: String) -> URL? {
+    func makeURL(path: String) -> URL? {
         guard let url = URL(string: baseURL + path),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
@@ -49,8 +48,6 @@ public class DefaultNetworkClient: NSObject, URLSessionDelegate, @unchecked Send
         else { return nil }
         return url
     }
-
-    // URLSessionDelegate methods for SSL pinning or custom certificate handling can be added here.
 
     /// What the SDK's own requests send as `User-Agent`: the gateway's, and the telemetry's.
     static var userAgent: String { "GoPay iOS SDK \(GopaySDK.version)" }

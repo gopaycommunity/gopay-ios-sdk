@@ -1,7 +1,7 @@
 import Foundation
 
 /// Utility for JWT operations
-public struct JwtUtils: Sendable {
+struct JwtUtils: Sendable {
     /// Extracts the `exp` claim (Unix seconds) from a JWT.
     ///
     /// Returns `0` when the claim is absent or the token can't be decoded — callers treat `0` as
@@ -10,7 +10,7 @@ public struct JwtUtils: Sendable {
     /// the server rejects regardless of its local `exp`.
     /// - Parameter jwt: The JWT string.
     /// - Returns: The `exp` claim in Unix seconds, or `0` if missing/malformed.
-    public static func expirationSeconds(jwt: String) -> TimeInterval {
+    static func expirationSeconds(jwt: String) -> TimeInterval {
         let segments = jwt.split(separator: ".")
         guard segments.count == 3 else { return 0 }
 

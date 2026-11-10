@@ -218,11 +218,12 @@ public struct BrowserData: Encodable, Sendable {
 
 /// Response of `GET /cards/browser-data`: the ``BrowserData`` fields the device cannot determine on
 /// its own, derived by the gateway from the request that fetched them. Maps to
-/// `Browser-Data-Detected`. The SDK merges it into the charge's ``BrowserData``.
-public struct BrowserDataDetected: Codable, Sendable {
-    public let ip: String
-    public let userAgent: String
-    public let acceptHeader: String
+/// `Browser-Data-Detected`. The SDK merges it into the charge's ``BrowserData``; nothing else
+/// reads it.
+struct BrowserDataDetected: Codable, Sendable {
+    let ip: String
+    let userAgent: String
+    let acceptHeader: String
 
     enum CodingKeys: String, CodingKey {
         case ip
@@ -464,43 +465,27 @@ public struct ChargeAction: Codable, Sendable {
 /// Response for POST/GET `/payments/{payment_id}/charge`, and the value of `Payment-Details.charge`
 /// returned by `GET /payments/{payment_id}`. Maps to `Payment-Charge-Status-Response`.
 ///
-/// Per the spec `id`, `state` and `return_url` are required; instrument details and the follow-up
-/// action are absent in early states, and `fail_reason` is only present when `state == failed`.
-/// GoPay is removing `return_url` from the charge response, so ``returnUrl`` is optional and
-/// deprecated.
+/// Per the spec `id` and `state` are required; instrument details and the follow-up action are
+/// absent in early states, and `fail_reason` is only present when `state == failed`. The
+/// `return_url` the gateway may still repeat with a charge is not read: the address to pass to
+/// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` is the
+/// `callback.return_url` your backend created the payment with.
 public struct ChargePaymentResponse: Codable, Sendable {
     public let id: String
     public let state: ChargeState
-
-    /// The `return_url` the gateway repeats with a charge. GoPay is removing it from the charge
-    /// response, so do not rely on it: it may be `nil`, and the property goes away in 3.0.
-    ///
-    /// The address to pass to
-    /// ``PaymentSession/handle3dsVerification(redirectURL:returnURL:presenting:)`` is the one your
-    /// backend created the payment with (`callback.return_url`), which the app gets from its
-    /// backend together with `payment_id` and `payment_secret`.
-    @available(*, deprecated, message: "GoPay is removing return_url from the charge response, so do not rely on it. Pass handle3dsVerification the callback.return_url your backend created the payment with.")
-    public var returnUrl: String? { gatewayReturnUrl }
     public let paymentInstrument: PaymentInstrumentData?
     public let action: ChargeAction?
     public let failReason: String?
 
-    /// `return_url` as decoded, without surrounding white space, and `nil` when it is missing or
-    /// blank: an empty string as a prefix would match every URL.
-    let gatewayReturnUrl: String?
-
     enum CodingKeys: String, CodingKey {
         case id
         case state
-        case returnUrl = "return_url"
         case paymentInstrument = "payment_instrument"
         case action
         case failReason = "fail_reason"
     }
 
-    /// Decodes the charge, tolerating a missing or blank `return_url` without a word: GoPay is
-    /// removing it from the charge response, and the charge block nested in `GET /payments/{id}`
-    /// never carried it. The Android SDK decodes it the same way.
+    /// Decodes the charge. A `return_url` in it is ignored, as the Android SDK ignores it.
     public init(from decoder: Decoder) throws {
         try self.init(from: decoder, missingStateIsUnknown: false)
     }
@@ -520,17 +505,12 @@ public struct ChargePaymentResponse: Codable, Sendable {
         paymentInstrument = try container.decodeIfPresent(PaymentInstrumentData.self, forKey: .paymentInstrument)
         action = try container.decodeIfPresent(ChargeAction.self, forKey: .action)
         failReason = try container.decodeIfPresent(String.self, forKey: .failReason)
-
-        let trimmed = try container.decodeIfPresent(String.self, forKey: .returnUrl)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        gatewayReturnUrl = trimmed?.isEmpty == false ? trimmed : nil
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(state, forKey: .state)
-        try container.encodeIfPresent(gatewayReturnUrl, forKey: .returnUrl)
         try container.encodeIfPresent(paymentInstrument, forKey: .paymentInstrument)
         try container.encodeIfPresent(action, forKey: .action)
         try container.encodeIfPresent(failReason, forKey: .failReason)

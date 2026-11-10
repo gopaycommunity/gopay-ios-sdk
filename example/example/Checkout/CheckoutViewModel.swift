@@ -244,6 +244,11 @@ final class CheckoutViewModel {
 
     // MARK: - Flows
 
+    // The two answers of `submitCardForm` to a form it cannot encrypt, told apart by the message
+    // until the empty form gets its own code.
+    private static let invalidCardFormMessage = "Card form data is invalid. Please check all fields."
+    private static let emptyCardFormMessage = "No card form data available. Please use GopayCardForm to enter card data."
+
     private func payWithNewCard() async throws {
         // The card first, before anything expensive: `submitCardForm` switches the form's
         // `.onSubmit` validation on itself, so an empty or invalid card shows its errors here
@@ -252,10 +257,10 @@ final class CheckoutViewModel {
         let jwe: String
         do {
             jwe = try await GopaySDK.shared.submitCardForm()
-        } catch let error as GopaySDKError where error.message == GopaySDKErrors.invalidCardFormData {
+        } catch let error as GopaySDKError where error.message == Self.invalidCardFormMessage {
             // The form is showing what is wrong; nothing more to say.
             return
-        } catch let error as GopaySDKError where error.message == GopaySDKErrors.noCardFormData {
+        } catch let error as GopaySDKError where error.message == Self.emptyCardFormMessage {
             // Nothing typed yet, or the SDK wiped the card after the previous successful
             // encryption (GPMOB-140): the gateway accepts each JWE only once, so a retry needs the
             // card entered again. The form shows the required fields; the banner says why.
