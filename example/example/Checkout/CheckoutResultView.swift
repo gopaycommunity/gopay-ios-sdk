@@ -179,17 +179,9 @@ struct CheckoutResultView: View {
         return "clock.fill"
     }
 
-    private var title: String {
-        if outcome.isSuccess { return "Payment complete" }
-        if outcome.isFailure { return "Payment failed" }
-        return "Payment pending"
-    }
+    private var title: String { outcome.resultTitle }
 
-    private var subtitle: String {
-        if outcome.isSuccess { return "Thanks! We've emailed your receipt and the order is on its way." }
-        if outcome.isFailure { return outcome.message ?? "The bank declined the charge. No money was taken." }
-        return "We polled the gateway and the bank hasn't confirmed yet. A real shop would also get the final state on its notification URL."
-    }
+    private var subtitle: String { outcome.resultSubtitle }
 
     private func friendlyInputType(_ raw: String) -> String {
         switch raw {
@@ -210,4 +202,24 @@ private struct AnyButtonStyleBox: ButtonStyle {
     }
 
     func makeBody(configuration: Configuration) -> some View { make(configuration) }
+}
+
+extension CheckoutViewModel.Outcome {
+    /// The heading of the result screen. The Android demo shows the same texts.
+    var resultTitle: String {
+        if isSuccess { return "Payment complete" }
+        if isFailure { return "Payment failed" }
+        if isUnread { return "Couldn't check the payment" }
+        return "Payment pending"
+    }
+
+    /// The line under the heading. A state that could not be read is not a bank that has not answered.
+    var resultSubtitle: String {
+        if isSuccess { return "Thanks! We've emailed your receipt and the order is on its way." }
+        if isFailure { return message ?? "The bank declined the charge. No money was taken." }
+        if isUnread {
+            return "The payment was sent, but we couldn't read its state, so we don't know yet whether it went through. Refresh before paying again."
+        }
+        return "We polled the gateway and the bank hasn't confirmed yet. A real shop would also get the final state on its notification URL."
+    }
 }

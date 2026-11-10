@@ -84,13 +84,20 @@ final class CheckoutViewModel {
 
         var isSuccess: Bool { state == .succeeded }
         var isFailure: Bool { state == .failed }
+        /// The charge went out and its state could not be read, a network error above all: not
+        /// the same as a charge the bank has not confirmed yet, and the result screen says so.
+        var isUnread: Bool { !isSuccess && !isFailure && message != nil }
     }
 
     // MARK: - State
 
     let cart = DemoCart.sample
 
-    var selectedMethod: Method = .card
+    var selectedMethod: Method = .card {
+        // A banner speaks about the method it was raised for, a closed Apple Pay sheet for
+        // instance, so it goes when the shopper picks another one.
+        didSet { if selectedMethod != oldValue { banner = nil } }
+    }
     /// `nil` follows the SDK/device default locale.
     var locale: String?
     var isCardFormValid = false

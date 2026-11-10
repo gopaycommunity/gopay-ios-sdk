@@ -63,6 +63,39 @@ struct CheckoutViewModelTests {
         #expect(model.qrDetails == nil)
     }
 
+    /// A banner belongs to the method it was raised for: picking another method takes it down,
+    /// picking the same one again does not.
+    @Test func pickingAnotherMethodClearsTheBanner() {
+        let model = CheckoutViewModel()
+        model.selectedMethod = .applePay
+        model.banner = "Payment cancelled. Pick a method and try again."
+
+        model.selectedMethod = .applePay
+        #expect(model.banner == "Payment cancelled. Pick a method and try again.")
+
+        model.selectedMethod = .card
+        #expect(model.banner == nil)
+    }
+
+    /// A charge whose state could not be read is not headed as one the bank has not confirmed:
+    /// the bank was not asked. A pending charge without a message keeps "Payment pending".
+    @Test func unreadStateHasItsOwnHeading() {
+        let unread = CheckoutViewModel.Outcome(
+            state: .unknown, response: nil, message: "Couldn't check the payment: [NETWORK_004] offline"
+        )
+        #expect(unread.isUnread)
+        #expect(unread.resultTitle == "Couldn't check the payment")
+        #expect(unread.resultSubtitle.hasPrefix("The payment was sent, but we couldn't read its state"))
+
+        let pending = CheckoutViewModel.Outcome(state: .processing, response: nil, message: nil)
+        #expect(!pending.isUnread)
+        #expect(pending.resultTitle == "Payment pending")
+
+        let failed = CheckoutViewModel.Outcome(state: .failed, response: nil, message: "declined")
+        #expect(!failed.isUnread)
+        #expect(failed.resultTitle == "Payment failed")
+    }
+
     /// The same for Refresh on the pending screen, with a session in place so it is the busy
     /// check that stops it, not the missing session.
     @Test func refreshWhileBusyReturnsAtOnce() async throws {

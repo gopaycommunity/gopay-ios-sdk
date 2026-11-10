@@ -216,9 +216,10 @@ struct ContentView: View {
                 .cornerRadius(12)
 
             button("Encrypt card → JWE", system: "lock.fill") {
-                // Reveal inline validation errors; only encrypt once the form is valid.
-                await MainActor.run { didAttemptSubmit = true }
-                guard isFormValid else { return }
+                // No check of the form's validity here: `submitCardForm` raises the form's submit
+                // flag itself, so the fields show what is wrong, and it throws VALIDATION_008 for
+                // an empty form and VALIDATION_007 for an invalid one. The console prints the
+                // error, so the Response box says why nothing was encrypted.
                 let encrypted = try await GopaySDK.shared.submitCardForm()
                 // The SDK empties the fields on success and sets didAttemptSubmit back to false.
                 await MainActor.run { jwe = encrypted }
