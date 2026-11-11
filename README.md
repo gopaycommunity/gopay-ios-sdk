@@ -166,6 +166,12 @@ The app can read the outcome too, with `getPaymentOutcome()` (see
 payment, or after a charge call ended with a network error. That is for the screen the user sees;
 what your server learns from the notification and `GET /payments/{id}` settles the order.
 
+One payment is paid one way: in the app with the SDK, or on GoPay's hosted gateway, the address in
+the payment's `gw_url` (`gatewayUrl` in `PaymentDetails`). GoPay does not support both on the same
+payment at once. Do not charge from the SDK a payment the customer has opened on the hosted
+gateway, and do not send them there with a payment the SDK is charging: the charge can fail, and
+its state may not be there to read. To offer the other way, create a new payment.
+
 ---
 
 ## Quick start
