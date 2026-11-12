@@ -6,6 +6,8 @@
 //  amounts come from `DemoCart`, the payment is created through `MerchantBackendSimulator`, and
 //  each method drives the actual SDK call (see `CheckoutViewModel`).
 //
+//  The payment and its session are opened when the screen appears, not when the shopper pays.
+//
 
 import SwiftUI
 import GopaySDK
@@ -37,6 +39,9 @@ struct CheckoutView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { payBar }
         .navigationBarBackButtonHidden()
         .toolbar(.hidden, for: .navigationBar)
+        // Once per visit: `open()` does nothing while the checkout has its session, so the view
+        // coming back on screen does not create a second payment.
+        .task { await model.open() }
         .sheet(isPresented: Binding(
             get: { model.qrDetails != nil },
             set: { if !$0 { model.qrDetails = nil } }
@@ -50,7 +55,6 @@ struct CheckoutView: View {
             CheckoutResultView(
                 outcome: outcome,
                 cart: model.cart,
-                paymentId: model.paymentId,
                 isRefreshing: model.isBusy,
                 onRefresh: { Task { await model.refreshChargeState() } },
                 onRetry: { model.resumeShopping() },
@@ -65,6 +69,7 @@ struct CheckoutView: View {
         }
         .animation(.easeInOut(duration: 0.22), value: model.selectedMethod)
         .animation(.easeInOut(duration: 0.22), value: model.busyLabel)
+        .animation(.easeInOut(duration: 0.22), value: model.isOpening)
     }
 
     // MARK: - Header
@@ -84,6 +89,9 @@ struct CheckoutView: View {
                     .background(CheckoutTheme.surface, in: Circle())
                     .overlay(Circle().stroke(CheckoutTheme.hairline, lineWidth: 1))
             }
+            // Leaving closes the session, which must not happen under a running payment.
+            .disabled(model.isBusy)
+            .opacity(model.isBusy ? 0.4 : 1)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Checkout")
@@ -241,23 +249,22 @@ struct CheckoutView: View {
 
     private var payBar: some View {
         VStack(spacing: 10) {
-            if let banner = model.banner {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                    Text(banner).font(.system(size: 13))
-                    Spacer(minLength: 0)
+            if let openError = model.openError {
+                // The checkout has no payment to pay. "Try again" only opens it again.
+                bannerRow(openError) {
+                    Button("Try again") { Task { await model.open() } }
+                        .font(.system(size: 13, weight: .semibold))
+                        .buttonStyle(.plain)
                 }
-                .foregroundStyle(CheckoutTheme.warning)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(CheckoutTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else if let banner = model.banner {
+                bannerRow(banner) { EmptyView() }
             }
 
             Button {
                 Task { await model.pay() }
             } label: {
                 HStack(spacing: 8) {
-                    if let busy = model.busyLabel {
+                    if let busy = model.payButtonStatus {
                         ProgressView().tint(CheckoutTheme.onAccent)
                         Text(busy)
                     } else {
@@ -272,12 +279,27 @@ struct CheckoutView: View {
                 background: model.selectedMethod == .applePay ? CheckoutTheme.ink : CheckoutTheme.accent,
                 foreground: model.selectedMethod == .applePay ? CheckoutTheme.canvas : CheckoutTheme.onAccent
             ))
-            .disabled(model.isBusy)
+            // Enabled only with the checkout's payment and session in place: paying never
+            // creates them.
+            .disabled(!model.canPay)
         }
         .padding(.horizontal, CheckoutTheme.gutter)
         .padding(.top, 10)
         .padding(.bottom, 6)
         .background(.bar)
+    }
+
+    private func bannerRow(_ text: String, @ViewBuilder action: () -> some View) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle.fill")
+            Text(text).font(.system(size: 13))
+            Spacer(minLength: 0)
+            action()
+        }
+        .foregroundStyle(CheckoutTheme.warning)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(CheckoutTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var trustFooter: some View {
@@ -287,6 +309,10 @@ struct CheckoutView: View {
                 Text("Secured by GoPay · card details never touch this app")
             }
             Text("GopaySDK \(GopaySDK.version)")
+            // The payment the checkout holds, so a new one after a decline can be told apart.
+            if let paymentId = model.paymentId {
+                Text("Payment \(paymentId)")
+            }
         }
         .font(.system(size: 11.5))
         .foregroundStyle(CheckoutTheme.inkMuted)

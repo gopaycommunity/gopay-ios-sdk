@@ -12,7 +12,6 @@ import GopaySDK
 struct CheckoutResultView: View {
     let outcome: CheckoutViewModel.Outcome
     let cart: DemoCart
-    let paymentId: String?
     let isRefreshing: Bool
     let onRefresh: () -> Void
     let onRetry: () -> Void
@@ -77,9 +76,7 @@ struct CheckoutResultView: View {
                     }
                     row("Input", friendlyInputType(details.inputType))
                 }
-                if let paymentId {
-                    row("Payment", paymentId)
-                }
+                row("Payment", outcome.paymentId)
                 row("Charge state", outcome.state.rawValue)
                 if let message = outcome.message, !message.isEmpty {
                     row("Reason", message, valueColor: CheckoutTheme.danger)
@@ -205,20 +202,27 @@ private struct AnyButtonStyleBox: ButtonStyle {
 }
 
 extension CheckoutViewModel.Outcome {
-    /// The heading of the result screen. The Android demo shows the same texts.
+    /// The heading of the result screen. "Couldn't check the payment" only where reading the state
+    /// failed; any other error after the charge went out gets a heading that does not say why.
+    /// The Android demo shows the same texts.
     var resultTitle: String {
         if isSuccess { return "Payment complete" }
         if isFailure { return "Payment failed" }
         if isUnread { return "Couldn't check the payment" }
+        if isUnfinished { return "Payment not finished" }
         return "Payment pending"
     }
 
-    /// The line under the heading. A state that could not be read is not a bank that has not answered.
+    /// The line under the heading. A state that could not be read is not a bank that has not
+    /// answered, and neither is a payment something else interrupted.
     var resultSubtitle: String {
         if isSuccess { return "Thanks! We've emailed your receipt and the order is on its way." }
         if isFailure { return message ?? "The bank declined the charge. No money was taken." }
         if isUnread {
             return "The payment was sent, but we couldn't read its state, so we don't know yet whether it went through. Refresh before paying again."
+        }
+        if isUnfinished {
+            return "The payment was sent, but it isn't finished yet. Refresh before paying again."
         }
         return "We polled the gateway and the bank hasn't confirmed yet. A real shop would also get the final state on its notification URL."
     }
