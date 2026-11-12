@@ -1,3 +1,29 @@
+# 3.0.0 (2026-11-12)
+
+
+* feat!: give the data and the card form one shape with Android GPMOB-200 ffb3764
+* feat!: give the public API the names both SDKs share GPMOB-200 324c4a2
+* feat!: remove what was public by accident or deprecated in 2.x GPMOB-200 7a90454
+
+
+### Bug Fixes
+
+* hide the customer's e-mail and phone in the demo console GPMOB-200 d8221ae
+* say in the demo why a card was not encrypted or a state not read GPMOB-200 318af02
+
+
+### Features
+
+* let an app replace the session in its tests GPMOB-200 827c1de
+* settle the names and the shape of 3.0 after review GPMOB-200 d8e99da
+
+
+### BREAKING CHANGES
+
+* the fields above changed between optional and always present, .onSubmit(attempted:) is .onSubmit with PaymentCardForm(submitAttempted:), isValid is a Binding<Bool>, and an empty card form throws VALIDATION_008 instead of VALIDATION_007.
+* a switch over the environment has to spell case .development(baseUrl: let url); every other name of 2.x still builds, with a deprecation warning.
+* the token methods of PaymentSession, ChargePaymentResponse.returnUrl, GopaySDKErrors, DefaultNetworkClient, JwtUtils, BrowserDataDetected and CONFIG_003 are no longer part of the public API. See sdk/docs/API_3_0.md.
+
 # 2.7.0 (2026-11-09)
 
 
