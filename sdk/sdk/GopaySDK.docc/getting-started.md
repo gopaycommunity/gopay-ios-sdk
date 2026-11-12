@@ -46,16 +46,35 @@ throws ``GopaySDKError/Code/sdkNotInitialized``:
 GopaySDK.shared.initialize(with: config)
 ```
 
-## Step 5: Charge a payment
+## Step 5: Start the session when the checkout opens
 
-Start a session for the payment your backend created and charge it with the calls both SDKs
-share, then wait for the result:
+Have your backend create the payment when the checkout opens, and start the payment's session
+right away, not when the customer taps Pay. The SDK then has the payment ready before the customer
+pays, for a card and for a wallet button alike:
 
 ```swift
 let session = try await GopaySDK.shared.startPaymentSession(paymentId: paymentId, paymentSecret: paymentSecret)
+```
+
+## Step 6: Charge when the customer pays
+
+Charge the session with the calls both SDKs share, then wait for the result:
+
+```swift
 _ = try await session.chargeWithCardToken(cardToken)       // or chargeWithEncryptedCard(jwe), chargeWithWallet()
 let charge = try await session.awaitChargeState(AwaitChargeOptions(returnUrl: returnUrl))
 ```
+
+Show the Apple Pay button by the device check alone (`GopaySDK.isWalletAvailable()`), and ask for
+the wallet's configuration only once the customer has picked the wallet: `chargeWithWallet()`
+fetches it itself, so you do not call `getWalletInfo()` when the checkout opens.
+
+A payment is paid once: after a declined charge, create a new payment and start its session.
+Close the session when the payment is over and when the customer leaves the checkout, not in
+`.onDisappear`: the 3DS screen covers the checkout while the payment is still running on the
+session.
+``PaymentCardForm`` also works without a payment and a session; that is for encrypting a card to
+tokenize and save it.
 
 ## Full Example
 

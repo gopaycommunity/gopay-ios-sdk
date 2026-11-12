@@ -95,6 +95,8 @@ The badge at the top of this README shows the latest version on
 ## How it works
 
 ```
+When the checkout opens:
+
 ┌────────────┐   1. create payment (merchant creds)   ┌─────────────────┐
 │  Your app  │ ─────────────────────────────────────▶ │  Your backend   │
 │            │ ◀───────────────────────────────────── │ (merchant only) │
@@ -103,12 +105,22 @@ The badge at the top of this README shows the latest version on
       │ 3. GopaySDK.shared.startPaymentSession(paymentId:paymentSecret:)
       ▼
 ┌──────────────────────────────────────────────────────────────────────┐
+│ PaymentSession                                                         │
+└──────────────────────────────────────────────────────────────────────┘
+
+When the customer pays:
+
+┌──────────────────────────────────────────────────────────────────────┐
 │ PaymentSession  →  chargeWithCardToken / chargeWithEncryptedCard /     │
 │                    chargeWithWallet / awaitChargeState /               │
 │                    getStatus / getPaymentOutcome / getChargeState /    │
 │                    handle3dsVerification / getQrPaymentInfo            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+Create the payment and start its session when the checkout opens, not when the customer taps Pay.
+The SDK then has the payment ready before the customer pays, for a card and for a wallet button
+alike. The hosted gateway on the web works the same way.
 
 Payment **creation** uses merchant credentials and must happen on **your server** — the mobile SDK
 never sees the merchant secret and cannot create payments. The example app includes a
@@ -176,8 +188,9 @@ its state may not be there to read. To offer the other way, create a new payment
 
 ## Quick start
 
-Your backend creates the payment first and hands the app its `id` (the API's `payment_id`),
-`payment_secret` and the return URL; the calls it makes are in [Your backend](#your-backend).
+Your backend creates the payment when the checkout opens and hands the app its `id` (the API's
+`payment_id`), `payment_secret` and the return URL; the calls it makes are in
+[Your backend](#your-backend).
 Cards to try are in [Testing on the sandbox](#testing-on-the-sandbox).
 
 ### Initialize
@@ -214,7 +227,8 @@ than an Info.plist lookup, since under SPM the SDK links statically into the hos
 ### Show the card form and charge
 
 The first card payment needs the keys above and a payment your backend has created.
-`PaymentCardForm` collects the card, `submitCardForm` encrypts it into a JWE,
+`startPaymentSession` opens the payment's session when the checkout appears. When the customer
+taps Pay, `submitCardForm` encrypts the card `PaymentCardForm` collected into a JWE,
 `chargeWithEncryptedCard` sends the charge and `awaitChargeState` waits for the result: it polls
 the charge once a second, as GoPay recommends, runs the 3DS challenge in an SDK-managed WebView
 when the bank asks for one, and returns the charge once it is `succeeded`.
@@ -224,12 +238,18 @@ import SwiftUI
 import GopaySDK
 
 struct CheckoutView: View {
-    // paymentId, paymentSecret and returnUrl (its callback.return_url) come from YOUR backend
-    // after it creates the payment.
+    // paymentId, paymentSecret and returnUrl (its callback.return_url) come from YOUR backend,
+    // which creates the payment when the checkout opens.
     let paymentId: String
     let paymentSecret: String
     let returnUrl: URL
+    /// Your navigation away from the checkout.
+    let onLeave: () -> Void
 
+    @State private var session: PaymentSession?
+    @State private var isOpening = false
+    @State private var isPaying = false
+    @State private var isClosed = false
     @State private var isCardValid = false
     @State private var status = ""
 
@@ -237,28 +257,59 @@ struct CheckoutView: View {
         VStack(spacing: 16) {
             // .live shows a field's localized error once the user is done with it.
             PaymentCardForm(validation: .live, isValid: $isCardValid)
-            Button("Pay") { Task { status = await pay() } }
-                .disabled(!isCardValid)
+            Button("Pay") { Task { await pay() } }
+                .disabled(session == nil || isPaying || !isCardValid)
             Text(status)
+            Button("Back") { Task { await leave() } }
+                .disabled(isPaying)
         }
         .padding()
+        // Every way out goes through leave(), so the system's back button and swipe are off.
+        .navigationBarBackButtonHidden()
+        // The session starts with the checkout, not with the Pay button. In a task of its own:
+        // a screen that covers the checkout cancels a `.task`, and the start with it.
+        .onAppear { Task { await open() } }
     }
 
-    /// Runs the payment and returns what the checkout tells the user.
-    private func pay() async -> String {
-        let session: PaymentSession
+    /// Starts the session of the checkout's payment, once.
+    private func open() async {
+        guard session == nil, !isOpening, !isClosed else { return }
+        isOpening = true
+        defer { isOpening = false }
         do {
-            session = try await GopaySDK.shared.startPaymentSession(
+            let started = try await GopaySDK.shared.startPaymentSession(
                 paymentId: paymentId,
                 paymentSecret: paymentSecret
             )
+            // The customer left while the session was starting: nothing else would close it.
+            guard !isClosed else { return await started.close() }
+            session = started
         } catch {
             print("GoPay session failed:", error)   // the code is for your log, not the user
-            return "The payment could not start"
+            status = "The payment could not start"
         }
-        let message = await charge(session)
-        await session.close()   // wipes the secret + token from memory
-        return message
+    }
+
+    /// Closes the session once the payment is over and when the customer leaves. Not in
+    /// `.onDisappear`: the 3DS screen covers the checkout while the payment is still running.
+    private func close() async {
+        isClosed = true
+        let closing = session
+        session = nil
+        await closing?.close()   // wipes the secret + token from memory
+    }
+
+    private func leave() async {
+        await close()
+        onLeave()
+    }
+
+    /// Runs the payment on the checkout's session and tells the user how it went.
+    private func pay() async {
+        guard let session, !isPaying else { return }
+        isPaying = true   // before the first await, so a second tap finds it set
+        defer { isPaying = false }
+        status = await charge(session)
     }
 
     private func charge(_ session: PaymentSession) async -> String {
@@ -279,6 +330,7 @@ struct CheckoutView: View {
             _ = try await session.chargeWithEncryptedCard(jwe)
             charged = true
             _ = try await session.awaitChargeState(AwaitChargeOptions(returnUrl: returnUrl))
+            await close()   // the payment is over
             return "Paid"
         } catch let error as GopaySDKError {
             // The code is for your log, not the user.
@@ -286,7 +338,10 @@ struct CheckoutView: View {
             switch error.code {
             case .paymentDeclined:
                 // The charge ended failed. error.chargeState carries it, with failReason when the
-                // gateway sends one. Paying again needs a new payment.
+                // gateway sends one. The payment is over: paying again needs a new payment, which
+                // the parent hands this view as a new paymentId and paymentSecret, with
+                // `.id(paymentId)` so the view starts again.
+                await close()
                 return "Payment declined"
             case .paymentTimeout, .paymentCancelled:
                 // Still undecided after 30 s, or the user closed the 3DS screen: the charge was
@@ -310,7 +365,13 @@ struct CheckoutView: View {
 
 That is the whole of a card payment in the app. Your backend creates the payment and settles it;
 what the app reports is not proof of payment (see [Your backend](#your-backend)). The session
-starts before the card is encrypted, so a session that cannot start leaves the card in the form.
+starts when the checkout opens, so the SDK has the payment ready before the customer pays, and a
+session that cannot start leaves the card in the form. A wallet button and a saved card charge the
+same session. A payment is paid once: after a declined charge, ask your backend for a new payment
+and start its session right away. Close the session when the payment is over and when the customer
+leaves the checkout, not in `.onDisappear`: the 3DS screen covers the checkout while the payment
+is still running on the session. `PaymentCardForm` also works without a payment and a session;
+that is for encrypting a card to tokenize and save it (see [Card form → JWE](#card-form--jwe)).
 The manual path, `getChargeState()` and `handle3dsVerification`, stays available; both are in
 [Reading the result](#reading-the-result).
 
@@ -326,7 +387,9 @@ When a session starts, the SDK also tells GoPay that the iOS SDK, and which vers
 works with the payment, and GoPay sets the payment's language from the languages set on the
 device: the one ranked highest among those GoPay supports, or English. Nothing to configure.
 `startPaymentSession` does not wait for this, and if it fails, as it does for a payment that is no
-longer `CREATED`, nothing throws and `errorCallback` is not called.
+longer `CREATED`, nothing throws and `errorCallback` is not called. This is why the session starts
+when the checkout opens: the SDK gets the payment ready while the customer is still choosing how to
+pay.
 
 #### Charging a saved card token instead
 
@@ -371,7 +434,7 @@ _ = try await session.charge(request)                       // a ChargePaymentRe
 // QR (bank transfer) info
 let qr = try await session.getQrPaymentInfo(format: .png)   // GET /payments/{id}/qr-payment/info
 
-// Wallet config (for building an Apple Pay sheet manually, if needed)
+// Wallet config (chargeWithWallet fetches it itself; only for building an Apple Pay sheet manually)
 let appInfo = try await session.getWalletInfo()             // GET /payments/{id}/apple-pay/app-info
 
 // Browser data as the charge will send it (charge() runs this step itself)
@@ -415,6 +478,11 @@ do {
 own `BrowserData` if you have more accurate values. When Apple Pay cannot be used it throws
 `PAYMENT_004` (hide the button and offer another method); a token the SDK cannot use, such as the
 empty one the iOS Simulator returns, is `PAYMENT_003`. A charge that fails keeps its own code.
+
+Show the Apple Pay button by the device check alone, and ask for the wallet's configuration only
+once the customer has picked the wallet. `chargeWithWallet()` fetches it itself, so you do not call
+`getWalletInfo()` when the checkout opens. A payment the wallet cannot pay then fails before a
+charge exists: show the error and keep the payment and its session.
 
 `isWalletAvailable()` is `async` because its Android counterpart has to ask Play services; on iOS
 it answers what `canUseApplePay()` answers, a synchronous check you can keep using from a view
@@ -1465,9 +1533,11 @@ The app opens on a launcher with two destinations and an environment badge:
 
 - **Demo checkout** — a realistic e-shop checkout (`CheckoutView`/`CheckoutViewModel`) that
   exercises every payment method — card form, Apple Pay, a saved card token, and bank transfer —
-  through one consistent flow: create a payment, charge, and `awaitChargeState`, which polls the
-  charge to a result and runs any 3DS challenge on the way. Each pay attempt creates a **fresh** payment,
-  since a payment is single-use and a retry after a decline needs a new one.
+  through one consistent flow: the payment and its session are opened when the checkout appears,
+  and every method charges that session and follows it with `awaitChargeState`, which polls the
+  charge to a result and runs any 3DS challenge on the way. A payment is single-use, so after a
+  decline the checkout opens a new payment at once; an error from before a charge existed keeps
+  the payment.
 - **Developer sandbox** (`ContentView`) — the original four-section console described below, for
   poking at each `PaymentSession` method individually and reading the raw JSON response.
 - The **environment badge** at the bottom names the gateway both surfaces talk to. It is a

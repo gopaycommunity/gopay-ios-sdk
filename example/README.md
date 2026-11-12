@@ -78,9 +78,11 @@ shop, with a real cart total, that exercises every payment method the SDK offers
 
 - **Credit or debit card** — `PaymentCardForm` (themed to match the shop) → `submitCardForm()` → a
   JWE → `chargeWithEncryptedCard(_:)`. The PAN never touches this app's code.
-- **Apple Pay** — `chargeWithWallet()` after `isWalletAvailable()`, the wallet names shared with
-  the Android demo. The row is hidden when the device cannot pay (`canUseApplePay()`, the
-  synchronous check a view body can read).
+- **Apple Pay** — `chargeWithWallet()`, the wallet name shared with the Android demo. The row
+  follows the device check alone (`canUseApplePay()`, the synchronous check a view body can
+  read). The checkout does not ask for the wallet's configuration when it
+  opens: `chargeWithWallet()` fetches it once the customer has picked Apple Pay, and a payment the
+  wallet cannot pay is a banner on the same payment.
 - **Saved card** — a known test card encrypted with `encryptCardData(_:)`, tokenized by
   `MerchantBackendSimulator` (simulating your server's `POST /cards/tokens`), then charged with
   `chargeWithCardToken(_:)`.
@@ -88,13 +90,28 @@ shop, with a real cart total, that exercises every payment method the SDK offers
   details, with a **Share** button that hands the QR image and a text summary to
   `UIActivityViewController`.
 
-**Pay** creates a fresh payment, then runs every card-based method through the same tail: charge,
+The checkout creates its payment and starts the session **when it opens**, as the web does, so
+the SDK has the payment ready before the customer pays. Until then **Pay** is disabled, and it never
+creates a payment itself; if opening fails, a banner with **Try again** opens it again. Leaving
+without paying closes the session and nothing else: the payment stays `CREATED` and the gateway
+times it out after an hour.
+
+**Pay** runs every card-based method on the checkout's session through the same tail: charge,
 then `awaitChargeState()`, which polls `getChargeState()` once a second, presents the verification
 WebView whenever the charge carries a new 3DS `action.redirectUrl`, and returns the charge once it
 is `SUCCEEDED`. A charge that ended `FAILED` arrives as `PAYMENT_006` with the charge attached;
 one still undecided after 30 seconds as `PAYMENT_007`. The result screen shows success, failure
 (with "Try another method"), or pending (with a manual refresh that waits again), plus a
 collapsible "Developer details" JSON dump of the last `ChargePaymentResponse`.
+
+A payment is single-use. After a decline the checkout closes the session and opens a new payment
+at once, behind the result screen; the footer shows the number of the payment the checkout holds.
+An error from before a charge existed, such as a closed Apple Pay sheet or a refused charge call,
+is a banner on the same payment. After a closed 3DS challenge or a charge call whose answer was
+lost, the checkout reads `getPaymentOutcome()` before it offers anything: a paid payment is the
+result, a charge still waiting for 3DS is finished with `awaitChargeState()`, and only a failed
+charge or a challenge the customer closed themselves gets a new payment. The bank transfer details
+are read on the same payment, which can still be paid by card afterwards.
 
 The **language picker** for the card form's labels sits inside the "Credit or debit card" row.
 Twenty built-in languages plus a custom locale (`"xx"`, registered in `exampleApp.swift`) are
