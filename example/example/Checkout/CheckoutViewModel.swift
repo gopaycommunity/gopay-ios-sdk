@@ -234,8 +234,6 @@ final class CheckoutViewModel {
             session = started
             paymentId = created.paymentId
             returnUrl = created.returnUrl
-        } catch is CancellationError {
-            // The checkout's own task going away, not the shopper: nothing left to show it on.
         } catch {
             guard visit == self.visit else { return }
             openError = "Couldn't prepare your order: \(Self.describe(error))"

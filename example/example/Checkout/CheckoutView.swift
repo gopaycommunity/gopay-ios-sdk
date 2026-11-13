@@ -39,9 +39,11 @@ struct CheckoutView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { payBar }
         .navigationBarBackButtonHidden()
         .toolbar(.hidden, for: .navigationBar)
-        // Once per visit: `open()` does nothing while the checkout has its session, so the view
-        // coming back on screen does not create a second payment.
-        .task { await model.open() }
+        // Once per visit: `open()` does nothing while the checkout has its session or is opening
+        // it, so the view coming back on screen does not create a second payment. In a task of
+        // its own rather than `.task`: a screen that covers the checkout, the 3DS challenge for
+        // one, cancels a `.task`, and an opening still running would be cancelled with it.
+        .onAppear { Task { await model.open() } }
         .sheet(isPresented: Binding(
             get: { model.qrDetails != nil },
             set: { if !$0 { model.qrDetails = nil } }
