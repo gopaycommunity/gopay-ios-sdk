@@ -22,15 +22,31 @@ struct CardTextFormatter {
     let maxDigits: Int
     /// The digits the field keeps from its proposed text, before they are capped at `maxDigits`.
     var digits: (String) -> String = { $0.filter(\.isNumber) }
+    /// Whether the field keeps a character as a digit; what ``digits`` filters by, read on its
+    /// own to place the caret.
+    var isDigit: (Character) -> Bool = { $0.isNumber }
     var sanitize: (String) -> String = { $0 }
     let format: (String) -> String
 
-    static let cardNumber = CardTextFormatter(maxDigits: 16) { digits in
+    /// The card number keeps the digits `0` to `9` only. A digit of another script, an
+    /// Arabic-Indic or a full-width one for instance, is a number to `Character.isNumber` and to
+    /// the Luhn check, but not to the gateway, so the field drops it like any other character.
+    /// The Android form keeps the same digits.
+    static let cardNumber = CardTextFormatter(
+        maxDigits: 16,
+        digits: { $0.filter(isCardNumberDigit) },
+        isDigit: isCardNumberDigit
+    ) { digits in
         stride(from: 0, to: digits.count, by: 4).map { start -> String in
             let from = digits.index(digits.startIndex, offsetBy: start)
             let to = digits.index(from, offsetBy: min(4, digits.count - start))
             return String(digits[from..<to])
         }.joined(separator: " ")
+    }
+
+    /// `0` to `9`, the only characters a card number is made of.
+    static func isCardNumberDigit(_ character: Character) -> Bool {
+        character.isASCII && character.isNumber
     }
 
     static let expiration = CardTextFormatter(
@@ -212,9 +228,9 @@ struct FormattedTextField: UIViewRepresentable {
 
             let proposedText = currentText.replacingCharacters(in: editedRange, with: string)
             let caretOffset = currentText.distance(from: currentText.startIndex, to: editedRange.lowerBound) + string.count
-            let digitsBeforeCaret = proposedText.prefix(caretOffset).filter(\.isNumber).count
-
             let formatter = parent.formatter
+            let digitsBeforeCaret = proposedText.prefix(caretOffset).filter(formatter.isDigit).count
+
             let cappedDigits = String(formatter.digits(proposedText).prefix(formatter.maxDigits))
             let newDigits = formatter.sanitize(cappedDigits)
             let formatted = formatter.format(newDigits)

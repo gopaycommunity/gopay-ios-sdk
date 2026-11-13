@@ -98,6 +98,41 @@ extension CardFormResetTests {
         cvv.resignFirstResponder()
     }
 
+    /// A number of a brand the form does not accept, here Discover, passes the Luhn check and
+    /// still keeps the focus, like a mistyped one (GPMOB-202).
+    @Test func aCardNumberOfAnUnsupportedBrandKeepsTheFocus() async throws {
+        let (window, fields) = try await hostFocusForm(PaymentCardForm(locale: "en"))
+        defer { window.isHidden = true }
+        let (cardNumber, expiration) = (fields[0], fields[1])
+        try await tap(cardNumber)
+
+        type("6011000000000004", into: cardNumber)
+        await drainMainQueue(laidOut: window)
+        #expect(cardNumber.isFirstResponder)
+        #expect(!expiration.isFirstResponder)
+        cardNumber.resignFirstResponder()
+    }
+
+    /// The card number field keeps `0` to `9` only: digits of another script typed or pasted into
+    /// it are dropped, mixed in or on their own, and the SDK's copy holds what the field shows.
+    @Test func theCardNumberFieldKeepsOnlyAsciiDigits() async throws {
+        let (window, fields) = try await hostFocusForm(PaymentCardForm(locale: "en", formId: "ascii-digits"))
+        defer { window.isHidden = true }
+        let cardNumber = fields[0]
+        try await tap(cardNumber)
+
+        type("44٤٤", into: cardNumber)
+        type("４４48", into: cardNumber)
+        await drainMainQueue(laidOut: window)
+        #expect(cardNumber.text == "4448")
+        #expect(GopaySDK.shared.internalCardFormData["ascii-digits"]?.cardNumber == "4448")
+
+        type("٤٤٤٤٤٤٤٤٤٤٤٤", into: cardNumber)
+        await drainMainQueue(laidOut: window)
+        #expect(cardNumber.text == "4448", "a paste of other digits alone changes nothing")
+        cardNumber.resignFirstResponder()
+    }
+
     /// A screen capture ends the input, and that is not the customer moving on: a field typed out
     /// under the cover hands the focus nowhere, so the keyboard does not come back for the next
     /// field when the capture ends, and the field the cover took the keyboard from is not one the

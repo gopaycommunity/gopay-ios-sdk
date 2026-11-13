@@ -40,7 +40,8 @@ internal struct GopayCardFormData {
         return isCardNumberValid && isExpirationValid && isCvvValid
     }
     
-    /// Returns true if the card number has 16 digits and passes the Luhn check, as on Android.
+    /// Returns true if the card number has 16 digits, `0` to `9` only, passes the Luhn check and
+    /// is of a brand the form accepts, as on Android.
     var isCardNumberValid: Bool {
         Self.completesCardNumber(cardNumber.filter { $0.isNumber })
     }
@@ -53,10 +54,16 @@ internal struct GopayCardFormData {
     var isCvvTypedOut: Bool { cvv.count == 3 }
 
     /// Whether typing these digits finishes the card number, so the focus moves on to the
-    /// expiration: 16 digits that pass the Luhn check, as on Android. A mistyped number keeps the
-    /// focus where the user can fix it.
+    /// expiration: 16 digits, `0` to `9` only, that pass the Luhn check and start as a brand the
+    /// form accepts (``CardBrand``), as on Android. A digit of another script is a number to the
+    /// Luhn check and would otherwise pass behind a first digit the brand's pattern knows. A mistyped number keeps the focus where the user can fix
+    /// it, and so does a number of any other brand, which the form refuses the same way.
+    ///
+    /// The one place the form judges a card number: its validity, the focus, the error it shows
+    /// and what it reports all read this.
     static func completesCardNumber(_ digits: String) -> Bool {
-        digits.count == 16 && passesLuhn(digits)
+        digits.count == 16 && digits.allSatisfy(CardTextFormatter.isCardNumberDigit)
+            && passesLuhn(digits) && CardBrand.of(digits) != nil
     }
 
     /// The Luhn (mod 10) check every payment card number carries in its last digit, so a mistyped

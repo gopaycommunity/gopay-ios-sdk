@@ -23,6 +23,17 @@ struct CardTextFormatterTests {
         #expect(CardTextFormatter.cardNumber.format("") == "")
     }
 
+    /// The card number keeps `0` to `9` and drops digits of any other script with the rest, as
+    /// the Android field does.
+    @Test func cardNumber_digits_keepOnlyAsciiDigits() {
+        let digits = CardTextFormatter.cardNumber.digits
+        #expect(digits("4444 4444-4444 4448") == "4444444444444448")
+        #expect(digits("4٤٤٤4") == "44", "Arabic-Indic digits are dropped")
+        #expect(digits("44４４48") == "4448", "full-width digits are dropped")
+        #expect(digits("٤٤٤٤٤٤٤٤٤٤٤٤٤٤٤٨") == "")
+        #expect(digits("4a4²4½") == "444", "and so is anything else that only counts as a number")
+    }
+
     @Test func cardNumber_sanitize_isIdentity() {
         // Length capping happens upstream in the coordinator; sanitize itself does nothing extra.
         #expect(CardTextFormatter.cardNumber.sanitize("123456") == "123456")
