@@ -277,6 +277,16 @@ struct TelemetryBodyRedactionTests {
         ])
     }
 
+    /// The start of a card number, the BIN lookup's request. Matched exactly, so a key that only
+    /// contains those letters stays.
+    @Test func dropsTheStartOfACardNumberUnderBinAndNoKeyThatOnlyContainsThoseLetters() {
+        let sanitized = TelemetryRedaction.sanitizeLogData(
+            #"{"bin":"44444444","BIN":"55555555","cabin":"2","binding":"soft"}"#
+        ) as? [String: String]
+
+        #expect(sanitized == ["bin": "[redacted]", "BIN": "[redacted]", "cabin": "2", "binding": "soft"])
+    }
+
     @Test func redactsJsonThatArrivedAsTextByKey() {
         let sanitized = TelemetryRedaction.sanitizeLogData(#"{"payment_secret":"S3cr3tV4lueXYZ","detail":"x"}"#)
         #expect(sanitized as? [String: String] == ["payment_secret": "[redacted]", "detail": "x"])

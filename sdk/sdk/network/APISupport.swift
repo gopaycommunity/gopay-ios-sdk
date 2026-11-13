@@ -130,6 +130,10 @@ extension AsyncHTTPClient {
     ///
     /// - Parameters:
     ///   - paymentId: The payment the request belongs to, `nil` for the merchant-level ones.
+    ///   - reportsRequestBody: `false` for the BIN lookup, whose request is the first eight digits
+    ///     of a card number. As on Android.
+    ///   - reportsErrorResponseBody: `false` for the BIN lookup, which reports its answer only
+    ///     when the status is 2xx: an error answer may repeat the digits it was asked about.
     ///   - reportsResponseBody: `false` for the token exchange, whose answer is a token pair the
     ///     redaction would reduce to nothing anyway, and for the public key.
     ///   - cancellable: `true` drops the request when the task is cancelled, see
@@ -139,17 +143,21 @@ extension AsyncHTTPClient {
         _ request: URLRequest,
         telemetry: Telemetry,
         paymentId: String?,
+        reportsRequestBody: Bool = true,
         reportsResponseBody: Bool = true,
+        reportsErrorResponseBody: Bool = true,
         cancellable: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
         let startedAt = Telemetry.now()
         let path = telemetryPath(of: request)
         func report(_ result: (Data, HTTPURLResponse)?) {
-            let requestBody = request.httpBody.map {
-                Telemetry.ApiCallRecord.Body(data: $0, contentType: request.value(forHTTPHeaderField: "Content-Type"))
-            }
+            let requestBody = reportsRequestBody
+                ? request.httpBody.map {
+                    Telemetry.ApiCallRecord.Body(data: $0, contentType: request.value(forHTTPHeaderField: "Content-Type"))
+                }
+                : nil
             let responseBody = result.flatMap { data, response in
-                reportsResponseBody
+                reportsResponseBody && (reportsErrorResponseBody || (200..<300).contains(response.statusCode))
                     ? Telemetry.ApiCallRecord.Body(data: data, contentType: response.value(forHTTPHeaderField: "Content-Type"))
                     : nil
             }

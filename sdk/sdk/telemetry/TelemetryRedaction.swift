@@ -227,6 +227,9 @@ enum TelemetryRedaction {
         // variable symbol, and `recipient.bank_account` spells them out. Not on the browser SDK's
         // list, which has the same gap.
         "qrcode", "spayd", "sepa", "mnbqr", "paybysquare", "bankaccount", "recipient",
+        // The start of a card number, the BIN lookup's request. Here and not among the
+        // fragments, where it would drop every key with those three letters in it.
+        "bin",
     ]
 
     /// Fragments that drop any key containing them.

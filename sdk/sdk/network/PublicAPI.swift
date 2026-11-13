@@ -54,13 +54,55 @@ struct PublicAPI {
         return try decodeOrThrow(BrowserDataDetected.self, from: result, action: "fetch browser data")
     }
 
+    /// `POST /cards/bin-lookup`: what the gateway knows about a card from the first digits of its
+    /// number, with the body `{"bin": "<6 to 8 digits>"}`; a 404 when it knows nothing about the
+    /// BIN. Both bodies are raw: ``CardMetadataLookup`` writes the BIN and reads the answer field
+    /// by field rather than through a model, and judges the status itself.
+    ///
+    /// The BIN is card data, so the request body is never reported, and the answer only when its
+    /// status is 2xx: an error answer may repeat the digits it was asked about. The request is
+    /// dropped, not finished, when the task running it is cancelled, which is how the lookup's
+    /// time limit ends it. A request dropped that way is not reported here;
+    /// ``reportBinLookupWithoutAnswer(startedAt:)`` reports the one the limit ended.
+    func lookUpBin(_ bin: String) async throws -> (Data, HTTPURLResponse) {
+        var request = try jsonRequest("POST", path: Self.binLookupPath)
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data("{\"bin\":\"\(bin)\"}".utf8)
+        return try await client.send(
+            request, telemetry: telemetry, paymentId: nil,
+            reportsRequestBody: false, reportsErrorResponseBody: false, cancellable: true
+        )
+    }
+
+    private static let binLookupPath = "cards/bin-lookup"
+
+    /// Reports a BIN lookup its own time limit ended as one `api_call` without a status and
+    /// without bodies, timed from `startedAt`, so a gateway that answers too slowly shows in the
+    /// operational data. Not for a lookup that ended because the submit was cancelled or the
+    /// encryption failed: that one is not reported at all. The Android SDK follows the same rule.
+    ///
+    /// - Parameter startedAt: A ``Telemetry/now()`` reading taken when the lookup started.
+    func reportBinLookupWithoutAnswer(startedAt: UInt64) {
+        telemetry.apiCall(
+            Telemetry.ApiCallRecord(
+                method: "POST", path: "/" + Self.binLookupPath, statusCode: nil, startedAt: startedAt,
+                requestBody: nil, responseBody: nil
+            ),
+            paymentId: nil
+        )
+    }
+
     private func jsonGET(path: String) throws -> URLRequest {
+        try jsonRequest("GET", path: path)
+    }
+
+    private func jsonRequest(_ method: String, path: String) throws -> URLRequest {
         let authHeader = try shareableKeyAuthHeader()
         guard let url = client.makeURL(path: path) else {
             throw GopaySDKError(.invalidBaseURL, message: "Invalid URL for \(path)")
         }
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         return request
