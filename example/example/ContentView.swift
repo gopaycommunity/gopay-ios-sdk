@@ -227,6 +227,21 @@ struct ContentView: View {
                 log("// submitCardForm() -> JWE, \(encrypted.count) characters (filled into the field below)")
             }
 
+            // The same submit with the card's metadata beside the JWE; nil metadata is a normal
+            // answer. The same button as in the Android demo. Like every button of the console
+            // it is disabled while a call runs, so the form is not submitted twice while the
+            // lookup, which can take 3 seconds, is still out.
+            button("Encrypt card → JWE + metadata (submitCardFormWithMetadata)", system: "lock.doc.fill") {
+                let result = try await GopaySDK.shared.submitCardFormWithMetadata()
+                await MainActor.run { jwe = result.encryptedPayload }
+                // A JWE as the button above makes it, a new one for this submit, and what the
+                // gateway knows about the card.
+                log(
+                    "// submitCardFormWithMetadata() -> JWE of \(result.encryptedPayload.count) characters,"
+                        + " filled into the field below\n// " + CardMetadataText.line(result.cardMetadata)
+                )
+            }
+
             labeledField("JWE (from on-device card encryption)", text: $jwe)
             button("Charge with encrypted card (JWE)", system: "lock.circle.fill") {
                 try await chargeWithEncryptedCard()

@@ -131,7 +131,9 @@ Four sections, top to bottom. Sections 3 and 4 only appear once a session is liv
    *Get test card token (server)*, *Charge a payment*, *Get charge state*, *Await charge state*,
    *Handle 3DS verification*, *Get QR payment info*.
 4. **Card form → JWE** — a **Theme** picker, a locale picker, `PaymentCardForm`,
-   *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*.
+   *Encrypt card → JWE*, and *Charge with encrypted card (JWE)*. *Encrypt card → JWE + metadata*
+   makes the same JWE with `submitCardFormWithMetadata` and logs what the gateway knows about the
+   card, or `cardMetadata: no metadata`.
 
 A 3DS redirect URL in the charge response enables **Handle 3DS verification**, which opens the
 managed WebView. The gateway does not always answer the charge with the action: when it does not,
