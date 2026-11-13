@@ -102,9 +102,12 @@ struct CheckoutViewModelTests {
         var createError: Error?
         var deviceCanUseWallet = true
         var tokenizeError: Error?
-        /// Suspends the session start until the test lets it through.
-        var gate: CheckedContinuation<Void, Never>?
+        /// Suspends every session start until the test lets it through, in the order they came.
+        var gates: [CheckedContinuation<Void, Never>] = []
         var holdsSessionStart = false
+        /// Makes the session start with this index, counted from zero, fail once it is let through.
+        var startErrors: [Int: Error] = [:]
+        private var starts = 0
         private(set) var created = 0
         private(set) var sessions: [FakeSession] = []
 
@@ -116,9 +119,12 @@ struct CheckoutViewModelTests {
                     return .init(paymentId: "p\(created)", paymentSecret: "secret", returnUrl: nil)
                 },
                 startSession: { [self] paymentId, _ in
+                    let index = starts
+                    starts += 1
                     if holdsSessionStart {
-                        await withCheckedContinuation { gate = $0 }
+                        await withCheckedContinuation { gates.append($0) }
                     }
+                    if let error = startErrors[index] { throw error }
                     let session = FakeSession(paymentId: paymentId)
                     sessions.append(session)
                     return session
@@ -227,15 +233,99 @@ struct CheckoutViewModelTests {
         let model = CheckoutViewModel(services: shop.services)
 
         let opening = Task { await model.open() }
-        while shop.gate == nil { await Task.yield() }
+        while shop.gates.isEmpty { await Task.yield() }
         await model.finish()
-        shop.gate?.resume()
+        shop.gates[0].resume()
         await opening.value
 
         #expect(shop.sessions.count == 1)
         #expect(shop.sessions[0].closed)
         #expect(model.session == nil)
         #expect(model.paymentId == nil)
+    }
+
+    /// Coming back while the opening of the visit before is still running opens a payment for
+    /// the new visit. The session the old opening then gets is closed, and Pay comes on.
+    @Test func comingBackDuringAnOldOpeningOpensANewPayment() async {
+        let shop = Shop()
+        shop.holdsSessionStart = true
+        let model = CheckoutViewModel(services: shop.services)
+
+        let first = Task { await model.open() }
+        while shop.gates.count < 1 { await Task.yield() }
+        await model.finish()
+        let second = Task { await model.open() }
+        while shop.gates.count < 2 { await Task.yield() }
+        #expect(model.isOpening)
+
+        shop.gates[0].resume()
+        await first.value
+        #expect(shop.sessions[0].paymentId == "p1")
+        #expect(shop.sessions[0].closed)
+        #expect(model.session == nil)
+        #expect(model.isOpening)
+        #expect(!model.canPay)
+
+        shop.gates[1].resume()
+        await second.value
+        #expect(shop.created == 2)
+        #expect(model.paymentId == "p2")
+        #expect(!shop.sessions[1].closed)
+        #expect(!model.isOpening)
+        #expect(model.canPay)
+    }
+
+    /// An old opening that fails after the shopper came back says nothing in the new visit.
+    @Test func anOldOpeningThatFailsShowsNoErrorInTheNewVisit() async {
+        let shop = Shop()
+        shop.holdsSessionStart = true
+        shop.startErrors[0] = error(.networkNoConnection)
+        let model = CheckoutViewModel(services: shop.services)
+
+        let first = Task { await model.open() }
+        while shop.gates.count < 1 { await Task.yield() }
+        await model.finish()
+        let second = Task { await model.open() }
+        while shop.gates.count < 2 { await Task.yield() }
+
+        shop.gates[1].resume()
+        await second.value
+        #expect(model.paymentId == "p2")
+        #expect(model.canPay)
+
+        shop.gates[0].resume()
+        await first.value
+        #expect(model.openError == nil)
+        #expect(model.paymentId == "p2")
+        #expect(model.canPay)
+        #expect(shop.sessions.count == 1)
+        #expect(!shop.sessions[0].closed)
+    }
+
+    /// Leaving and coming back twice in a row leaves two openings behind. Both close what they
+    /// get, and the third visit keeps its own payment.
+    @Test func leavingAndComingBackTwiceKeepsOnlyTheLastPayment() async {
+        let shop = Shop()
+        shop.holdsSessionStart = true
+        let model = CheckoutViewModel(services: shop.services)
+
+        var openings: [Task<Void, Never>] = []
+        for visit in 1...3 {
+            openings.append(Task { await model.open() })
+            while shop.gates.count < visit { await Task.yield() }
+            if visit < 3 { await model.finish() }
+        }
+        for (index, opening) in openings.enumerated() {
+            shop.gates[index].resume()
+            await opening.value
+        }
+
+        #expect(shop.created == 3)
+        #expect(shop.sessions[0].closed)
+        #expect(shop.sessions[1].closed)
+        #expect(!shop.sessions[2].closed)
+        #expect(model.paymentId == "p3")
+        #expect(model.canPay)
     }
 
     /// Leaving closes the session and nothing else, and the next visit starts clean.
