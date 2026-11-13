@@ -151,7 +151,10 @@ final class CheckoutViewModel {
     var qrDetails: QrPaymentDetails?
 
     /// Whether the checkout is creating its payment and starting the session.
-    private(set) var isOpening = false
+    var isOpening: Bool { openingVisit == visit }
+    /// The visit an opening is running for. An opening left behind by an earlier visit does not
+    /// count for the current one: coming back while it is still running opens anew.
+    private var openingVisit: Int?
     /// Why the checkout could not open. Shown with "Try again", which only opens again.
     private(set) var openError: String?
 
@@ -207,14 +210,19 @@ final class CheckoutViewModel {
 
     /// Creates the payment on the merchant backend and starts its session. Called when the
     /// checkout appears and from "Try again"; with a session in place, or while one is being
-    /// opened, it does nothing, so the checkout holds one payment per visit however often the
-    /// view comes back on screen.
+    /// opened for this visit, it does nothing, so the checkout holds one payment per visit
+    /// however often the view comes back on screen.
+    ///
+    /// An opening belongs to the visit it started in. When the shopper leaves and comes back
+    /// before it has finished, the new visit opens its own payment, and the old opening closes
+    /// the session it gets and shows nothing.
     func open() async {
         guard session == nil, !isOpening else { return }
         let visit = visit
-        isOpening = true
+        openingVisit = visit
         openError = nil
-        defer { isOpening = false }
+        // Only its own record: a later visit's opening may be running by now.
+        defer { if openingVisit == visit { openingVisit = nil } }
         do {
             let created = try await services.createPayment(cart.total, cart.currency)
             let started = try await services.startSession(created.paymentId, created.paymentSecret)
