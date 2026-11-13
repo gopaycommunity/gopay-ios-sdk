@@ -17,6 +17,8 @@ import PassKit
 /// Card collection: ``encryptCardData(_:)`` (or ``submitCardForm(formId:)`` with a
 /// `PaymentCardForm`) returns a JWE that the host app forwards to its backend; the merchant backend
 /// calls `POST /cards/tokens`. The mobile SDK never touches that endpoint.
+/// ``submitCardFormWithMetadata(formId:)`` returns the JWE together with what the gateway knows
+/// about the card.
 ///
 /// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6. Every
 /// mutable property is guarded: the configuration, its telemetry and the gateway objects made from
@@ -423,10 +425,117 @@ public class GopaySDK: @unchecked Sendable {
     ///   held, ``GopaySDKError/Code/validationInvalidInput`` when the held one is invalid, and
     ///   otherwise what ``encryptCardData(_:)`` throws.
     public func submitCardForm(formId: String? = nil) async throws -> String {
-        try await reported(paymentId: nil) { try await submitStoredCard(formId: formId) }
+        try await reported(paymentId: nil) {
+            try await submitStoredCard(formId: formId, flow: Telemetry.cardFormFlow) { try await encrypt($0) }
+        }
     }
 
-    private func submitStoredCard(formId: String?) async throws -> String {
+    /// ``submitCardForm(formId:)`` that also returns what the gateway knows about the card: its
+    /// scheme, whether it is a corporate card and, where the gateway says so, its brand, debit or
+    /// credit, the issuer and the issuer's country. The same call on Android,
+    /// `submitCardFormWithMetadata(formId)`, and the browser SDK's `payload-with-metadata` flow.
+    ///
+    /// The form is validated, encrypted and emptied exactly as ``submitCardForm(formId:)`` does
+    /// it, and the errors are the same. Beside the encryption the SDK sends the first eight digits
+    /// of the card number to `POST /cards/bin-lookup`, with the shareable key. The lookup never
+    /// fails the call and never reaches `errorCallback`: when the gateway knows nothing about the
+    /// card, the lookup fails or it takes longer than 3 seconds,
+    /// ``EncryptedCardPayloadWithMetadata/cardMetadata`` is `nil` and the JWE is returned all the
+    /// same, with a warning in the debug log while `GopayConfig.debugLoggingEnabled` is on. The
+    /// result is returned once both the encryption and the lookup have ended; a failed encryption
+    /// cancels the lookup.
+    ///
+    /// A call cancelled before it returns ends the lookup too, with `CancellationError`, not
+    /// reported through `errorCallback`, and the card stays in the form, also when the JWE was
+    /// already made.
+    ///
+    /// The metadata is for showing the card or picking a flow. Do not let a payment depend on it.
+    ///
+    /// The call can take up to 3 seconds longer than ``submitCardForm(formId:)``. Keep the form
+    /// and the pay button disabled until it returns.
+    ///
+    /// - Parameter formId: The form to read. When `nil`, uses the form on screen that synced last.
+    /// - Returns: The JWE, good for a single charge, and the card's metadata or `nil`.
+    /// - Throws: What ``submitCardForm(formId:)`` throws, for the same reasons.
+    public func submitCardFormWithMetadata(formId: String? = nil) async throws -> EncryptedCardPayloadWithMetadata {
+        try await reported(paymentId: nil) {
+            try await submitStoredCardWithMetadata(
+                formId: formId,
+                encrypt: { [self] in try await encrypt($0) },
+                lookUp: { [self] in try await lookUpCardMetadata(cardNumber: $0) }
+            )
+        }
+    }
+
+    /// The body behind ``submitCardFormWithMetadata(formId:)``, unreported: the submit of
+    /// ``submitCardForm(formId:)`` with the card's metadata looked up beside the encryption. Both
+    /// start together, so the lookup costs no time the key fetch does not take anyway, and the
+    /// result is returned once both have ended.
+    ///
+    /// The lookup decides nothing: whatever it does short of the caller's cancellation, a
+    /// cancellation of its own included, it counts as no metadata and the JWE is returned. An encryption that fails cancels the lookup, waits
+    /// for it to end and throws what ``submitCardForm(formId:)`` would throw, with the card left
+    /// in the form. The form is validated, reported and emptied exactly as there. Mirrors the
+    /// Android `submitCardFormWithMetadata(formId, encrypt, lookUp)`.
+    ///
+    /// - Parameters:
+    ///   - encrypt: ``encryptCardData(_:)`` without the reporting; a stand-in in tests.
+    ///   - lookUp: `CardMetadataLookup.lookUp(cardNumber:)`, which keeps its own time limit and
+    ///     throws nothing but a cancellation; given the card number, it sends only the first
+    ///     eight digits. A stand-in in tests.
+    func submitStoredCardWithMetadata(
+        formId: String?,
+        encrypt: @escaping @Sendable (GopayCardData) async throws -> String,
+        lookUp: @escaping @Sendable (_ cardNumber: String) async throws -> CardMetadata?
+    ) async throws -> EncryptedCardPayloadWithMetadata {
+        try await submitStoredCard(formId: formId, flow: Telemetry.cardFormWithMetadataFlow) { cardData in
+            // A child of this task: cancelled with it, and cancelled and waited for when the
+            // encryption below throws, before that error leaves.
+            async let metadata = Self.metadataOrNone(of: cardData.cardPan, lookUp: lookUp)
+            let jwe = try await encrypt(cardData)
+            return EncryptedCardPayloadWithMetadata(encryptedPayload: jwe, cardMetadata: try await metadata)
+        }
+    }
+
+    /// What `lookUp` found, or `nil` for anything it throws while this task is not cancelled: a
+    /// metadata failure is never the submit's, and neither is a `CancellationError` that came
+    /// from anyone but the caller. Only the caller's own cancellation passes through.
+    private static func metadataOrNone(
+        of cardNumber: String,
+        lookUp: @Sendable (String) async throws -> CardMetadata?
+    ) async throws -> CardMetadata? {
+        do {
+            return try await lookUp(cardNumber)
+        } catch {
+            try Task.checkCancellation()
+            return nil
+        }
+    }
+
+    /// The lookup of the configured gateway, warning into the debug log. Without a configuration
+    /// there is no gateway to ask and nothing to say: the submit has already thrown `CONFIG_001`
+    /// by then, so this is reached only when the SDK loses its configuration in between, which
+    /// nothing in it does.
+    private func lookUpCardMetadata(cardNumber: String) async throws -> CardMetadata? {
+        guard let gateway = configured?.gateway else { return nil }
+        let lookup = CardMetadataLookup(
+            publicAPI: gateway.publicAPI,
+            warn: { [weak self] message in self?.logWarning(message) }
+        )
+        return try await lookup.lookUp(cardNumber: cardNumber)
+    }
+
+    /// The submit both public calls share: reads the SDK's copy of the form, tells the form a
+    /// submit ran, validates, runs `encrypt` and empties the form once its result exists.
+    ///
+    /// - Parameters:
+    ///   - flow: What the operational data calls this submit.
+    ///   - encrypt: Makes the result from the card: the JWE, or the JWE with the metadata.
+    private func submitStoredCard<Output>(
+        formId: String?,
+        flow: String,
+        encrypt: (GopayCardData) async throws -> Output
+    ) async throws -> Output {
         guard config != nil else { throw notInitializedError() }
         let (resolvedId, stored) = storedCardForm(formId: formId)
         // The form on screen under that ID now, looked up once: a second form registering under
@@ -456,9 +565,9 @@ public class GopaySDK: @unchecked Sendable {
             expYear: data.expirationYear,
             cvv: data.cvv
         )
-        let jwe: String
+        let result: Output
         do {
-            jwe = try await encrypt(cardData)
+            result = try await encrypt(cardData)
         } catch {
             // A cancelled task is the host changing its mind, not the encryption failing.
             if !(error is CancellationError) {
@@ -467,14 +576,14 @@ public class GopaySDK: @unchecked Sendable {
             throw error
         }
         // The submit as the user made it: when, never what.
-        telemetry.cardFormSubmitted(owner: owner)
+        telemetry.cardFormSubmitted(owner: owner, flow: flow)
         // Only clear after encryption succeeded — on failure (e.g. key fetch offline) the user
         // shouldn't have to retype the card; authorization hasn't happened yet. Clearing also
         // empties the fields the form still shows, so the card does not outlive the JWE made
         // from it (PCI DSS 4.0.1, req. 3.3.1). Mirrors the Android SDK, which resets the form on
         // a successful encryption and deliberately not on a failed one.
         clearCardFormData(formId: id)
-        return jwe
+        return result
     }
 
     /// The form a submit reads and the card it holds, looked up under ``cardFormDataLock``.

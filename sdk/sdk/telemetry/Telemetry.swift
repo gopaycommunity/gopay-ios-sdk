@@ -304,6 +304,11 @@ final class Telemetry: @unchecked Sendable {
     /// the browser SDK's encrypt-only flow.
     static let cardFormFlow = "return-payload"
 
+    /// The flow of a submit that also returns the card's metadata, the browser SDK's
+    /// `payload-with-metadata`. Only the submit carries it: the form's own steps are reported
+    /// before it is known which of the two submits the host will call. As on Android.
+    static let cardFormWithMetadataFlow = "payload-with-metadata"
+
     /// A ``PaymentCardForm`` appeared, timed from the SDK's initialization. Its first visit starts
     /// here, untouched.
     func cardFormReady(owner: AnyObject) {
@@ -319,7 +324,10 @@ final class Telemetry: @unchecked Sendable {
     /// ``GopaySDK/submitCardForm(formId:)`` made a JWE from the form `owner` registered. Timed
     /// from the form's ready; carries nothing about what was typed. The JWE ends the visit: its
     /// summary goes now, with the card as it was, before the SDK empties the form.
-    func cardFormSubmitted(owner: AnyObject?) {
+    ///
+    /// - Parameter flow: ``cardFormFlow``, or ``cardFormWithMetadataFlow`` for
+    ///   ``GopaySDK/submitCardFormWithMetadata(formId:)``. The summary keeps the form's own.
+    func cardFormSubmitted(owner: AnyObject?, flow: String = Telemetry.cardFormFlow) {
         let now = Self.now()
         var readyAt: UInt64?
         var summary: CardFormProgress.Report?
@@ -332,7 +340,7 @@ final class Telemetry: @unchecked Sendable {
             lock.unlock()
         }
         let duration = readyAt.map { Self.ms(since: $0, until: now) }
-        post(.lifecycle, paymentId: nil, duration: duration, paymentMethod: "card", flow: Self.cardFormFlow) {
+        post(.lifecycle, paymentId: nil, duration: duration, paymentMethod: "card", flow: flow) {
             .interaction(elementId: "card-form")
         }
         if let summary = summary {

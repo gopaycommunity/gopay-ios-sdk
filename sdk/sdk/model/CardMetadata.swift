@@ -1,5 +1,42 @@
 import Foundation
 
+/// What ``GopaySDK/submitCardFormWithMetadata(formId:)`` returns: the JWE of the card, as
+/// ``GopaySDK/submitCardForm(formId:)`` returns it, and what the gateway knows about the card. The
+/// same names on Android and in the browser SDK.
+public struct EncryptedCardPayloadWithMetadata: Sendable, Equatable {
+    /// JWE compact serialization (RFC 7516) ready to send to the merchant backend, good for a
+    /// single charge.
+    public let encryptedPayload: String
+    /// The metadata of the card, or `nil` when the gateway knows none, the lookup failed or took
+    /// longer than 3 seconds. The payload is good either way.
+    public let cardMetadata: CardMetadata?
+
+    public init(encryptedPayload: String, cardMetadata: CardMetadata?) {
+        self.encryptedPayload = encryptedPayload
+        self.cardMetadata = cardMetadata
+    }
+}
+
+/// Masked, because the default description lists every stored property and would print the JWE
+/// into any log, which must not be logged. Same shape as the Android SDK's `toString()`. The
+/// mirror is masked the same way, so `dump(_:)` and anything else that reflects over the value
+/// see the masked payload too.
+extension EncryptedCardPayloadWithMetadata: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String {
+        "EncryptedCardPayloadWithMetadata(encryptedPayload=***, cardMetadata=\(cardMetadata.map { "\($0)" } ?? "nil"))"
+    }
+
+    public var debugDescription: String { description }
+
+    public var customMirror: Mirror {
+        Mirror(
+            self,
+            children: ["encryptedPayload": "***", "cardMetadata": cardMetadata as Any],
+            displayStyle: .struct
+        )
+    }
+}
+
 /// What the gateway knows about a card from the start of its number: the answer of
 /// `POST /cards/bin-lookup`, returned beside the JWE by
 /// ``GopaySDK/submitCardFormWithMetadata(formId:)``. Shown to the customer or used to pick a flow;
