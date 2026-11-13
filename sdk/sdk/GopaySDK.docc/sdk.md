@@ -11,3 +11,10 @@ This SDK allows you to integrate Gopay payments into your iOS app.
 - <doc:GopaySDK>
 - <doc:GopayConfig>
 - <doc:GopayEnvironment>
+
+### Card metadata
+
+- ``GopaySDK/submitCardFormWithMetadata(formId:)``
+- ``EncryptedCardPayloadWithMetadata``
+- ``CardMetadata``
+- ``CardServiceType``

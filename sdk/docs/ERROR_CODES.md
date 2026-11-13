@@ -361,7 +361,8 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 - **Common Causes**:
   - Empty `paymentId` / `paymentSecret` passed to `startPaymentSession`
   - `encryptCardData` called with a card that fails validation: the PAN is not 13 to 19 digits, the month is not `01` to `12`, the year is not 2 to 4 digits, or the CVV is not 3 or 4 digits. The same rules apply on Android
-  - `submitCardForm` called while the card in the `PaymentCardForm` is not valid. A form that holds no card at all throws `VALIDATION_008`
+  - `submitCardForm` or `submitCardFormWithMetadata` called while the card in the `PaymentCardForm` is not valid. A form that holds no card at all throws `VALIDATION_008`
+  - The same two calls on a card number of a brand the form does not accept: anything but Visa, Visa Electron, Mastercard and Maestro. The form shows the error of an invalid card number
   - `awaitChargeState()` called with an `interval` or `initialTimeout` that is not positive; nothing is sent
 - **Developer Action**:
   - Validate before calling, and drive the submit button from `PaymentCardForm`'s `isValid` binding
@@ -371,7 +372,7 @@ A request that got no HTTP response throws one of `NETWORK_001`, `NETWORK_004`, 
 
 ### VALIDATION_008: Card Form Empty
 - **Case**: `validationCardFormEmpty`
-- **Description**: `submitCardForm` was called while no `PaymentCardForm` holds a card: no form is on screen under that `formId`, or every field of the form is empty
+- **Description**: `submitCardForm` or `submitCardFormWithMetadata` was called while no `PaymentCardForm` holds a card: no form is on screen under that `formId`, or every field of the form is empty
 - **Common Causes**:
   - The pay button was tapped before anything was typed
   - A second `submitCardForm` after a successful one: the form empties its fields once the card is encrypted

@@ -76,6 +76,32 @@ session.
 ``PaymentCardForm`` also works without a payment and a session; that is for encrypting a card to
 tokenize and save it.
 
+## Card metadata with the JWE
+
+``GopaySDK/submitCardFormWithMetadata(formId:)`` is ``GopaySDK/submitCardForm(formId:)`` that also
+tells you what the gateway knows about the card. It returns an
+``EncryptedCardPayloadWithMetadata``: the JWE in `encryptedPayload` and a ``CardMetadata`` in
+`cardMetadata`.
+
+```swift
+let result = try await GopaySDK.shared.submitCardFormWithMetadata()
+_ = try await session.chargeWithEncryptedCard(result.encryptedPayload)
+if let metadata = result.cardMetadata {
+    // metadata.scheme, metadata.corporate, metadata.brand, metadata.serviceType,
+    // metadata.issuer, metadata.issuerCountry
+}
+```
+
+The lookup never fails the submit. `cardMetadata` is `nil` when the gateway knows nothing about
+the card, when the lookup fails, and when it takes longer than 3 seconds. The JWE is returned all
+the same. Use the metadata to show the card or to pick a flow. Do not let a payment depend on it.
+
+The call can take up to 3 seconds longer than `submitCardForm`. Keep the form and the pay button
+disabled until it returns.
+
+The form accepts Visa, Visa Electron, Mastercard and Maestro. A card number of any other brand is
+refused like a number that fails the Luhn check, and the submit throws `VALIDATION_007`.
+
 ## Full Example
 
 ```swift

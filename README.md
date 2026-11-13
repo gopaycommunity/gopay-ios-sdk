@@ -24,6 +24,8 @@ The SDK implements the **Payments 4.0** per-payment session model:
 - **JWE card encryption** (RSA-OAEP-256 + A256GCM) — the SDK turns card data into a JWE that your
   backend tokenizes; the SDK never calls the tokenization endpoint itself.
 - A secure **SwiftUI card form** (`PaymentCardForm`) that keeps PAN/CVV inside the SDK.
+- **Card metadata with the JWE**: `submitCardFormWithMetadata(formId:)` also returns the card's
+  scheme, brand, debit or credit, issuer and issuer country.
 - **Localized form labels** in 20 languages (device language, falling back to Czech), with
   per-form overrides and custom locale registration.
 - **Concurrent payments** — multiple independent `PaymentSession`s, keyed by `payment_id`.
@@ -58,7 +60,7 @@ The SDK is built and tested with Xcode 26.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "2.2.0")
+    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "3.0.0")
 ],
 targets: [
     .target(
@@ -78,7 +80,7 @@ available through Swift Package Manager only.
 ```ruby
 target 'YourApp' do
   use_frameworks!
-  pod 'GopaySDK', '~> 2.2'
+  pod 'GopaySDK', '~> 3.0'
 end
 ```
 
@@ -788,6 +790,11 @@ turns it into a JWE and `clearCardFormData(formId:)` drops it, with the same thr
 modes on both platforms. Keep one live form per `formId`: of two on screen under the same ID, only
 the one that appeared last is read, so a sheet over a screen with a form needs its own ID.
 
+**The form accepts Visa, Visa Electron, Mastercard and Maestro.** A card number of any other
+brand is refused like a number that fails the Luhn check: the form shows the same error at the
+same moment, and `submitCardForm` throws `validationInvalidInput` (`VALIDATION_007`).
+`encryptCardData` does not check the brand. The Android form accepts the same brands.
+
 **Autofill is off unless you turn it on.** The card number and the expiration declare no content
 type, so iOS does not offer a saved card for them, and no field is autocorrected or spell-checked.
 iOS has no per-field switch that stops the keyboard learning from what is typed, so unlike the
@@ -821,6 +828,48 @@ payload's 10 minutes run on the gateway's clock, read from that response's `Date
 device with a wrong clock still produces a JWE the gateway accepts. Should the header be missing or
 unreadable, the SDK falls back to the device clock and, with `debugLoggingEnabled` on, says so in
 the debug log.
+
+### Card metadata with the JWE
+
+`submitCardFormWithMetadata(formId:)` is `submitCardForm` that also tells you what the gateway
+knows about the card. It returns an `EncryptedCardPayloadWithMetadata`: the JWE in
+`encryptedPayload` and a `CardMetadata` in `cardMetadata`.
+
+```swift
+import GopaySDK
+
+let result = try await GopaySDK.shared.submitCardFormWithMetadata(formId: "checkout-card")
+let jwe: String = result.encryptedPayload          // charge it or tokenize it, as before
+let metadata: CardMetadata? = result.cardMetadata  // nil when the gateway knows nothing about the card
+if let metadata {
+    // metadata.scheme, metadata.corporate, metadata.brand, metadata.serviceType,
+    // metadata.issuer, metadata.issuerCountry
+}
+```
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `scheme` | `CardScheme` | `.visa` or `.mastercard`. Always there. |
+| `corporate` | `Bool` | Whether the card is a corporate card. Always there. |
+| `brand` | `String?` | The product level of the card, such as `GOLD`. |
+| `serviceType` | `CardServiceType?` | `.debit` or `.credit`. |
+| `issuer` | `String?` | The name of the bank that issued the card. |
+| `issuerCountry` | `String?` | The issuer's country, ISO 3166-1 alpha-3, such as `CZE`. |
+
+The SDK sends the first eight digits of the card number to `POST /cards/bin-lookup`, with the
+shareable key, while it fetches the public key and encrypts the card. The eight digits never reach
+the SDK's operational data or its debug log.
+
+The lookup never fails the submit. `cardMetadata` is `nil` when the gateway knows nothing about
+the card, when the lookup fails, and when it takes longer than 3 seconds. The JWE is returned all
+the same, and nothing reaches `errorCallback`. An optional field is `nil` when the gateway does
+not send it.
+
+Everything else is `submitCardForm`: the same validation, the same errors, the same emptied form.
+Use the metadata to show the card or to pick a flow. Do not let a payment depend on it.
+
+The call can take up to 3 seconds longer than `submitCardForm`. Keep the form and the pay button
+disabled until it returns.
 
 ### Theming the form
 
@@ -1130,10 +1179,10 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `NETWORK_004` | No HTTP response: no connection (offline, the host does not resolve, the connection is refused) |
 | `NETWORK_005` | No HTTP response: a certificate failed (any other TLS failure is `NETWORK_007`) |
 | `NETWORK_007` | No HTTP response for any other reason, e.g. the connection dropped |
-| `CONFIG_001` | `startPaymentSession`, `encryptCardData` or `submitCardForm` called before `initialize(with:)` |
+| `CONFIG_001` | `startPaymentSession`, `encryptCardData`, `submitCardForm` or `submitCardFormWithMetadata` called before `initialize(with:)` |
 | `CONFIG_006` | The resolved base URL is empty, or not an absolute `http(s)` URL |
-| `VALIDATION_007` | Invalid input: empty ids, a card that fails the PAN / month / year / CVV rules, a card form whose data is not valid, or `awaitChargeState` options that are not positive |
-| `VALIDATION_008` | `submitCardForm` on a card form that holds no card: none is on screen, or all its fields are empty |
+| `VALIDATION_007` | Invalid input: empty ids, a card that fails the PAN / month / year / CVV rules, a card form whose data is not valid or whose card is of a brand the form does not accept, or `awaitChargeState` options that are not positive |
+| `VALIDATION_008` | `submitCardForm` or `submitCardFormWithMetadata` on a card form that holds no card: none is on screen, or all its fields are empty |
 | `INTERNAL_001` | Unexpected internal error, including a card encryption that failed after the key was fetched |
 | `INTERNAL_003` | Response could not be decoded |
 
@@ -1224,6 +1273,10 @@ Since 3.0 the two SDKs have one public API: the same names, the same shape of da
 behaviour, so an integration, or the React Native SDK built on both, reads the same on either
 platform. The list both SDKs follow is [`sdk/docs/API_3_0.md`](sdk/docs/API_3_0.md).
 
+3.1 adds one call to it, the same on both: `submitCardFormWithMetadata(formId)`, with
+`EncryptedCardPayloadWithMetadata` (`encryptedPayload`, `cardMetadata`), `CardMetadata` and
+`CardServiceType`, the JWE with the card's metadata.
+
 What stays platform-specific, on purpose:
 
 | | iOS | Android |
@@ -1236,9 +1289,25 @@ What stays platform-specific, on purpose:
 | `AwaitChargeOptions` | seconds (`interval`, `initialTimeout`) | milliseconds (`intervalMs`, `initialTimeoutMs`) |
 | Request timeout | `requestTimeout`, seconds, 60 by default | `requestTimeoutMs`, milliseconds, 30 seconds by default |
 | Manual wallet path | the `applePay` card input | `GooglePayHelper` |
+| `CardServiceType` cases | lower case, `.debit` | in capitals, `DEBIT` |
 | Where the 3DS screen and the wallet sheet appear | the SDK finds the presenting view controller | the SDK follows the current Activity |
 
 The errors are the shared code contract above, with one rule for `errorCallback` on both.
+
+---
+
+## What changed in 3.1
+
+3.1 adds to 3.0 and removes nothing. The same two changes are in the Android SDK.
+
+- **Card metadata with the JWE.** `submitCardFormWithMetadata(formId:)` returns the JWE together
+  with what the gateway knows about the card: its scheme, whether it is a corporate card, its
+  brand, debit or credit, the issuer and the issuer's country. `submitCardForm` is unchanged. See
+  [Card metadata with the JWE](#card-metadata-with-the-jwe).
+- **The card form checks the card brand.** The form accepts Visa, Visa Electron, Mastercard and
+  Maestro. A card number of any other brand is refused like a number that fails the Luhn check,
+  and the submit throws `VALIDATION_007`. This holds for `submitCardForm` too. `encryptCardData`
+  is unchanged.
 
 ---
 
@@ -1625,8 +1694,10 @@ every text value that survives is still stripped of PAN-shaped digit runs, token
 e-mail addresses and query strings; and each body is cut at 2 000 characters. Request paths are
 sent as templates (`/payments/{id}/charge`) rather than as the URLs actually called, error messages
 are the SDK's own text with the same scrub, and the token request reports only the form it sent,
-never the token that came back. The payment id itself is sent as its own field: it is what ties the
-events of one checkout together, and it identifies a payment rather than a person.
+never the token that came back. The BIN lookup behind `submitCardFormWithMetadata` is reported
+without its request, and with its answer only for a 2xx response, so the first digits of a card
+number are not in the data either. The payment id itself is sent as its own field: it is what
+ties the events of one checkout together, and it identifies a payment rather than a person.
 
 **What it does contain that concerns you.** Every request carries the device's IP address, as any
 HTTP request does, and GoPay keeps it with the data, together with the SDK's own User-Agent (which
