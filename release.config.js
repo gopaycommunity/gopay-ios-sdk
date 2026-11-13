@@ -62,7 +62,7 @@ module.exports = {
         [
             "@semantic-release/git",
             {
-                assets: ["CHANGELOG.md", "package.json", "GopaySDK.podspec", "sdk/sdk/GopaySDK.swift"],
+                assets: ["CHANGELOG.md", "package.json", "README.md", "GopaySDK.podspec", "sdk/sdk/GopaySDK.swift"],
             },
         ],
     ],
