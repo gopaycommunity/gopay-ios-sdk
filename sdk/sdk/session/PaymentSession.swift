@@ -396,6 +396,11 @@ public actor PaymentSession {
         guard paymentSecret != nil else { throw closedError() }
     }
 
+    /// Whether the session still holds its `payment_secret` or a token. For the tests.
+    var holdsCredentials: Bool {
+        paymentSecret != nil || token != nil
+    }
+
     private func performAuth() async throws -> String {
         guard let secret = paymentSecret else { throw closedError() }
         let response: AccessTokenResponse

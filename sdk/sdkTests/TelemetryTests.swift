@@ -1214,7 +1214,10 @@ extension GopayLocalesTests {
         _ = try? await sdk.encryptCardData(
             GopayCardData(cardPan: "4444333322221111", expMonth: "12", expYear: "30", cvv: "123")
         )
-        sdk.initialize(with: config)
+        // Another connection: the same one keeps its telemetry and sends no second init.
+        sdk.initialize(with: GopayConfig(
+            environment: .development(baseUrl: "https://telemetry-test.invalid/"), clientId: "c", shareableKey: "k2"
+        ))
 
         let events = await first.settledEvents(3)
         #expect(events.first?["navigation_type"] as? String == "init")
@@ -1222,7 +1225,8 @@ extension GopayLocalesTests {
         #expect(calls.compactMap { $0["target"] as? String } == ["/oauth2/token", "/cards/public-key"])
         #expect(calls.allSatisfy { $0["status_code"] is NSNull })
 
-        // The second initialize made a second telemetry, which is the one its init went through.
+        // The second initialize, with another connection, made a second telemetry, which is the
+        // one its init went through.
         let again = try #require(await second.events(1).first)
         #expect(again["navigation_type"] as? String == "init")
     }

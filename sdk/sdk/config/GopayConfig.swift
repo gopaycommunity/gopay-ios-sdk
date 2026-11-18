@@ -137,3 +137,36 @@ public struct GopayConfig: Sendable {
             : GopayConfig.defaultRequestTimeout
     }
 }
+
+extension GopayConfig {
+    /// Whether `other` reaches the gateway the same way: the same environment, a `.development`
+    /// one by its base URL with a trailing slash ignored, the same `clientId` and `shareableKey`,
+    /// a missing one and an empty or blank one counting as the same, and the same
+    /// `requestTimeout` and `debugLoggingEnabled`, which the network client and the telemetry
+    /// are made with. What the host may change at run time, `errorCallback`, `locale` and
+    /// `customLocales`, is not compared. The same rule as on Android. See
+    /// ``GopaySDK/initialize(with:)``.
+    func hasSameConnection(as other: GopayConfig) -> Bool {
+        Self.comparable(environment) == Self.comparable(other.environment)
+            && Self.present(clientId) == Self.present(other.clientId)
+            && Self.present(shareableKey) == Self.present(other.shareableKey)
+            && requestTimeout == other.requestTimeout
+            && debugLoggingEnabled == other.debugLoggingEnabled
+    }
+
+    /// A `clientId` or `shareableKey` as the SDK uses it: `nil` when missing, empty or blank, as
+    /// on Android. Every check for a missing key and the comparison of connections read keys
+    /// through this, so a blank key is missing everywhere: a React Native bridge may hand over a
+    /// missing key either way, and a reload must not close a payment over it.
+    static func present(_ key: String?) -> String? {
+        guard let key = key, !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return key
+    }
+
+    /// An environment as the comparison sees it: a `.development` base URL without its trailing
+    /// slash, so `https://x` and `https://x/` are the same gateway.
+    private static func comparable(_ environment: GopayEnvironment) -> GopayEnvironment {
+        guard case .development(let baseUrl) = environment, baseUrl.hasSuffix("/") else { return environment }
+        return .development(baseUrl: String(baseUrl.dropLast()))
+    }
+}

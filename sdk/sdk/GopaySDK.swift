@@ -21,11 +21,12 @@ import PassKit
 /// about the card.
 ///
 /// `@unchecked Sendable` so that ``shared`` can be used from any actor under Swift 6. Every
-/// mutable property is guarded: the configuration, its telemetry and the gateway objects made from
-/// it by `configLock`, replaced together by each ``initialize(with:)``; the card forms by
-/// `cardFormDataLock`; the sessions live in an actor. The four test hooks, `makeTelemetry`,
-/// `warnSink`, `deviceLanguages` and `waitsForInitSession`, are set by tests before the SDK is
-/// used and by nothing else.
+/// mutable property is guarded: the configuration, its telemetry, the gateway objects made from
+/// it and the registry of its sessions by `configLock`, replaced together by an
+/// ``initialize(with:)`` with another connection; the card forms by `cardFormDataLock`; the
+/// sessions live in an actor. The six test hooks, `makeTelemetry`, `makeNetworkClient`,
+/// `beforeRetiringReplacedSessions`, `warnSink`, `deviceLanguages` and `waitsForInitSession`, are
+/// set by tests before the SDK is used and by nothing else.
 public class GopaySDK: @unchecked Sendable {
 
     /// The current version of the SDK.
@@ -76,6 +77,21 @@ public class GopaySDK: @unchecked Sendable {
     /// catch the uploads instead of sending them, like ``warnSink``; set before the SDK is used.
     var makeTelemetry: (GopayConfig) -> Telemetry = { Telemetry(config: $0) }
 
+    /// How ``initialize(with:)`` makes the client the gateway is reached through. Replaced in
+    /// tests, which answer the requests themselves, like ``makeTelemetry``; set before the SDK is
+    /// used.
+    var makeNetworkClient: (GopayConfig) -> AsyncHTTPClient = GopaySDK.defaultNetworkClient
+
+    /// Awaited by the background close of an ``initialize(with:)`` with another connection before
+    /// it retires the replaced registry. `nil` outside tests, which hold it to let a start register
+    /// into the replaced registry first; set before the SDK is used.
+    var beforeRetiringReplacedSessions: (@Sendable () async -> Void)?
+
+    /// The client the gateway is reached through outside tests.
+    private static func defaultNetworkClient(for config: GopayConfig) -> AsyncHTTPClient {
+        DefaultNetworkClient(baseUrl: config.environment.baseUrl, requestTimeout: config.requestTimeout)
+    }
+
     /// The device's languages, which the session start sends GoPay to set the payment's language
     /// from. Replaced in tests, like ``makeTelemetry``, so they need not touch the
     /// ``GopayLocales/preferredLanguages`` hook other suites pin; set before the SDK is used.
@@ -111,7 +127,29 @@ public class GopaySDK: @unchecked Sendable {
         return (config, gateway)
     }
     /// Registry of live payment sessions keyed by `payment_id`. Supports concurrent payments.
-    private let sessionRegistry = SessionRegistry()
+    ///
+    /// One per connection: an ``initialize(with:)`` with another connection puts a new one in its
+    /// place and closes the sessions of the old one. Guarded by ``configLock``.
+    private var sessionRegistry: SessionRegistry {
+        configLock.lock()
+        defer { configLock.unlock() }
+        return storedRegistry
+    }
+    private var storedRegistry = SessionRegistry()
+    /// The background close of the sessions of the connections ``initialize(with:)`` replaced,
+    /// each waiting for the one before; ``closeAllPaymentSessions()`` waits for it. Guarded by
+    /// ``configLock``.
+    private var closingReplacedSessions: Task<Void, Never>?
+
+    /// What a session is started over, read together under ``configLock``, so a session started
+    /// while another thread initializes again gets the old connection whole or the new one;
+    /// `nil` before ``initialize(with:)``.
+    private var connection: (gateway: Gateway, telemetry: Telemetry, registry: SessionRegistry)? {
+        configLock.lock()
+        defer { configLock.unlock() }
+        guard storedConfig != nil, let gateway = storedGateway else { return nil }
+        return (gateway, storedTelemetry, storedRegistry)
+    }
 
     /// Internal storage for card form data keyed by form ID (never exposed to the user).
     /// Entries are removed after a successful ``submitCardForm(formId:)``, when the form
@@ -166,18 +204,58 @@ public class GopaySDK: @unchecked Sendable {
     /// From here on the SDK sends GoPay operational data about its own behaviour, redacted on the
     /// device and never in the way of a payment, to the ingest of the configured environment; a
     /// `.development` environment sends none. See "Operational data" in the README.
+    ///
+    /// Calling it again, as React Native does on every reload, is safe. With the same connection
+    /// (the environment, including the base URL of a `.development` one, `clientId`,
+    /// `shareableKey`, `requestTimeout` and `debugLoggingEnabled`) the open payment sessions stay
+    /// and no second `init` event is sent; only the new `errorCallback`, `locale` and
+    /// `customLocales` take effect, for the sessions started before too. With a different
+    /// connection the SDK switches and closes every open payment session, as
+    /// ``closeAllPaymentSessions()`` does: ``getPaymentSession(_:)`` returns
+    /// `nil` for them at once, ``startPaymentSession(paymentId:paymentSecret:scope:)`` for the
+    /// same payment starts a new one, and a call on an old session fails with
+    /// ``GopaySDKError/Code/authPaymentSessionClosed``, as after ``PaymentSession/close()``.
+    /// The old sessions are closed in the background, since this call is synchronous: a call on
+    /// one of them fails once that close has run, and a call made before may still finish over
+    /// the old connection. ``closeAllPaymentSessions()`` waits for that close.
     /// - Parameter config: The configuration to use.
     public func initialize(with config: GopayConfig) {
-        let telemetry = makeTelemetry(config)
-        let client = DefaultNetworkClient(baseUrl: config.environment.baseUrl, requestTimeout: config.requestTimeout)
-        let gateway = Self.gateway(client: client, config: config, telemetry: telemetry)
+        GopayLocales.registerAll(config.customLocales)
+        GopayLocales.setDefaultLocale(config.locale)
         configLock.lock()
+        let kept = adoptIfSameConnection(config)
+        configLock.unlock()
+        if kept { return }
+
+        let telemetry = makeTelemetry(config)
+        let gateway = Self.gateway(client: makeNetworkClient(config), config: config, telemetry: telemetry)
+        configLock.lock()
+        // Another initialize with this connection may have got here first: keep what it made.
+        if adoptIfSameConnection(config) {
+            configLock.unlock()
+            return
+        }
+        // Only a configured SDK has sessions to close; the registry of one that never was is
+        // empty and kept.
+        if storedConfig != nil {
+            // Closed in the background: this call is synchronous and a close is not. The new
+            // registry is in place before the lock opens, so a session for the same payment can
+            // start at once. Each old session sends its `leave` through the telemetry it holds,
+            // the old one.
+            let replaced = storedRegistry
+            let previous = closingReplacedSessions
+            let hold = beforeRetiringReplacedSessions
+            storedRegistry = SessionRegistry()
+            closingReplacedSessions = Task {
+                await previous?.value
+                await hold?()
+                await Self.closeSessions(of: replaced)
+            }
+        }
         storedConfig = config
         storedTelemetry = telemetry
         storedGateway = gateway
         configLock.unlock()
-        GopayLocales.registerAll(config.customLocales)
-        GopayLocales.setDefaultLocale(config.locale)
         // Said once here, unconditionally, because the first symptom otherwise is a CONFIG_006 on
         // an unrelated-looking call. Only `.development(baseUrl:)` can be empty — `.sandbox` and
         // `.production` carry their own hosts.
@@ -199,6 +277,28 @@ public class GopaySDK: @unchecked Sendable {
         GopayLocales.resolve(preferred)
     }
 
+    /// Takes `config` as the current configuration when it asks for the same connection, under
+    /// ``configLock``: the same gateway, key and telemetry, so the sessions over them stay, and so
+    /// does the telemetry, whose `init` GoPay has already had. Only what the host may change at
+    /// run time is taken, the callback first: after a React Native reload the old one points into
+    /// a JavaScript context that is gone.
+    private func adoptIfSameConnection(_ config: GopayConfig) -> Bool {
+        guard let current = storedConfig, storedGateway != nil, current.hasSameConnection(as: config) else {
+            return false
+        }
+        storedConfig = config
+        return true
+    }
+
+    /// Closes every session `registry` holds and refuses the ones still starting over it, which
+    /// close themselves. What ``initialize(with:)`` does to the sessions of the connection it
+    /// replaced.
+    private static func closeSessions(of registry: SessionRegistry) async {
+        for session in await registry.retire() {
+            await session.close()
+        }
+    }
+
     /// Internal/test initializer for dependency injection. Sends no telemetry unless a test
     /// passes its own.
     internal init(
@@ -209,7 +309,7 @@ public class GopaySDK: @unchecked Sendable {
         self.storedConfig = config
         self.storedTelemetry = telemetry
         if let config = config {
-            let client = networkClient ?? DefaultNetworkClient(baseUrl: config.environment.baseUrl, requestTimeout: config.requestTimeout)
+            let client = networkClient ?? Self.defaultNetworkClient(for: config)
             self.storedGateway = Self.gateway(client: client, config: config, telemetry: telemetry)
         }
     }
@@ -253,7 +353,9 @@ public class GopaySDK: @unchecked Sendable {
     ///   ``initialize(with:)``, ``GopaySDKError/Code/validationInvalidInput`` for an empty
     ///   `paymentId` or `paymentSecret`, ``GopaySDKError/Code/authPaymentCredentialsInvalid``
     ///   when the gateway turns the pair down, ``GopaySDKError/Code/authPaymentSessionAlreadyExists``
-    ///   for a payment that already has a session, or the token request's own error.
+    ///   for a payment that already has a session, ``GopaySDKError/Code/authPaymentSessionClosed``
+    ///   when an ``initialize(with:)`` with another connection overtook the start while it waited
+    ///   for the token, which closed the session, or the token request's own error.
     public func startPaymentSession(
         paymentId: String,
         paymentSecret: String,
@@ -274,7 +376,7 @@ public class GopaySDK: @unchecked Sendable {
     ) async throws -> PaymentSession {
         // Checked first, as the Android `getInstance()` is: without a config there is no gateway
         // to talk to, whatever the credentials look like.
-        guard let gateway = configured?.gateway else {
+        guard let (gateway, telemetry, registry) = connection else {
             throw notInitializedError()
         }
         // Blank, not only empty, as the Android `isBlank` check: a value of white space would
@@ -287,8 +389,6 @@ public class GopaySDK: @unchecked Sendable {
             throw GopaySDKError(.validationInvalidInput, message: "paymentSecret must not be empty")
         }
 
-        let registry = sessionRegistry
-        let telemetry = self.telemetry
         telemetry.attach(paymentId: paymentId)
         let session: PaymentSession
         do {
@@ -313,8 +413,16 @@ public class GopaySDK: @unchecked Sendable {
         }
         do {
             try await registry.register(session)
+            // An initialize with another connection may have swapped the registry after this
+            // start read it and before the background close retired it. Then the session belongs
+            // to the replaced connection and is closed as its sessions are.
+            guard registry === sessionRegistry else {
+                await registry.remove(session)
+                throw SessionRegistry.replacedConnectionError(paymentId: paymentId)
+            }
         } catch {
-            // Lost a race for this paymentId — wipe the just-created session and surface the error.
+            // Lost a race for this paymentId, or initialize(with:) switched to another connection
+            // meanwhile — wipe the just-created session and surface the error.
             await session.close(reportsLeave: false)
             throw error
         }
@@ -334,7 +442,14 @@ public class GopaySDK: @unchecked Sendable {
 
     /// Closes and unregisters every live ``PaymentSession``, wiping in-memory secrets and tokens.
     /// Intended for global teardown (e.g. the user signs out of the host app).
+    ///
+    /// Also waits for the sessions an ``initialize(with:)`` with another connection is still
+    /// closing in the background.
     public func closeAllPaymentSessions() async {
+        configLock.lock()
+        let closingReplaced = closingReplacedSessions
+        configLock.unlock()
+        await closingReplaced?.value
         for session in await sessionRegistry.all() {
             await session.close()
         }
@@ -384,7 +499,9 @@ public class GopaySDK: @unchecked Sendable {
         // URLSession's completion API does not notice the task being cancelled, so the fetch
         // finishes anyway. Stopping here keeps a cancelled submitCardForm from wiping the form.
         try Task.checkCancellation()
-        guard let clientId = config.clientId, !clientId.isEmpty else {
+        // Blank is missing, as in PublicAPI: the config may be a newer one of the same connection,
+        // whose keys are then the same as the gateway's or missing in both.
+        guard let clientId = GopayConfig.present(config.clientId) else {
             throw GopaySDKError(.authShareableKeyMissing, message: "clientId must be set on GopayConfig to encrypt card data")
         }
         let issuedAt: Date

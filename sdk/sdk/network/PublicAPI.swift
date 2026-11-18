@@ -109,8 +109,8 @@ struct PublicAPI {
     }
 
     private func shareableKeyAuthHeader() throws -> String {
-        guard let clientId = clientId, !clientId.isEmpty,
-              let shareableKey = shareableKey, !shareableKey.isEmpty else {
+        guard let clientId = GopayConfig.present(clientId),
+              let shareableKey = GopayConfig.present(shareableKey) else {
             throw GopaySDKError(
                 .authShareableKeyMissing,
                 message: "clientId and shareableKey must be set on GopayConfig to use public endpoints"

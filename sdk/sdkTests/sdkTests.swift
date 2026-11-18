@@ -281,6 +281,12 @@ final class Counter: @unchecked Sendable {
         value += 1
         return value
     }
+
+    /// The count so far.
+    var count: Int {
+        lock.lock(); defer { lock.unlock() }
+        return value
+    }
 }
 
 /// Answers like the gateway, but holds every token renewal after the first until the test calls
