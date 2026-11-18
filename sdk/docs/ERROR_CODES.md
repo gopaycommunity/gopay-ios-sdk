@@ -106,6 +106,7 @@ The callback runs on whatever thread the failing call ends on, not necessarily t
 - **Description**: An operation was invoked on a `PaymentSession` that has been closed
 - **Common Causes**:
   - Session used after `close()` or `closeAllPaymentSessions()`; every method of the session that sends a request throws it before anything goes out, and a token that arrives after the close is not kept
+  - Session closed by an `initialize` with another connection, which closes every open session as `closeAllPaymentSessions()` does; a `startPaymentSession` that `initialize` overtakes while it waits for the token fails with it too
 - **Developer Action**:
   - Start a new session for the payment
 - **A charge may exist**: Not from this call: nothing goes out on a closed session. A charge made before `close()` may exist; read it through your backend or a new session's `getChargeState()`

@@ -46,6 +46,9 @@ throws ``GopaySDKError/Code/sdkNotInitialized``:
 GopaySDK.shared.initialize(with: config)
 ```
 
+Calling it again is safe: with the same connection the open payment sessions stay, with another
+one the SDK switches and closes them. See ``GopaySDK/initialize(with:)``.
+
 ## Step 5: Start the session when the checkout opens
 
 Have your backend create the payment when the checkout opens, and start the payment's session

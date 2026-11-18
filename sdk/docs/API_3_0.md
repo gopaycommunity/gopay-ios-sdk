@@ -171,3 +171,12 @@ What an integration written against 2.7 has to change before it builds:
 - Code that tells an empty form from an invalid one by the error message: compare
   `VALIDATION_008` and `VALIDATION_007`.
 - Everything under "Removed".
+
+## 3.1.1
+
+- A second `initialize` with the same connection (the environment, including the base URL of a
+  development one, `clientId`, `shareableKey`, the request timeout and `debugLoggingEnabled`) keeps
+  the open payment sessions and sends no second `init` event; only `errorCallback`, `locale` and
+  `customLocales` take effect, and on Android the Context. With a different connection it switches
+  and closes every open payment session. Before, iOS kept the sessions on the old connection and
+  Android left them open and unreachable.

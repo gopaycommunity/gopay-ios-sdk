@@ -220,6 +220,16 @@ GopaySDK.shared.initialize(
 A request to the gateway waits 60 seconds for the next data before it fails with `NETWORK_001`;
 pass `requestTimeout`, in seconds, to change that.
 
+**Calling `initialize` again is safe.** React Native does it on every reload. With the same
+connection (the environment, including the base URL of a development one, `clientId`,
+`shareableKey`, the request timeout and `debugLoggingEnabled`) the SDK keeps its open payment
+sessions and sends no second `init` event; only the new `errorCallback`, `locale` and
+`customLocales` take effect, for the sessions started before too. With a different connection the
+SDK switches and closes every open payment session, as `closeAllPaymentSessions` does; a call on
+such a session fails with `AUTH_013`, as after `close()`, and `startPaymentSession` for the same
+payment starts a new one. The old sessions are closed in the background, so a call on one
+fails once that close has run; `closeAllPaymentSessions` waits for it.
+
 `GopaySDK.version` returns the SDK's own version (e.g. `"3.0.0"`) — a compiled-in constant rather
 than an Info.plist lookup, since under SPM the SDK links statically into the host app and
 `Bundle(for:)` would otherwise report the *host app's* version instead.
@@ -1162,7 +1172,7 @@ original error as `underlying`, and so is a card encryption that fails, with `IN
 | `AUTH_010` | `payment_id` / `payment_secret` rejected by `/oauth2/token` (HTTP 400, 401 or 403 only) |
 | `AUTH_011` | `clientId` / `shareableKey` missing for a public-endpoint call, including the browser data fetch a charge runs first |
 | `AUTH_012` | A session for this `payment_id` already exists |
-| `AUTH_013` | A call on a session after `close()`, refused before anything is sent; `handle3dsVerification` still runs |
+| `AUTH_013` | A call on a session after `close()`, or after an `initialize` with another connection closed it, refused before anything is sent; `handle3dsVerification` still runs. Also a `startPaymentSession` overtaken by an `initialize` with another connection |
 | `PAYMENT_003` | Apple Pay produced no usable payment token (unreadable, or empty as in the iOS Simulator) |
 | `PAYMENT_004` | Apple Pay cannot be used: the device cannot pay with it, no supported card network, or the sheet could not be shown |
 | `PAYMENT_006` | `awaitChargeState` only: the charge ended `failed`; the charge is in `chargeState`; the message is `Charge failed: <fail_reason>` when the gateway sends a `chargeState.failReason`, otherwise only `Charge failed` |
