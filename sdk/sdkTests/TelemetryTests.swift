@@ -1227,3 +1227,23 @@ extension GopayLocalesTests {
         #expect(again["navigation_type"] as? String == "init")
     }
 }
+
+/// The attribution list on its own: each payment once, the last attached at the end, and a
+/// payment attached twice stays until it is detached twice.
+struct TelemetryAttachTests {
+
+    @Test func attachingTheSamePaymentTwiceKeepsItOnceAndLast() {
+        let telemetry = TelemetryProbe(clientId: nil).telemetry
+        telemetry.attach(paymentId: "p1")
+        telemetry.attach(paymentId: "p2")
+        telemetry.attach(paymentId: "p1")
+        #expect(telemetry.attachedPayments == ["p2", "p1"])
+
+        telemetry.detach(paymentId: "p1")
+        #expect(telemetry.attachedPayments == ["p2", "p1"], "one attach of p1 is still open")
+        telemetry.detach(paymentId: "p1")
+        #expect(telemetry.attachedPayments == ["p2"])
+        telemetry.detach(paymentId: "p1")
+        #expect(telemetry.attachedPayments == ["p2"], "a detach without an attach changes nothing")
+    }
+}

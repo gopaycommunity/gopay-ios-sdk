@@ -149,10 +149,15 @@ final class Telemetry: @unchecked Sendable {
 
     /// Guards the state below. Never held across a suspension point.
     private let lock = NSLock()
-    /// The payments of the sessions started and not yet closed, oldest first. An event that
-    /// belongs to no payment of its own, a card form's or a probe's, is attributed to the last
-    /// one, as the browser SDK attributes everything to the payment attached to it.
+    /// The payments of the sessions started and not yet closed, each once, the one attached last
+    /// at the end. An event that belongs to no payment of its own, a card form's or a probe's, is
+    /// attributed to the last one, as the browser SDK attributes everything to the payment
+    /// attached to it.
     private var attached: [String] = []
+    /// How many attaches of each payment in ``attached`` are not yet detached: a start for a
+    /// payment that already has a session attaches it again and detaches it when it is refused,
+    /// which must not take the open session's attribution with it. As on Android.
+    private var attachCounts: [String: Int] = [:]
     /// Each card form on screen, from its ready to its unmount, keyed by the form's owner token.
     private var cardForms: [ObjectIdentifier: CardFormVisit] = [:]
     /// The last answer each availability probe reported, so a probe called from a view body does
@@ -265,6 +270,8 @@ final class Telemetry: @unchecked Sendable {
     /// to it from here on, its token exchange included.
     func attach(paymentId: String) {
         lock.lock()
+        attachCounts[paymentId, default: 0] += 1
+        attached.removeAll { $0 == paymentId }
         attached.append(paymentId)
         lock.unlock()
     }
@@ -272,10 +279,22 @@ final class Telemetry: @unchecked Sendable {
     /// The session for `paymentId` failed to start, lost the race for its payment, or closed.
     func detach(paymentId: String) {
         lock.lock()
-        if let index = attached.lastIndex(of: paymentId) {
-            attached.remove(at: index)
+        if let count = attachCounts[paymentId] {
+            if count > 1 {
+                attachCounts[paymentId] = count - 1
+            } else {
+                attachCounts[paymentId] = nil
+                attached.removeAll { $0 == paymentId }
+            }
         }
         lock.unlock()
+    }
+
+    /// The payments attached now, in order, each once. For the tests.
+    var attachedPayments: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return attached
     }
 
     /// A payment session started: its credentials were accepted and it was registered. Every
