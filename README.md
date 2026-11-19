@@ -60,7 +60,7 @@ The SDK is built and tested with Xcode 26.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "3.0.0")
+    .package(url: "https://github.com/gopaycommunity/gopay-ios-sdk.git", from: "3.1.0")
 ],
 targets: [
     .target(

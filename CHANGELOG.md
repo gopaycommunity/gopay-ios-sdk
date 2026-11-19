@@ -1,3 +1,12 @@
+# 3.1.0 (2026-11-19)
+
+
+### Features
+
+* look up card metadata by BIN without logging it GPMOB-202 8183fd2
+* reject card numbers of unsupported brands in the card form GPMOB-202 bec803b
+* return the JWE with card metadata from submitCardFormWithMetadata GPMOB-202 9c8d7bc
+
 # 3.0.0 (2026-11-12)
 
 
