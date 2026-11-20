@@ -794,7 +794,7 @@ extension SessionNetworkTests {
             config: GopayConfig(environment: .development(baseUrl: stubBaseURL), clientId: "client", shareableKey: "shareable"),
             networkClient: stubbedClient(),
             telemetry: telemetry
-        ).waitingForInitSession()
+        )
     }
 
     @Test func reportsEveryGatewayRequestOfAPaymentAndItsLifecycle() async throws {
@@ -803,8 +803,6 @@ extension SessionNetworkTests {
         let sdk = sdk(telemetry: probe.telemetry)
 
         let session = try await sdk.startPaymentSession(paymentId: "3273103424", paymentSecret: "s3cret")
-        // The init-session request runs in the background; waited for so the order is fixed.
-        await session.initSessionTask?.value
         _ = try await session.charge(
             .encryptedCard("JWE-PAYLOAD", browserData: Self.telemetryBrowserData, challengePreference: .auto)
         )
@@ -853,7 +851,6 @@ extension SessionNetworkTests {
         // Held for the whole test: a session reports through the SDK that made it, while it lives.
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
-        await session.initSessionTask?.value
 
         await #expect(throws: GopaySDKError.self) { _ = try await session.getChargeState() }
 
@@ -879,7 +876,6 @@ extension SessionNetworkTests {
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
-        await session.initSessionTask?.value
 
         #expect(try await session.getPaymentOutcome().outcome == .paid)
 
@@ -900,8 +896,7 @@ extension SessionNetworkTests {
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
-        // Answered before the device goes offline, so the one transport error is the read's.
-        await session.initSessionTask?.value
+        // The start waited for the init-session, so the one transport error is the read's.
         isOffline.value = true
 
         await #expect(throws: GopaySDKError.self) { _ = try await session.getStatus() }
@@ -995,7 +990,6 @@ extension SessionNetworkTests {
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let session = try await sdk.startPaymentSession(paymentId: "1", paymentSecret: "s")
-        await session.initSessionTask?.value
 
         _ = try? await session.getStatus()
 
@@ -1012,7 +1006,6 @@ extension SessionNetworkTests {
         let probe = TelemetryProbe(clientId: "client")
         let sdk = sdk(telemetry: probe.telemetry)
         let first = try await sdk.startPaymentSession(paymentId: "dup", paymentSecret: "s")
-        await first.initSessionTask?.value
 
         await #expect(throws: GopaySDKError.self) { _ = try await sdk.startPaymentSession(paymentId: "dup", paymentSecret: "s") }
         await first.close()

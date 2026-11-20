@@ -54,7 +54,7 @@ extension SessionNetworkTests {
             clientId: "c",
             shareableKey: "k"
         )
-        return GopaySDK(config: config, networkClient: stubbedClient()).waitingForInitSession()
+        return GopaySDK(config: config, networkClient: stubbedClient())
     }
 
     // MARK: Transport failures

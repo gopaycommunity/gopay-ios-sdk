@@ -24,9 +24,9 @@ import PassKit
 /// mutable property is guarded: the configuration, its telemetry, the gateway objects made from
 /// it and the registry of its sessions by `configLock`, replaced together by an
 /// ``initialize(with:)`` with another connection; the card forms by `cardFormDataLock`; the
-/// sessions live in an actor. The six test hooks, `makeTelemetry`, `makeNetworkClient`,
-/// `beforeRetiringReplacedSessions`, `warnSink`, `deviceLanguages` and `waitsForInitSession`, are
-/// set by tests before the SDK is used and by nothing else.
+/// sessions live in an actor. The five test hooks, `makeTelemetry`, `makeNetworkClient`,
+/// `beforeRetiringReplacedSessions`, `warnSink` and `deviceLanguages`, are set by tests before the
+/// SDK is used and by nothing else.
 public class GopaySDK: @unchecked Sendable {
 
     /// The current version of the SDK.
@@ -96,12 +96,6 @@ public class GopaySDK: @unchecked Sendable {
     /// from. Replaced in tests, like ``makeTelemetry``, so they need not touch the
     /// ``GopayLocales/preferredLanguages`` hook other suites pin; set before the SDK is used.
     var deviceLanguages: () -> [String] = { GopayLocales.preferredLanguages() }
-
-    /// Whether ``startPaymentSession(paymentId:paymentSecret:scope:)`` waits for the session's
-    /// init-session request before it returns. `false` outside tests. The tests' shared SDKs turn
-    /// it on, so a request left in the background never reaches the stub after the next test has
-    /// reset it, or waits behind answers the next test holds; set before the SDK is used.
-    var waitsForInitSession = false
 
     /// What the SDK talks to the gateway through, made from one configuration.
     private struct Gateway {
@@ -338,9 +332,15 @@ public class GopaySDK: @unchecked Sendable {
     /// before starting another for the same payment, or reuse an existing one via
     /// ``getPaymentSession(_:)``.
     ///
-    /// Once started, the session tells GoPay in the background which SDK and version works with
-    /// the payment, and GoPay sets the payment's language from the device's languages; this call
-    /// does not wait for it, and its failure affects nothing.
+    /// Once started, the session tells GoPay which SDK and version works with the payment, and
+    /// GoPay sets the payment's language from the device's languages. This call returns once GoPay
+    /// has been told, so a charge made right after it never overtakes that request; the start
+    /// gives up waiting after 10 seconds without an answer. If the request fails, nothing throws
+    /// and `errorCallback` is not called. A ``PaymentSession/close()`` during the wait ends it, and
+    /// the start returns the closed session.
+    ///
+    /// Cancelling the caller during the wait closes the session and throws `CancellationError`,
+    /// which is not reported through `errorCallback`.
     ///
     /// - Parameters:
     ///   - paymentId: The payment identifier issued by the merchant backend.
@@ -427,9 +427,23 @@ public class GopaySDK: @unchecked Sendable {
             throw error
         }
         telemetry.sessionStarted(paymentId: paymentId)
-        await session.startInitSession(languages: deviceLanguages())
-        if waitsForInitSession {
-            await session.initSessionTask?.value
+        // A charge must not overtake the init-session: the gateway may then reject it or leave the
+        // payment "not initialized". The session is registered before the wait, so a second start
+        // for the payment sees it; getPaymentSession can therefore hand it out before the wait
+        // ends, a gap we accept.
+        guard let initSession = await session.startInitSession(languages: deviceLanguages()) else {
+            return session
+        }
+        await withTaskCancellationHandler {
+            await initSession.value
+        } onCancel: {
+            initSession.cancel()
+        }
+        // A caller that gave up holds no reference to the session, which would otherwise block
+        // the next start for the payment.
+        if Task.isCancelled {
+            await session.close()
+            throw CancellationError()
         }
         return session
     }

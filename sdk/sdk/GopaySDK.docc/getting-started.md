@@ -59,6 +59,8 @@ pays, for a card and for a wallet button alike:
 let session = try await GopaySDK.shared.startPaymentSession(paymentId: paymentId, paymentSecret: paymentSecret)
 ```
 
+`startPaymentSession` returns once GoPay knows about the session, so a charge never overtakes it.
+
 ## Step 6: Charge when the customer pays
 
 Charge the session with the calls both SDKs share, then wait for the result:

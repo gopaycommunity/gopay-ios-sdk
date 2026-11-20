@@ -248,17 +248,6 @@ final class StubGate: @unchecked Sendable {
     }
 }
 
-extension GopaySDK {
-    /// This SDK, made to wait for each session's init-session request before the start returns.
-    /// Every SDK the suites build over the shared stub uses it: a request left running in the
-    /// background would otherwise reach the stub after the next test has reset it, and block the
-    /// URL loading thread behind answers that test holds (`holdAnswers()`).
-    func waitingForInitSession() -> GopaySDK {
-        waitsForInitSession = true
-        return self
-    }
-}
-
 /// A flag the stub's handler reads from the URL loading thread.
 final class Flag: @unchecked Sendable {
     private let lock = NSLock()
@@ -997,7 +986,7 @@ struct SessionNetworkTests {
             clientId: clientId,
             shareableKey: shareableKey
         )
-        return GopaySDK(config: config, networkClient: stubbedClient()).waitingForInitSession()
+        return GopaySDK(config: config, networkClient: stubbedClient())
     }
 
     @Test func startPaymentSession_duplicate_throwsAlreadyExists() async throws {

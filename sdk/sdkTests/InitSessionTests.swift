@@ -2,8 +2,9 @@
 //  InitSessionTests.swift
 //  sdkTests
 //
-//  `POST /payments/{payment_id}/init-session` (GPMOB-194): sent once a session has started, not
-//  waited for, and quiet whatever it gets back. The Android SDK (GPMOB-195) runs the same cases.
+//  `POST /payments/{payment_id}/init-session` (GPMOB-194): sent once a session has started,
+//  waited for by the start (GPMOB-206), and quiet whatever it gets back. The Android SDK
+//  (GPMOB-195, GPMOB-207) runs the same cases.
 //
 
 import Testing
@@ -33,10 +34,14 @@ extension SessionNetworkTests {
 
     private static let languages = ["cs-CZ", "cs", "en-GB"]
 
+    /// Browser data with the gateway's fields filled in, so a charge goes out without the fetch.
+    private static let filledBrowserData = BrowserData(
+        language: "cs-CZ", timezone: -60, screenWidth: 1170, screenHeight: 2532, colorDepth: 24,
+        userAgent: "ua", acceptHeader: "{}", javascriptEnabled: true, ip: "192.0.2.42"
+    )
+
     /// An SDK over the shared stub whose `errorCallback` collects into `reported`, with the
-    /// device languages pinned to ``languages``. Unlike the other suites' SDKs it does not wait
-    /// for the init-session at the start: these tests wait for it themselves, or check that
-    /// nothing does.
+    /// device languages pinned to ``languages``.
     private func initSessionSDK(_ reported: ReportedErrors, telemetry: Telemetry = .disabled) -> GopaySDK {
         let sdk = GopaySDK(
             config: GopayConfig(
@@ -51,12 +56,16 @@ extension SessionNetworkTests {
         return sdk
     }
 
-    /// A token, the payment's status for any payment, and `initSession` for its init-session.
-    private func initSessionGateway(_ initSession: InitSessionAnswer = .http(204)) {
+    /// A token, the payment's status for any payment, and `initSession` for its init-session,
+    /// given only once `gate`, when there is one, opens.
+    private func initSessionGateway(_ initSession: InitSessionAnswer = .http(204), gate: StubGate? = nil) {
         StubURLProtocol.reset(transportError: initSession.transportError) { req in
             let path = req.url?.path ?? ""
             if path.hasSuffix("oauth2/token") { return tokenResponse() }
-            if path.hasSuffix("/init-session") { return (initSession.status, Data()) }
+            if path.hasSuffix("/init-session") {
+                gate?.wait()
+                return (initSession.status, Data())
+            }
             let id = path.split(separator: "/").last.map(String.init) ?? ""
             return (200, json(["id": id, "state": "CREATED", "amount": 1, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
         }
@@ -70,7 +79,6 @@ extension SessionNetworkTests {
         let sdk = initSessionSDK(reported)
 
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
-        await session.initSessionTask?.value
         _ = try await session.getStatus()
 
         let sent = StubURLProtocol.requests(forPathSuffix: "/payments/p1/init-session")
@@ -88,26 +96,74 @@ extension SessionNetworkTests {
         #expect(reported.all.isEmpty)
     }
 
-    /// `startPaymentSession` returns, and the session works, while the gateway sits on the
-    /// init-session.
-    @Test func doesNotWaitForTheInitSession() async throws {
-        initSessionGateway()
-        StubURLProtocol.holdAnswers(forPathSuffix: "/init-session")
+    /// The start does not end while the gateway sits on the init-session, and ends once it
+    /// answers.
+    @Test func theStartReturnsOnlyOnceTheInitSessionIsAnswered() async throws {
+        let gate = StubGate()
+        initSessionGateway(gate: gate)
+        let reported = ReportedErrors()
+        let sdk = initSessionSDK(reported)
+        let returned = Flag()
+
+        let start = Task {
+            defer { returned.value = true }
+            return try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
+        }
+        await expectSettled(StubURLProtocol.requestCount(forPathSuffix: "/init-session") == 1)
+        // The answer cannot have come: the stub's thread is still held in the gate.
+        #expect(!returned.value)
+        gate.open()
+        let session = try await start.value
+
+        #expect(returned.value)
+        #expect(try await session.getStatus().id == "p1")
+        #expect(reported.all.isEmpty)
+        await session.close()
+    }
+
+    /// A charge made right after the start reaches the gateway only once the init-session has
+    /// been answered: the stub notes, when the charge arrives, whether that answer has gone out.
+    @Test func aChargeRightAfterTheStartGoesAfterTheInitSession() async throws {
+        let gate = StubGate()
+        let initSessionAnswered = Flag()
+        let chargeCameAfterTheAnswer = Flag()
+        let chargeArrived = Flag()
+        let answeredWhenTheStartReturned = Flag()
+        StubURLProtocol.reset { req in
+            let path = req.url?.path ?? ""
+            if path.hasSuffix("oauth2/token") { return tokenResponse() }
+            if path.hasSuffix("/init-session") {
+                gate.wait()
+                initSessionAnswered.value = true
+                return (204, Data())
+            }
+            if path.hasSuffix("/charge") {
+                chargeCameAfterTheAnswer.value = initSessionAnswered.value
+                chargeArrived.value = true
+            }
+            // The payment for any other path, the charge too: not a charge, but only the order counts.
+            return (200, json(["id": "p1", "state": "CREATED", "amount": 1, "currency": "CZK", "order_number": "o1", "gw_url": "https://gw.example/p", "customer": ["email": "a@b.c"]]))
+        }
         let reported = ReportedErrors()
         let sdk = initSessionSDK(reported)
 
-        let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
-        let status = try await session.getStatus()
-        _ = try await session.getChargeState()
-
-        #expect(status.id == "p1")
-        // Still hanging: a start that waited would have seen it time out and be stopped.
+        let payment = Task {
+            let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
+            // A start that did not wait returns while the gate is still shut, however fast the
+            // charge after it is.
+            answeredWhenTheStartReturned.value = initSessionAnswered.value
+            _ = try? await session.chargeWithCardToken("token", browserData: Self.filledBrowserData)
+            return session
+        }
         await expectSettled(StubURLProtocol.requestCount(forPathSuffix: "/init-session") == 1)
-        #expect(StubURLProtocol.stoppedPaths.isEmpty)
+        #expect(StubURLProtocol.requestCount(forPathSuffix: "/charge") == 0)
+        gate.open()
+        let session = try await payment.value
+
+        #expect(answeredWhenTheStartReturned.value, "the start returned before the init-session was answered")
+        #expect(chargeArrived.value)
+        #expect(chargeCameAfterTheAnswer.value, "the charge overtook the init-session")
         await session.close()
-        await session.initSessionTask?.value
-        await expectSettled(StubURLProtocol.stoppedPaths == ["/payments/p1/init-session"])
-        #expect(reported.all.isEmpty)
     }
 
     // MARK: Failures are quiet
@@ -122,7 +178,6 @@ extension SessionNetworkTests {
         let sdk = initSessionSDK(reported)
 
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
-        await session.initSessionTask?.value
         let status = try await session.getStatus()
 
         #expect(status.id == "p1")
@@ -139,7 +194,6 @@ extension SessionNetworkTests {
         let sdk = initSessionSDK(reported)
 
         let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
-        await session.initSessionTask?.value
         _ = try await session.getStatus()
 
         #expect(StubURLProtocol.requestCount(forPathSuffix: "oauth2/token") == 1)
@@ -160,8 +214,6 @@ extension SessionNetworkTests {
 
         let first = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
         let second = try await sdk.startPaymentSession(paymentId: "p2", paymentSecret: "s")
-        await first.initSessionTask?.value
-        await second.initSessionTask?.value
         await #expect(throws: GopaySDKError.self) { _ = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s") }
 
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/payments/p1/init-session") == 1)
@@ -169,15 +221,18 @@ extension SessionNetworkTests {
         #expect(reported.codes == [.authPaymentSessionAlreadyExists], "only the duplicate start itself")
     }
 
-    /// Without `payment:read` the gateway would answer with a 403, so nothing is sent.
-    @Test func aScopeWithoutPaymentReadSendsNone() async throws {
+    /// Without `payment:read` the gateway would answer with a 403, so nothing is sent and the
+    /// start has nothing to wait for.
+    @Test func aScopeWithoutPaymentReadSendsNoneAndDoesNotWait() async throws {
         initSessionGateway()
         let reported = ReportedErrors()
         let sdk = initSessionSDK(reported)
 
+        _ = try await sdk.startPaymentSession(paymentId: "p2", paymentSecret: "s", scope: "payment:read")
+        // An init-session from here on is never answered: a start that sent one would wait out the
+        // 10 s timeout and the count below would catch it.
+        StubURLProtocol.holdAnswers(forPathSuffix: "/init-session")
         let chargeOnly = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s", scope: "payment:charge")
-        let readOnly = try await sdk.startPaymentSession(paymentId: "p2", paymentSecret: "s", scope: "payment:read")
-        await readOnly.initSessionTask?.value
 
         #expect(await chargeOnly.initSessionTask == nil)
         #expect(StubURLProtocol.requestCount(forPathSuffix: "/payments/p1/init-session") == 0)
@@ -212,25 +267,62 @@ extension SessionNetworkTests {
         #expect(StubURLProtocol.paths.isEmpty, "nothing reached the gateway")
     }
 
-    @Test func closeCancelsAHangingInitSessionAndReportsNothing() async throws {
+    @Test func closeDuringTheWaitCancelsTheInitSessionAndReturnsTheClosedSession() async throws {
         initSessionGateway()
         StubURLProtocol.holdAnswers(forPathSuffix: "/init-session")
         let reported = ReportedErrors()
         let probe = TelemetryProbe(clientId: "client")
         let sdk = initSessionSDK(reported, telemetry: probe.telemetry)
 
-        let session = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
+        let start = Task { try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s") }
         await expectSettled(StubURLProtocol.requestCount(forPathSuffix: "/init-session") == 1)
-        await session.close()
+        await sdk.getPaymentSession("p1")?.close()
         // Ends with the cancellation, not with the request's 10 s timeout.
-        await session.initSessionTask?.value
+        let session = try await start.value
 
+        #expect(await !session.holdsCredentials, "the start hands back the closed session")
+        #expect(await sdk.getPaymentSession("p1") == nil)
         await expectSettled(StubURLProtocol.stoppedPaths == ["/payments/p1/init-session"])
         #expect(reported.all.isEmpty)
         let events = await probe.settledEvents(3)
         #expect(events.compactMap { ($0["navigation_type"] ?? $0["target"]) as? String } == [
             "/oauth2/token", "navigate", "leave",
         ], "a request given up on is neither an api_call nor an error")
+
+        initSessionGateway()
+        let again = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
+        #expect(reported.all.isEmpty)
+        await again.close()
+    }
+
+    /// A caller that gives up has no session to close, so the start closes it: the payment is
+    /// free for the next start.
+    @Test func cancellingTheCallerDuringTheWaitClosesTheSessionAndThrowsTheCancellation() async throws {
+        initSessionGateway()
+        StubURLProtocol.holdAnswers(forPathSuffix: "/init-session")
+        let reported = ReportedErrors()
+        let probe = TelemetryProbe(clientId: "client")
+        let sdk = initSessionSDK(reported, telemetry: probe.telemetry)
+
+        let start = Task { try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s") }
+        await expectSettled(StubURLProtocol.requestCount(forPathSuffix: "/init-session") == 1)
+        start.cancel()
+        let result = await start.result
+
+        #expect(throws: CancellationError.self) { try result.get() }
+        #expect(await sdk.getPaymentSession("p1") == nil)
+        await expectSettled(StubURLProtocol.stoppedPaths == ["/payments/p1/init-session"])
+        #expect(reported.all.isEmpty)
+        let events = await probe.settledEvents(3)
+        #expect(events.compactMap { ($0["navigation_type"] ?? $0["target"]) as? String } == [
+            "/oauth2/token", "navigate", "leave",
+        ], "a request given up on is neither an api_call nor an error")
+        #expect(!events.contains { $0["event_type"] as? String == "js_event" })
+
+        initSessionGateway()
+        let again = try await sdk.startPaymentSession(paymentId: "p1", paymentSecret: "s")
+        #expect(reported.all.isEmpty)
+        await again.close()
     }
 
     // MARK: Telemetry (a numeric payment id, which the telemetry reports as {id})
@@ -243,7 +335,6 @@ extension SessionNetworkTests {
         let sdk = initSessionSDK(reported, telemetry: probe.telemetry)
 
         let session = try await sdk.startPaymentSession(paymentId: "3273103424", paymentSecret: "s")
-        await session.initSessionTask?.value
 
         let events = await probe.settledEvents(3)
         #expect(events.count == 3)
@@ -265,7 +356,6 @@ extension SessionNetworkTests {
         let sdk = initSessionSDK(reported, telemetry: probe.telemetry)
 
         let session = try await sdk.startPaymentSession(paymentId: "3273103424", paymentSecret: "s")
-        await session.initSessionTask?.value
 
         let events = await probe.settledEvents(4)
         #expect(events.count == 4)

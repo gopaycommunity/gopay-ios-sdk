@@ -41,8 +41,8 @@ public actor PaymentSession {
     /// Set once by ``attach(client:)`` immediately after construction.
     private var api: PaymentAPI!
 
-    /// `POST /payments/{payment_id}/init-session`, sent once the session has started and not
-    /// waited for; ``close()`` cancels it. Tests that count requests or events await it.
+    /// `POST /payments/{payment_id}/init-session`, sent once the session has started; the start
+    /// waits for it, and ``close()`` cancels it.
     private(set) var initSessionTask: Task<Void, Never>?
 
     /// Where a charge without browser data gets the device's. ``BrowserData/deviceDefault()``
@@ -331,24 +331,28 @@ public actor PaymentSession {
 
     // MARK: - Init session
 
-    /// Tells the gateway, once and in the background, that this SDK works with the payment: its
-    /// type and version, and the device's languages, from which the gateway sets the payment's
-    /// language. ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` calls it once
-    /// the session is registered and returns without waiting.
+    /// Tells the gateway, once, that this SDK works with the payment: its type and version, and
+    /// the device's languages, from which the gateway sets the payment's language.
+    /// ``GopaySDK/startPaymentSession(paymentId:paymentSecret:scope:)`` calls it once the session
+    /// is registered and waits for the returned task, so a charge never overtakes it.
     ///
     /// Nothing that happens to the request reaches the integrator: no error is thrown, none goes
     /// to the `errorCallback`, there is no retry. The telemetry sees the request as one `api_call`
     /// like any other, and a request that got no answer at all also as an `error` event, sent to
     /// the telemetry directly (the browser SDK's `emitError(e, notifyIntegrator = false)`); an
     /// error status is the `api_call`'s alone. A scope without `payment:read`, which the gateway
-    /// would answer with a 403, sends nothing.
+    /// would answer with a 403, sends nothing, and so does a session without a valid token.
     ///
     /// - Parameter languages: The device's languages, ``GopaySDK/deviceLanguages``.
-    func startInitSession(languages: [String]) {
-        // A session closed meanwhile has no token left to send it with.
-        guard initSessionTask == nil, paymentSecret != nil,
+    /// - Returns: The request's task, ended however the request ends, or `nil` when nothing is
+    ///   sent and there is nothing to wait for.
+    func startInitSession(languages: [String]) -> Task<Void, Never>? {
+        // A session closed meanwhile has no token left to send it with, and one whose token has
+        // expired would not send it (PaymentAPI.initSession asks for no new one); the Android SDK
+        // also returns no call then.
+        guard initSessionTask == nil, paymentSecret != nil, currentToken() != nil,
               scope.split(whereSeparator: \.isWhitespace).contains(where: { $0 == Self.initSessionScope })
-        else { return }
+        else { return nil }
         let api = self.api!
         let paymentId = self.paymentId
         let telemetry = self.telemetry
@@ -366,6 +370,7 @@ public actor PaymentSession {
                 // the encoder cannot fail on this body.
             }
         }
+        return initSessionTask
     }
 
     /// The scope `POST /payments/{payment_id}/init-session` needs.

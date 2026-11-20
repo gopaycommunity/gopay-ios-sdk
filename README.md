@@ -398,10 +398,11 @@ and token and unregisters the session.
 When a session starts, the SDK also tells GoPay that the iOS SDK, and which version of it,
 works with the payment, and GoPay sets the payment's language from the languages set on the
 device: the one ranked highest among those GoPay supports, or English. Nothing to configure.
-`startPaymentSession` does not wait for this, and if it fails, as it does for a payment that is no
-longer `CREATED`, nothing throws and `errorCallback` is not called. This is why the session starts
-when the checkout opens: the SDK gets the payment ready while the customer is still choosing how to
-pay.
+`startPaymentSession` returns once GoPay has been told about the session, so a charge made right
+after it never overtakes that request; the start gives up waiting after 10 seconds without an
+answer. If the request fails, as it does for a payment that is no longer `CREATED`, nothing throws
+and `errorCallback` is not called. This is why the session starts when the checkout opens: the SDK
+gets the payment ready while the customer is still choosing how to pay.
 
 #### Charging a saved card token instead
 
