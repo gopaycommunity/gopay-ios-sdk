@@ -1,3 +1,12 @@
+## 3.1.1 (2026-11-20)
+
+
+### Bug Fixes
+
+* close open sessions only when initialize changes the connection GPMOB-177 92ac017
+* keep each attached payment once in the telemetry GPMOB-177 e44e6ab
+* wait for the init-session before startPaymentSession returns GPMOB-206 bd7094c
+
 # 3.1.0 (2026-11-19)
 
 
